@@ -208,6 +208,12 @@ function LoginPage() {
             </div>
           )}
         </motion.div>
+        <p className="mt-6 text-center text-sm text-muted-foreground">
+          New to Stawi?{" "}
+          <Link to="/onboarding" className="text-lime underline-offset-4 hover:underline">
+            Create an account
+          </Link>
+        </p>
 
         <p className="mt-6 text-center text-xs text-muted-foreground/70">
           Demo environment · any phone number works with code {DEMO_CODE}
