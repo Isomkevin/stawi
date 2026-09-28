@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { api } from "@/lib/api";
+import type { Invoice, Transaction } from "@/lib/types";
 import { formatCurrency, formatDate, formatKesCents } from "@/lib/format";
 import { invoiceDetailOptions, accountOptions, coopOptions, coopMembersOptions } from "@/features/buyer/queries";
 import { PayazaCheckout } from "@/components/stawi/Checkout";
