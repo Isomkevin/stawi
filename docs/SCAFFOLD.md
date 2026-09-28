@@ -41,6 +41,22 @@ npm test                                                   # unit tests
 ```
 Simulate a buyer paying in mock mode: `POST /dev/simulate-payment/:invoiceId`, then for co-op invoices `POST /invoices/:id/approve-split`. `GET /dev/seed-ids` returns the Kiambu co-op, its treasurer, the Wanjiru exporter, the 10 Kiambu farmer ids, and the five canonical invoice ids. Those `/dev/*` routes exist only when `PAYAZA_MODE=mock`.
 
+The contract, entities, and route list are `docs/skills/stawi-domain/SKILL.md`. Payaza calls are `docs/skills/payaza/SKILL.md`. USSD and SMS are `docs/skills/africas-talking/SKILL.md`.
+
+## How the backend works
+
+**Money.** KES is integer cents. A paid invoice is converted at an illustrative rate, then a 0.8% fee is taken. Direct credits the exporter at once. Co-op waits in `settling` until the treasurer approves; `splitByShares` gives each member a net that sums exactly to the invoice net. That credit is the Stawi balance. A withdrawal, with PIN, sends balance to a verified M-Pesa (`SAFKEN`) or bank destination through Payaza. Farmers are not Payaza sub-accounts.
+
+**Auth.** Off in local mock. On in production and when `PAYAZA_MODE` is `sandbox` or `live`. `POST /auth/otp` then `POST /auth/verify`. Send `Authorization: Bearer <token>` or the `stawi_session` cookie. A treasurer can read their members and manage that co-op. They cannot withdraw on a member's behalf. Buyer invoice view, checkout, webhooks, account creation, and USSD stay public.
+
+**PIN.** 4 digits, bcrypt. Five failures lock the account for 15 minutes. Web and USSD call the same `withdraw`.
+
+**Storage.** No `DATABASE_URL`: in-memory, empty on restart, then seeded. With `DATABASE_URL`: `db/schema.sql` is applied on startup and balance changes run in one database transaction. `SEED=false` in production (`render.yaml`). Reseed only when `acc_treasurer` is absent.
+
+**USSD.** `POST /ussd/callback` must include `?s=<AT_CALLBACK_SECRET>` or the `x-ussd-secret` header. The menu is balance, the last three payouts, and withdraw. The phone number selects the account. The session id is the withdrawal idempotency key. SMS (login codes and payout alerts) is dry-run when `AT_API_KEY` is unset.
+
+**Checks.** `npm run typecheck` and `npm test` in `backend/`. `python scripts/e2e.py http://localhost:4100 s3cret` runs the 17 live checks against a running mock server.
+
 ## Demo seed
 
 `backend/src/data/catalog.ts` is the dataset. `backend/src/data/seed.ts` writes it through the store and `splitByShares`, so every co-op's shares sum to 100 and every completed invoice's credit payouts sum to its net. Money is integer KES cents. The fee on settled invoices is 0.8%. Historical FX stored on those invoices is USD 129, EUR 140.5, GBP 168.2. Every seeded account uses PIN `1234`.

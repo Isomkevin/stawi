@@ -8,7 +8,7 @@ Team: LESOM · Product: Stawi Direct + Stawi Co-op
 Stawi replaces a slow, manual, fee-heavy cross-border collection process with one transparent, automatic flow, in two shapes:
 
 - **Stawi Direct**: a solo Kenyan exporter (agriculture, crafts, digital services) sends a Payaza checkout link instead of a bank wire request. Buyer pays in their own currency → multi-currency converts to KES → settlement pays the exporter same-day.
-- **Stawi Co-op**: a Kenyan export co-op (coffee, tea, handicrafts) collects once from a buyer. Same pipe as Direct, plus one step — Payaza sub-accounts split the converted total across each farmer's contribution share and pay every farmer out same-day.
+- **Stawi Co-op**: a Kenyan export co-op (coffee, tea, macadamia, flowers) collects once from a buyer. Same pipe as Direct, plus one step — Stawi splits the converted net across each farmer's contribution share into their Stawi balance. The farmer withdraws to M-Pesa or a bank. Payaza sub-accounts are not used for farmers.
 
 Both products share one backend, one data model, and one payment integration layer. Co-op is Direct with a split step inserted before payout.
 
@@ -25,32 +25,29 @@ Note: "Farmer/Exporter Account app" is one surface serving two personas (solo ex
 
 ## 3. Data model (shared source of truth)
 
-See `skills/stawi-domain/SKILL.md` for the full entity definitions and internal API contract. Summary:
+See `skills/stawi-domain/SKILL.md` for entities, the pipeline, auth, and every route. Summary:
 
-- **Account** — a payee (solo exporter or farmer). Has a phone number, ID, payout destination (M-Pesa or bank), and a `channel_capability` flag (webapp-only vs webapp+USSD/SMS).
-- **Coop** — a group of Accounts with one treasurer Account.
-- **CoopMember** — links an Account to a Coop with a `contribution_share` (percentage).
-- **Invoice** — a request for payment, tied either to a solo Account or to a Coop. Holds buyer info, amount, currency, status.
-- **Transaction** — every step of the money's journey: collection (buyer paid), conversion (FX applied), settlement (money moved to Stawi's holding), payout (money moved to a specific Account). Each has a Payaza reference where applicable.
-- **Payout** — the terminal transaction to a specific Account, with destination and status (pending/sent/confirmed).
+- **Account** — a payee (solo exporter, farmer, or treasurer). Phone, national ID, M-Pesa and/or bank destinations, `channel_capability` (`webapp` or `webapp+ussd`), a 4-digit PIN, `balance_kes_cents`, and `incoming_kes_cents`.
+- **Coop** — a named group with one treasurer Account.
+- **CoopMember** — links an Account to a Coop with a `contribution_share` (percentage, summing to 100) and optional kilos.
+- **Invoice** — Direct (one account) or Co-op. Buyer, amount, currency, reference, and a status from `pending` through `completed` or `failed`.
+- **Transaction** — append-only steps on an invoice: collection, conversion, settlement. Fee is integer KES cents on conversion and settlement.
+- **Payout** — money for one account. `credit` lands in the Stawi balance. `withdrawal` sends that balance to M-Pesa or a bank.
 
 ## 4. The two flows, step by step
 
 ### Stawi Direct
-1. Exporter creates an Invoice (amount, currency, buyer email) via the Farmer/Exporter Account app or Co-op Dashboard equivalent.
-2. Backend creates a Payaza checkout session for that Invoice; buyer receives a link.
-3. Buyer opens the Buyer Portal, pays via Payaza checkout in their own currency.
-4. Payaza webhook notifies the backend of a successful collection → Transaction (collection) created.
-5. Backend triggers multi-currency conversion to KES → Transaction (conversion) created.
-6. Backend triggers settlement to the exporter's Account → Transaction (settlement) + Payout created.
-7. Exporter sees the Payout land in their account balance/status (webapp or USSD).
+1. Exporter creates an Invoice (amount, currency, buyer) and the backend opens a Payaza checkout session.
+2. Buyer pays in the Buyer Portal. Payaza's webhook (or `POST /dev/simulate-payment/{id}` in mock mode) records a collection.
+3. Stawi converts to KES at its illustrative rate and takes a 0.8% fee. There is no documented Payaza FX endpoint.
+4. Stawi settles immediately: one credit payout, and the exporter's `balance_kes_cents` increases by the net.
+5. The exporter withdraws to a verified M-Pesa or bank destination with a PIN. That withdrawal is the Payaza payout.
 
 ### Stawi Co-op
-Same as steps 1–5 above, with the Invoice tied to a Coop instead of a solo Account, then:
-6. Backend fetches all CoopMembers for that Coop and their `contribution_share`.
-7. Backend calls Payaza's sub-account split (see `skills/payaza/SKILL.md`) to divide the converted total across each member's Payout, proportional to share.
-8. Each farmer's Payout is created and settled to their individual destination.
-9. Each farmer sees their own Payout land — same UI/USSD experience as Direct, just smaller individual amounts with a shared Invoice reference.
+Steps 1–3 are the same, with the invoice tied to a co-op. Then:
+4. Status becomes `settling`. Each member's net share is added to `incoming_kes_cents`. Nothing is spendable yet.
+5. The treasurer reviews the split and calls `POST /invoices/{id}/approve-split` with their PIN. Stawi allocates with largest-remainder so the lines sum exactly to the net, writes one credit payout per member, and moves incoming into balance.
+6. Each farmer withdraws on the web app or USSD, same endpoint, same balance. A second approval is rejected.
 
 ## 5. Three surfaces
 

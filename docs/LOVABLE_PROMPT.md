@@ -180,7 +180,7 @@ POST /accounts/{id}/destinations        { type, details, account_name, bank_code
 DELETE /accounts/{id}/destinations/{destId} -> 204  400 if it is the last one
 ```
 Canonical demo ids exist in both the frontend mock and the backend seed: coop_kiambu, acc_treasurer, acc_exporter, acc_farmer_1..10, buyer invoice inv_2413. The live backend ledger is larger; see `docs/SCAFFOLD.md` (Demo seed). `GET /dev/seed-ids` returns only those Kiambu ids.
-Errors are JSON `{ error: string }` with 400/403/404. Anything the UI needs beyond this (e.g. destination management, OTP login, invite links, list of payouts per co-op) mark clearly in `src/lib/api.ts` under `// TODO(backend): add to contract`.
+Errors are JSON `{ error: string }` with 400/401/403/404. The narrative for pipeline, auth, and money is `docs/skills/stawi-domain/SKILL.md`. Anything the UI needs that is not in the list above, mark in `src/lib/api.ts` under `// TODO(backend): add to contract` and add it to that skill in the same change.
 
 ## 9. Mock data (make the demo feel real)
 This section is the in-app mock (`VITE_API_MODE=mock` only). Keep it small so every screen is reviewable without the API.

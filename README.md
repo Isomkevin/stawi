@@ -14,3 +14,6 @@ Cross-border export payments: one buyer payment in, every farmer paid same day.
 - `VITE_API_MODE=live` + `VITE_API_BASE_URL=https://…` — `src/lib/api.ts` calls the real backend. Endpoints not yet in the contract are marked `TODO(backend)`.
 
 Money is always integer KES cents (`*_kes_cents`); the only client-side maths is the labelled split estimate on the new-invoice sheet.
+
+## Backend
+The API is `backend/` (Express). It owns Payaza, Africa's Talking, balances, and USSD. How to run it, how a payment becomes a farmer balance, and the demo ledger: `docs/SCAFFOLD.md`. The HTTP contract: `docs/skills/stawi-domain/SKILL.md`. Index of the other docs: `docs/README.md`.

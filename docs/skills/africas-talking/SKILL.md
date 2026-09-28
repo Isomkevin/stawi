@@ -24,7 +24,8 @@ Africa's Talking runs two fully separate environments. Build and test on sandbox
 AT_ENV=sandbox            # or "live"
 AT_USERNAME=sandbox       # or your live app username
 AT_API_KEY=<key for the matching environment>
-AT_USSD_CALLBACK_URL=https://<host>/ussd/callback
+AT_CALLBACK_SECRET=<shared secret>
+AT_USSD_CALLBACK_URL=https://<host>/ussd/callback?s=<AT_CALLBACK_SECRET>
 AT_SENDER_ID=STAWI        # live only, after approval (see below)
 AT_USSD_SERVICE_CODE=*384*1#   # placeholder; live value is whatever AT/telcos assign you
 ```
@@ -60,7 +61,7 @@ Code is the easy part of going live. The gating items are **approvals with lead 
 5. **Compliance basics.** USSD and SMS in Kenya fall under the Communications Authority's framework; Africa's Talking handles most of the carrier-side compliance, but you still own consent and data handling. Only message farmers who registered on Stawi, include an opt-out line on promotional SMS (transactional payout alerts are fine), and never put full account numbers or PINs in SMS or USSD screens.
 6. **Security hardening before real money moves** (this is the part that bites when USSD goes live):
    - **Identify the caller by `phoneNumber` from the gateway**, which the network supplies and the user can't spoof, but treat it as identification, not authentication. **Require a Stawi PIN** for withdrawals over USSD (set during webapp onboarding, hashed server-side, rate-limited with lockout after a few bad attempts). Never withdraw on phone-number identity alone.
-   - **Validate the callback source.** Restrict the `/ussd/callback` endpoint to Africa's Talking's IP ranges or a shared secret in the callback URL, so nobody can POST fake sessions to trigger withdrawals.
+   - **Validate the callback source.** The handler rejects the request with 401 unless `?s=` matches `AT_CALLBACK_SECRET` or the `x-ussd-secret` header does. Register the callback URL with that query string. An IP allowlist can sit in front of the same endpoint.
    - **Idempotency on withdrawals.** USSD gateways can retry; key each withdrawal on `sessionId` + amount + destination so a retry can't double-pay.
    - **Approved destinations only.** USSD withdraw may only target destinations verified at webapp onboarding (account name enquiry passed) — never accept a free-typed number over USSD.
    - **Session timeout handling.** If a session dies mid-withdrawal, the operation must be either fully committed or fully abandoned; no half-states.
