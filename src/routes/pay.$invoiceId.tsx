@@ -262,7 +262,9 @@ function ReceiptView({
   const conversion = transactions.find((t) => t.type === "conversion");
   steps.push({
     label: `Converted to shillings`,
-    detail: invoice.fx_rate ? `1 ${invoice.currency} = KES ${invoice.fx_rate.toFixed(2)}` : undefined,
+    ...(invoice.fx_rate
+      ? { detail: `1 ${invoice.currency} = KES ${invoice.fx_rate.toFixed(2)}` }
+      : {}),
     state: conversion ? (conversion.status === "completed" ? "done" : "active") : "active",
   });
   if (invoice.type === "coop") {
