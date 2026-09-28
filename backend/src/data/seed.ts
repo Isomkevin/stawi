@@ -18,16 +18,16 @@ export interface SeedIds {
 }
 
 export let SEED_IDS: SeedIds = {
-  coop_id: "coop_kiambu_highlands",
-  treasurer_id: "acc_treasurer_david",
-  exporter_id: "acc_exporter_wanjiru",
+  coop_id: "coop_kiambu",
+  treasurer_id: "acc_treasurer",
+  exporter_id: "acc_exporter",
   farmer_ids: [],
   invoice_ids: {
     paid_coop: "inv_coop_hamburg_101",
     awaiting_split_coop: "inv_coop_berlin_102",
     pending_coop: "inv_coop_rotterdam_103",
     paid_direct: "inv_direct_ny_201",
-    pending_direct: "inv_direct_london_202",
+    pending_direct: "inv_2413",
   },
 };
 
@@ -36,15 +36,15 @@ export async function seedDatabase(): Promise<SeedIds> {
 
   // 1. Co-op
   const coop: Coop = {
-    id: "coop_kiambu_highlands",
+    id: "coop_kiambu",
     name: "Kiambu Highlands Coffee Co-op",
-    treasurer_account_id: "acc_treasurer_david",
+    treasurer_account_id: "acc_treasurer",
   };
   store.saveCoop(coop);
 
   // 2. Treasurer Account
   const treasurer: Account = {
-    id: "acc_treasurer_david",
+    id: "acc_treasurer",
     full_name: "David Kamau",
     phone_number: "+254711000000",
     id_number: "ID1000000",
@@ -132,7 +132,7 @@ export async function seedDatabase(): Promise<SeedIds> {
 
   // 4. Solo Exporter
   const exporter: Account = {
-    id: "acc_exporter_wanjiru",
+    id: "acc_exporter",
     full_name: "Grace Wanjiru (Wanjiru Crafts)",
     phone_number: "+254722000001",
     id_number: "ID3000001",

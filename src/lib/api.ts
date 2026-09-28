@@ -110,32 +110,36 @@ export const api = {
       ? mockApi.createCheckoutSession(invoiceId)
       : request(`/invoices/${invoiceId}/checkout-session`, { method: "POST" }),
 
-  // POST /invoices/{id}/approve-split
+  // POST /invoices/{id}/approve-split → { success, invoice, payouts }
   approveSplit: (invoiceId: string, treasurerId: string, pin: string): Promise<Invoice> =>
     isMock
       ? mockApi.approveSplit(invoiceId, pin)
-      : request(`/invoices/${invoiceId}/approve-split`, {
+      : request<{ invoice: Invoice }>(`/invoices/${invoiceId}/approve-split`, {
           method: "POST",
           body: JSON.stringify({ treasurer_id: treasurerId, pin }),
-        }),
+        }).then((r) => r.invoice),
 
-  // POST /dev/simulate-payment/{invoiceId} — mock/demo backend only
+  // POST /dev/simulate-payment/{invoiceId} → { success, invoice, ... } (mock backend only)
   simulatePayment: (invoiceId: string): Promise<Invoice> =>
     isMock
       ? mockApi.simulatePayment(invoiceId)
-      : request(`/dev/simulate-payment/${invoiceId}`, { method: "POST" }),
+      : request<{ invoice: Invoice }>(`/dev/simulate-payment/${invoiceId}`, { method: "POST" }).then(
+          (r) => r.invoice,
+        ),
 
-  // TODO(backend): add to contract — list payouts for a co-op
+  // GET /coops/{id}/payouts
   listCoopPayouts: (coopId: string): Promise<Payout[]> =>
     isMock ? mockApi.listCoopPayouts(coopId) : request(`/coops/${coopId}/payouts`),
 
-  // TODO(backend): add to contract — payout destination management
-  //   POST /accounts/{id}/destinations, DELETE /accounts/{id}/destinations/{destId}
-  // TODO(backend): add to contract — name enquiry for a destination
+  // POST /name-enquiry → { account_name }
+  // TODO(backend): payout destination management (POST/DELETE /accounts/{id}/destinations)
   resolveAccountName: (type: "mpesa" | "bank", details: string): Promise<string> =>
     isMock
       ? mockApi.resolveAccountName(type, details)
-      : request(`/name-enquiry`, { method: "POST", body: JSON.stringify({ type, details }) }),
+      : request<{ account_name: string }>(`/name-enquiry`, {
+          method: "POST",
+          body: JSON.stringify({ type, details }),
+        }).then((r) => r.account_name),
 
   // TODO(backend): add to contract — OTP login (POST /auth/otp, POST /auth/verify)
   // TODO(backend): add to contract — co-op invite links (POST /coops/{id}/invites)
