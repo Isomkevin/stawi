@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "motion/react";
-import { ArrowUpRight, Phone } from "lucide-react";
+import { ArrowUpRight, Inbox, Phone } from "lucide-react";
 import { MoneyText } from "@/components/stawi/MoneyText";
 import { Timeline } from "@/components/stawi/Timeline";
 import { EmptyState } from "@/components/stawi/EmptyState";
@@ -98,7 +98,7 @@ function HomeTab() {
         {txns.isLoading ? (
           <Skeleton className="h-16 w-full rounded-2xl" />
         ) : incoming.length === 0 ? (
-          <EmptyState title={t("home.noIncoming")} />
+          <EmptyState icon={Inbox} title={t("home.noIncoming")} description="When a buyer pays your co-op, your share appears here." />
         ) : (
           <div className="space-y-2">
             {incoming.map((p) => (
