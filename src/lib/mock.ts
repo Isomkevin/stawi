@@ -632,6 +632,29 @@ export const mockApi = {
     );
   },
 
+  async addDestination(
+    accountId: string,
+    body: { type: "mpesa" | "bank"; details: string; account_name: string },
+  ): Promise<PayoutDestination> {
+    await latency(500);
+    const account = accounts.find((a) => a.id === accountId);
+    if (!account) throw new ApiError(404, "Account not found");
+    const clean = body.details.replace(/\s/g, "");
+    if (account.payout_destinations.some((d) => d.type === body.type && d.details === clean))
+      throw new ApiError(409, "Destination already added");
+    const d = dest(`x${Date.now().toString(36)}`, body.type, clean, body.account_name);
+    account.payout_destinations.push(d);
+    return structuredClone(d);
+  },
+
+  async removeDestination(accountId: string, destId: string): Promise<void> {
+    await latency(300);
+    const account = accounts.find((a) => a.id === accountId);
+    if (!account) throw new ApiError(404, "Account not found");
+    if (account.payout_destinations.length <= 1) throw new ApiError(400, "Keep at least one payout destination");
+    account.payout_destinations = account.payout_destinations.filter((d) => d.id !== destId);
+  },
+
   async resolveAccountName(type: "mpesa" | "bank", details: string): Promise<string> {
     await latency(900);
     if (details.replace(/\D/g, "").length < 6) throw new ApiError(400, "Could not resolve this account");

@@ -121,6 +121,61 @@ apiRouter.get("/accounts/:id/transactions", (req: Request, res: Response) => {
   res.status(200).json(payouts);
 });
 
+apiRouter.post("/accounts/:id/destinations", (req: Request, res: Response) => {
+  const account = store.getAccount(getParam(req.params.id));
+  if (!account) {
+    res.status(404).json({ error: "Account not found" });
+    return;
+  }
+  const { type, details, account_name } = req.body ?? {};
+  if ((type !== "mpesa" && type !== "bank") || !details || !account_name) {
+    res.status(400).json({ error: "Missing type, details or account_name" });
+    return;
+  }
+  const clean = String(details).replace(/\s/g, "");
+  const valid = type === "mpesa" ? /^\+?\d{9,13}$/.test(clean) : /^\d{6,20}$/.test(clean);
+  if (!valid) {
+    res.status(400).json({ error: type === "mpesa" ? "Invalid M-Pesa number" : "Invalid bank account number" });
+    return;
+  }
+  const normalized = type === "mpesa" ? store.normalizePhone(clean) : clean;
+  if (account.payout_destinations.some((d) => d.type === type && d.details === normalized)) {
+    res.status(409).json({ error: "Destination already added" });
+    return;
+  }
+  const destination = {
+    id: `dest_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`,
+    type,
+    details: normalized,
+    account_name: String(account_name).slice(0, 255),
+    // TODO(payaza): set via Payaza name enquiry; treated as verified once the name resolved.
+    is_verified: true,
+  } as const;
+  account.payout_destinations.push({ ...destination });
+  store.saveAccount(account);
+  res.status(201).json(destination);
+});
+
+apiRouter.delete("/accounts/:id/destinations/:destId", (req: Request, res: Response) => {
+  const account = store.getAccount(getParam(req.params.id));
+  if (!account) {
+    res.status(404).json({ error: "Account not found" });
+    return;
+  }
+  const destId = getParam(req.params.destId);
+  if (!account.payout_destinations.some((d) => d.id === destId)) {
+    res.status(404).json({ error: "Destination not found" });
+    return;
+  }
+  if (account.payout_destinations.length <= 1) {
+    res.status(400).json({ error: "Keep at least one payout destination" });
+    return;
+  }
+  account.payout_destinations = account.payout_destinations.filter((d) => d.id !== destId);
+  store.saveAccount(account);
+  res.status(204).end();
+});
+
 apiRouter.post("/accounts/:id/withdraw", async (req: Request, res: Response) => {
   try {
     const { destination_id, amount_kes_cents, pin, idempotency_key } = req.body;
