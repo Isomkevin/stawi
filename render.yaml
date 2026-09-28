@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: stawi-backend
+    runtime: node
+    rootDir: backend
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PAYAZA_MODE
+        value: mock            # switch to sandbox/live when payaza.ts TODOs are implemented
+      - key: AT_ENV
+        value: sandbox
+      - key: SEED
+        value: "true"          # demo data; set "false" for real use
+      - key: CORS_ORIGIN
+        value: "*.lovable.app,*.lovableproject.com"   # add your published frontend origin
+      - key: AT_CALLBACK_SECRET
+        generateValue: true
+      - key: PAYAZA_PUBLIC_KEY
+        sync: false
+      - key: PAYAZA_SECRET_KEY
+        sync: false
+      - key: PAYAZA_PIN
+        sync: false
+      - key: PAYAZA_WEBHOOK_SECRET
+        sync: false
+      - key: AT_USERNAME
+        value: sandbox
+      - key: AT_API_KEY
+        sync: false
