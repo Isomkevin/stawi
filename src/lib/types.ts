@@ -31,9 +31,9 @@ export type Coop = {
 export type CoopMember = {
   coop_id: string;
   account_id: string;
-  full_name?: string;
+  full_name?: string | undefined;
   contribution_share: number;
-  kilos?: number;
+  kilos?: number | undefined;
 };
 
 export type InvoiceStatus =
@@ -51,7 +51,7 @@ export type Invoice = {
   coop_id: string | null;
   buyer_name: string;
   buyer_email: string;
-  buyer_phone?: string;
+  buyer_phone?: string | undefined;
   amount: number;
   currency: string;
   description: string;
@@ -129,21 +129,21 @@ export type CreateAccountBody = {
   pin: string;
   destination: { type: "mpesa" | "bank"; details: string; account_name: string };
   ussd: boolean;
-  coop_id?: string;
+  coop_id?: string | undefined;
 };
 
 export type CreateInvoiceBody = {
   type: "direct" | "coop";
-  account_id?: string;
-  coop_id?: string;
+  account_id?: string | undefined;
+  coop_id?: string | undefined;
   buyer_name: string;
   buyer_email: string;
-  buyer_phone?: string;
+  buyer_phone?: string | undefined;
   amount: number;
   currency: string;
   description: string;
-  reference?: string;
-  due_at?: string | null;
+  reference?: string | undefined;
+  due_at?: string | null | undefined;
 };
 
 export type WithdrawBody = {
@@ -158,7 +158,7 @@ export type Role = "farmer" | "exporter" | "treasurer" | "buyer";
 export class ApiError extends Error {
   status: number;
   code: string;
-  attemptsLeft?: number;
+  attemptsLeft?: number | undefined;
 
   constructor(status: number, code: string, attemptsLeft?: number) {
     super(code);
