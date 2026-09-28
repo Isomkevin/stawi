@@ -238,6 +238,57 @@ apiRouter.post("/coops/:id/members", (req: Request, res: Response) => {
   res.status(201).json(member);
 });
 
+apiRouter.patch("/coops/:id/members/:accountId", (req: Request, res: Response) => {
+  const coopId = getParam(req.params.id);
+  const accountId = getParam(req.params.accountId);
+  const existing = store.getCoopMembers(coopId).find((m) => m.account_id === accountId);
+  if (!existing) {
+    res.status(404).json({ error: "Member not found" });
+    return;
+  }
+  const share = Number(req.body?.contribution_share);
+  if (!Number.isFinite(share) || share < 0 || share > 100) {
+    res.status(400).json({ error: "contribution_share must be between 0 and 100" });
+    return;
+  }
+  const updated: CoopMember = { ...existing, contribution_share: share };
+  store.addCoopMember(updated);
+  res.status(200).json(updated);
+});
+
+apiRouter.get("/coops/:id/payouts", (req: Request, res: Response) => {
+  const coop = store.getCoop(getParam(req.params.id));
+  if (!coop) {
+    res.status(404).json({ error: "Co-op not found" });
+    return;
+  }
+  const invoiceIds = new Set(store.getInvoices({ coop_id: coop.id }).map((i) => i.id));
+  const payouts = store
+    .getCoopMembers(coop.id)
+    .flatMap((m) => store.getPayoutsByAccount(m.account_id))
+    .filter((p) => invoiceIds.has(p.invoice_id))
+    .sort((a, b) => b.created_at.localeCompare(a.created_at));
+  res.status(200).json(payouts);
+});
+
+// TODO(payaza): replace with Payaza name-enquiry once the endpoint is confirmed in sandbox docs.
+apiRouter.post("/name-enquiry", (req: Request, res: Response) => {
+  const { type, details } = req.body ?? {};
+  if ((type !== "mpesa" && type !== "bank") || !details) {
+    res.status(400).json({ error: "Missing type or details" });
+    return;
+  }
+  const match =
+    type === "mpesa"
+      ? store.getAccountByPhone(String(details))
+      : store.getAllAccounts().find((a) => a.payout_destinations.some((d) => d.details === details));
+  if (!match) {
+    res.status(404).json({ error: "Account name not found" });
+    return;
+  }
+  res.status(200).json({ account_name: match.full_name });
+});
+
 apiRouter.get("/coops/:id/metrics", (req: Request, res: Response) => {
   const coop = store.getCoop(getParam(req.params.id));
   if (!coop) {
