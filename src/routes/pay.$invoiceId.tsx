@@ -51,20 +51,19 @@ function PayPage() {
 
   const coopId = invoice.coop_id;
   const accountId = invoice.account_id;
-  const coop = useSuspenseQuery({
-    ...coopOptions(coopId ?? "none"),
-    enabled: Boolean(coopId),
-  }).data;
-  const members = useSuspenseQuery({
+  // Optional lookups: only one of these exists per invoice type.
+  const coopQuery = useQuery({ ...coopOptions(coopId ?? "none"), enabled: Boolean(coopId) });
+  const membersQuery = useQuery({
     ...coopMembersOptions(coopId ?? "none"),
     enabled: Boolean(coopId),
-  }).data;
-  const payeeAccount = useSuspenseQuery({
+  });
+  const accountQuery = useQuery({
     ...accountOptions(accountId ?? "none"),
     enabled: Boolean(accountId),
-  }).data;
+  });
 
-  const payeeName = coop?.name ?? payeeAccount?.full_name ?? "Stawi exporter";
+  const payeeName =
+    coopQuery.data?.name ?? accountQuery.data?.full_name ?? "Stawi seller";
 
   if (invoice.status === "pending" && invoice.due_at && new Date(invoice.due_at) < new Date()) {
     return (
