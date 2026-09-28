@@ -2,7 +2,7 @@ import { store } from "../store";
 import { Invoice, Payout, SplitLine, Transaction } from "../types";
 import { feeCents, splitByShares, toKesCents } from "./money";
 import { notify } from "./notify";
-import { payaza } from "./payaza";
+import { ensureTransactionReference, payaza } from "./payaza";
 import { verifyAccountPin } from "./pin";
 
 export class PipelineService {
@@ -82,13 +82,15 @@ export class PipelineService {
     invoice.kes_total_cents = netKesCents;
     invoice.payaza_checkout_reference = effectivePayazaRef;
 
+    // Payaza publishes no FX endpoint (skill §7). Stawi records the converted KES
+    // amount, the rate, and the fee on this transaction. The rate table is illustrative.
     const convTx: Transaction = {
       id: `tx_conv_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       invoice_id: invoice.id,
       type: "conversion",
       status: "completed",
-      amount: effectiveAmount,
-      currency: effectiveCurrency,
+      amount: grossKesCents / 100,
+      currency: "KES",
       payaza_reference: `PZ-CONV-${Date.now()}`,
       fx_rate: fxRate,
       fee_kes_cents: platformFeeCents,
@@ -138,7 +140,7 @@ export class PipelineService {
           generatedPayouts.push(payout);
 
           // Best-effort SMS alert
-          notify.notifyPayoutLanded(exporter.phone_number, netKesCents, "Stawi account").catch(() => {});
+          notify.notifyPayoutLanded(exporter.phone_number, netKesCents, "Stawi").catch(() => {});
         }
       }
     } else {
@@ -295,7 +297,7 @@ export class PipelineService {
         store.addPayout(payout);
         createdPayouts.push(payout);
 
-        notify.notifyPayoutLanded(farmer.phone_number, line.net_kes_cents, "Stawi account").catch(() => {});
+        notify.notifyPayoutLanded(farmer.phone_number, line.net_kes_cents, "Stawi").catch(() => {});
       }
     }
 
@@ -304,6 +306,107 @@ export class PipelineService {
       invoice,
       payouts: createdPayouts,
     };
+  }
+
+  /**
+   * Applies a classified Payaza webhook. Collection success runs the pipeline.
+   * Payout success confirms a withdrawal and sends SMS. Payout failure restores the balance.
+   */
+  public async applyPayazaWebhook(decision: {
+    kind: string;
+    reference: string;
+    merchantReference: string | null;
+    invoiceId: string | null;
+    amountReceived?: number;
+    currency?: string;
+  }): Promise<{ matched: boolean }> {
+    if (decision.kind === "payout_success" || decision.kind === "payout_failed") {
+      const payout =
+        store.getPayoutByPayazaReference(decision.reference) ||
+        (decision.merchantReference ? store.getPayoutByPayazaReference(decision.merchantReference) : undefined);
+      if (!payout) return { matched: false };
+
+      if (decision.kind === "payout_success") {
+        if (payout.status !== "confirmed") {
+          payout.status = "confirmed";
+          store.updatePayout(payout);
+          const account = store.getAccount(payout.account_id);
+          const destination = account?.payout_destinations.find((d) => d.id === payout.destination_id);
+          if (account) {
+            notify
+              .notifyPayoutLanded(account.phone_number, payout.amount_kes_cents, destination?.details || "M-Pesa")
+              .catch(() => {});
+          }
+        }
+        return { matched: true };
+      }
+
+      if (payout.status !== "failed" && payout.kind === "withdrawal") {
+        const account = store.getAccount(payout.account_id);
+        if (account) {
+          account.balance_kes_cents += payout.amount_kes_cents;
+          store.saveAccount(account);
+        }
+      }
+      payout.status = "failed";
+      store.updatePayout(payout);
+      return { matched: true };
+    }
+
+    const invoice = this.findInvoiceForWebhook(decision);
+    if (!invoice) return { matched: false };
+
+    if (decision.kind === "collection_failed" || decision.kind === "underpayment") {
+      if (invoice.status === "pending" || invoice.status === "paid") {
+        invoice.status = "failed";
+        store.saveInvoice(invoice);
+        store.addTransaction({
+          id: `tx_col_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          invoice_id: invoice.id,
+          type: "collection",
+          status: "failed",
+          amount: decision.amountReceived || invoice.amount,
+          currency: decision.currency || invoice.currency,
+          payaza_reference: decision.reference || decision.merchantReference,
+          fx_rate: null,
+          fee_kes_cents: null,
+          created_at: new Date().toISOString(),
+        });
+      }
+      return { matched: true };
+    }
+
+    if (decision.kind === "collection_success") {
+      await this.processPayment(
+        invoice.id,
+        decision.merchantReference || decision.reference,
+        decision.amountReceived,
+        decision.currency
+      );
+      return { matched: true };
+    }
+
+    return { matched: false };
+  }
+
+  private findInvoiceForWebhook(decision: {
+    reference: string;
+    merchantReference: string | null;
+    invoiceId: string | null;
+  }) {
+    if (decision.invoiceId) {
+      const byId = store.getInvoice(decision.invoiceId);
+      if (byId) return byId;
+    }
+    const refs = [decision.merchantReference, decision.reference].filter((r): r is string => Boolean(r));
+    return (
+      store.getInvoices().find(
+        (inv) =>
+          (inv.payaza_checkout_reference && refs.includes(inv.payaza_checkout_reference)) ||
+          (inv.payaza_link_id && refs.includes(inv.payaza_link_id)) ||
+          refs.some((r) => r.includes(inv.id))
+      ) || null
+    );
   }
 
   /**
@@ -369,29 +472,57 @@ export class PipelineService {
       };
     }
 
+    const bankCode =
+      destination.bank_code ||
+      (destination.type === "mpesa" ? process.env.PAYAZA_MPESA_BANK_CODE || "SAFKEN" : process.env.PAYAZA_BANK_CODE || "");
+
+    if (destination.type === "bank" && !bankCode && payaza.getMode() !== "mock") {
+      return { success: false, error: "Bank code is required before a bank withdrawal" };
+    }
+
     // 6. Deduct balance
     account.balance_kes_cents -= amountKesCents;
     store.saveAccount(account);
 
-    // 7. Execute Payaza Payout
-    const payoutTxRef = `WTH-${accountId.slice(-4)}-${Date.now()}`;
+    // 7. Execute Payaza payout. Amounts are major KES; payout_amount equals credit_amount.
+    const payoutTxRef = ensureTransactionReference(`WTH-${accountId.slice(-6)}-${Date.now()}`);
+    const majorKes = amountKesCents / 100;
     const payazaResult = await payaza.initiatePayout({
-      payout_amount: amountKesCents / 100,
+      payout_amount: majorKes,
       currency: "KES",
       transaction_type: destination.type === "mpesa" ? "mobile_money" : "kepss",
       beneficiaries: [
         {
-          credit_amount: amountKesCents / 100,
+          credit_amount: majorKes,
           account_number: destination.details,
           account_name: destination.account_name,
-          bank_code: destination.type === "mpesa" ? "SAFKEN" : "01",
+          bank_code: bankCode,
           narration: "Stawi withdrawal",
           transaction_reference: payoutTxRef,
         },
       ],
     });
 
-    // 8. Record Payout
+    if (!payazaResult.success) {
+      account.balance_kes_cents += amountKesCents;
+      store.saveAccount(account);
+      const failed: Payout = {
+        id: `payout_wth_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        invoice_id: "withdrawal",
+        account_id: account.id,
+        kind: "withdrawal",
+        amount_kes_cents: amountKesCents,
+        destination_id: destination.id,
+        status: "failed",
+        created_at: new Date().toISOString(),
+        payaza_reference: payoutTxRef,
+      };
+      store.addPayout(failed);
+      return { success: false, error: payazaResult.error || "Payaza payout failed", payout: failed };
+    }
+
+    // Mock settles immediately. Sandbox/live stays "sent" until the payout webhook.
+    const settled = payaza.getMode() === "mock";
     const payout: Payout = {
       id: `payout_wth_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       invoice_id: "withdrawal",
@@ -399,14 +530,16 @@ export class PipelineService {
       kind: "withdrawal",
       amount_kes_cents: amountKesCents,
       destination_id: destination.id,
-      status: payazaResult.success ? "confirmed" : "pending",
+      status: settled ? "confirmed" : "sent",
       created_at: new Date().toISOString(),
       idempotency_key: idempotencyKey,
+      payaza_reference: payoutTxRef,
     };
     store.addPayout(payout);
 
-    // 9. Send SMS
-    notify.notifyPayoutLanded(account.phone_number, amountKesCents, destination.details).catch(() => {});
+    if (settled) {
+      notify.notifyPayoutLanded(account.phone_number, amountKesCents, destination.details).catch(() => {});
+    }
 
     return {
       success: true,

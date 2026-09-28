@@ -139,7 +139,7 @@ Roles: `farmer`, `exporter`, `treasurer`, `buyer` (no login). After login route 
 **Money rule: every money field from the API is an integer number of KES cents (`*_kes_cents`). Format with `amount / 100`; never use floats for money. Buyer-currency invoice `amount` is a plain decimal in that currency.** The backend types live in `backend/src/types.ts`; mirror them exactly in `src/lib/types.ts`.
 
 ```ts
-type PayoutDestination = { id: string; type: "mpesa" | "bank"; details: string; account_name: string; is_verified: boolean };
+type PayoutDestination = { id: string; type: "mpesa" | "bank"; details: string; account_name: string; is_verified: boolean; bank_code?: string };
 type Account = { id: string; full_name: string; phone_number: string; id_number: string; payout_destinations: PayoutDestination[];
   coop_id: string | null; channel_capability: "webapp" | "webapp+ussd"; balance_kes_cents: number; incoming_kes_cents: number }; // pin_hash is never returned
 type Coop = { id: string; name: string; treasurer_account_id: string };
@@ -148,11 +148,11 @@ type Invoice = { id: string; type: "direct" | "coop"; account_id: string | null;
   buyer_name: string; buyer_email: string; buyer_phone?: string; amount: number; currency: string; description: string; reference: string;
   status: "pending" | "paid" | "converting" | "settling" | "completed" | "failed"; split_approved: boolean;
   fx_rate: number | null; fee_kes_cents: number | null; kes_total_cents: number | null; // kes_total = net after fee
-  payaza_checkout_reference: string | null; created_at: string; due_at: string | null };
+  payaza_checkout_reference: string | null; payaza_link_id?: string | null; created_at: string; due_at: string | null };
 type Transaction = { id: string; invoice_id: string; type: "collection" | "conversion" | "settlement" | "payout";
   status: "pending" | "completed" | "failed"; amount: number; currency: string; fx_rate: number | null; fee_kes_cents: number | null; created_at: string };
 type Payout = { id: string; invoice_id: string; account_id: string; kind: "credit" | "withdrawal"; // credit = split landed in Stawi balance
-  amount_kes_cents: number; destination_id: string | null; status: "pending" | "sent" | "confirmed" | "failed"; created_at: string };
+  amount_kes_cents: number; destination_id: string | null; status: "pending" | "sent" | "confirmed" | "failed"; created_at: string; payaza_reference?: string | null };
 type SplitLine = { account_id: string; share: number; gross_kes_cents: number; fee_kes_cents: number; net_kes_cents: number };
 ```
 
@@ -166,13 +166,13 @@ POST /coops                             POST /coops/{id}/members { account_id, c
 GET  /coops/{id}/members                GET /coops/{id}/metrics -> { invoices, total_collected_kes_cents, fee_taken_kes_cents, total_split_kes_cents }
 GET  /invoices?coop_id=&account_id=     POST /invoices { type, account_id|coop_id, buyer_name, buyer_email, amount, currency, description, reference? }
 GET  /invoices/{id}                     -> { invoice, transactions, split_preview: SplitLine[] | null }
-POST /invoices/{id}/checkout-session    -> { reference, checkoutUrl|null, public_key, transaction_reference }  (open the Payaza widget client-side with public_key and transaction_reference)
+POST /invoices/{id}/checkout-session    -> { reference, checkoutUrl|null, public_key, transaction_reference, link_id|null }  (open the Payaza widget client-side with public_key and transaction_reference)
 POST /invoices/{id}/approve-split       { treasurer_id, pin } -> { success, invoice, payouts }
 POST /dev/simulate-payment/{invoiceId}  -> { success, invoice, transactions, payouts } (mock backend only)
 GET  /coops/{id}                        GET /coops/{id}/payouts -> Payout[] (members' payouts for this co-op's invoices, newest first)
 PATCH /coops/{id}/members/{accountId}   { contribution_share } -> CoopMember
 POST /name-enquiry                      { type, details } -> { account_name }  404 if unknown
-POST /accounts/{id}/destinations        { type, details, account_name } -> PayoutDestination  409 duplicate
+POST /accounts/{id}/destinations        { type, details, account_name, bank_code? } -> PayoutDestination  409 duplicate
 DELETE /accounts/{id}/destinations/{destId} -> 204  400 if it is the last one
 ```
 Demo seed IDs are shared by the frontend mock and backend seed: coop_kiambu, acc_treasurer, acc_exporter, acc_farmer_1..N, buyer invoice inv_2413.

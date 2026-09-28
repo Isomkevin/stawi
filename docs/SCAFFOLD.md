@@ -44,9 +44,9 @@ Simulate a buyer paying in mock mode: `POST /dev/simulate-payment/:invoiceId`, t
 Verified (production build, `node dist`): exact-sum splits, Direct and Co-op flows, treasurer-PIN split approval, double-approve rejection, idempotent webhooks and withdrawals, overdraw rejection, USSD menu + PIN handling, callback-secret rejection, clean JSON errors, CORS allow/deny. The Dockerfile has **not** been built or run (no Docker in the build environment) — test it before relying on it.
 
 Not done, on purpose and clearly marked:
-1. **`payaza.ts` sandbox/live calls** (conversion, disbursement, sub-account split, webhook signature). Get schemas from Payaza's engineers; don't guess endpoints. Until webhook verification exists, sandbox/live rejects all webhooks (fail closed).
+1. **Payaza FX conversion** has no documented endpoint. Stawi records an illustrative rate on the conversion transaction. Payment links, KES payouts, webhook HMAC, and KES account enquiry follow `docs/skills/payaza/SKILL.md`. Do not create a Payaza sub-account per farmer.
 2. **Auth.** Routes are open. Add OTP login + sessions and enforce that a caller can only act on their own account and that only the treasurer approves splits, **before the API is publicly reachable with real data**. Set `SEED=false` outside demos.
 3. **Persistence.** In-memory store resets on every restart/deploy (Render free tier also sleeps). Move to Postgres (`db/schema.sql`) before real money; make balance changes and payout rows one DB transaction.
-4. **Destination verification** (Payaza account-name enquiry), destination add/remove endpoint, invite links, per-co-op payout history — add as the frontend needs them (see its `TODO(backend)` list).
+4. **M-Pesa name enquiry** is not in Payaza's docs (NGN and GHS only). Destinations can be added and removed; the account holder confirms the name. Invite links are still open.
 5. **Africa's Talking live**: shortcode + sender-ID approvals (start now; lead times), permanent HTTPS callback, IP allowlist.
 6. **Licensing**: holding farmer balances before withdrawal may require authorisation in Kenya. Confirm with Payaza and a Kenyan fintech lawyer; a safer design if unclear is paying out directly at split time.

@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import { SEED_IDS } from "../data/seed";
 import { feeCents, toKesCents } from "../services/money";
-import { payaza } from "../services/payaza";
+import { classifyPayazaWebhook, payaza } from "../services/payaza";
 import { hashPin } from "../services/pin";
 import { pipeline } from "../services/pipeline";
 import { store } from "../store";
@@ -127,7 +127,7 @@ apiRouter.post("/accounts/:id/destinations", (req: Request, res: Response) => {
     res.status(404).json({ error: "Account not found" });
     return;
   }
-  const { type, details, account_name } = req.body ?? {};
+  const { type, details, account_name, bank_code } = req.body ?? {};
   if ((type !== "mpesa" && type !== "bank") || !details || !account_name) {
     res.status(400).json({ error: "Missing type, details or account_name" });
     return;
@@ -148,8 +148,9 @@ apiRouter.post("/accounts/:id/destinations", (req: Request, res: Response) => {
     type,
     details: normalized,
     account_name: String(account_name).slice(0, 255),
-    // TODO(payaza): set via Payaza name enquiry; treated as verified once the name resolved.
+    // Payaza name enquiry is documented for NGN and GHS only, not KES/M-Pesa.
     is_verified: true,
+    ...(bank_code ? { bank_code: String(bank_code) } : {}),
   } as const;
   account.payout_destinations.push({ ...destination });
   store.saveAccount(account);
@@ -326,7 +327,7 @@ apiRouter.get("/coops/:id/payouts", (req: Request, res: Response) => {
   res.status(200).json(payouts);
 });
 
-// TODO(payaza): replace with Payaza name-enquiry once the endpoint is confirmed in sandbox docs.
+// Local name check. Payaza's name enquiry is documented for NGN and GHS only.
 apiRouter.post("/name-enquiry", (req: Request, res: Response) => {
   const { type, details } = req.body ?? {};
   if ((type !== "mpesa" && type !== "bank") || !details) {
@@ -472,6 +473,7 @@ apiRouter.post("/invoices/:id/checkout-session", async (req: Request, res: Respo
 
     const session = await payaza.createCheckoutSession(invoice);
     invoice.payaza_checkout_reference = session.transaction_reference;
+    if (session.link_id) invoice.payaza_link_id = session.link_id;
     store.saveInvoice(invoice);
 
     res.status(200).json(session);
@@ -527,40 +529,29 @@ apiRouter.post("/webhooks/payaza", async (req: Request, res: Response) => {
       return;
     }
 
-    const payload = req.body || {};
-    const transactionRef = payload.merchant_reference || payload.transaction_reference;
+    const payload = (req.body || {}) as Record<string, unknown>;
+    const decision = classifyPayazaWebhook(payload);
 
-    if (!transactionRef) {
+    if (!decision.reference && !decision.merchantReference && !decision.invoiceId) {
       res.status(400).json({ error: "Missing transaction reference" });
       return;
     }
 
-    // Deduplication / Idempotency
-    if (store.isWebhookProcessed(transactionRef)) {
+    const dedupeKey = decision.reference || decision.merchantReference || decision.invoiceId || "";
+    if (store.isWebhookProcessed(dedupeKey)) {
       res.status(200).json({ received: true, duplicate: true });
       return;
     }
-    store.markWebhookProcessed(transactionRef);
 
-    // Correlate with Invoice
-    const allInvoices = store.getInvoices();
-    const matchedInvoice = allInvoices.find(
-      (inv) =>
-        inv.id === payload.additional_details?.invoice_id ||
-        transactionRef.includes(inv.id) ||
-        inv.payaza_checkout_reference === transactionRef
-    );
-
-    if (matchedInvoice) {
-      await pipeline.processPayment(
-        matchedInvoice.id,
-        transactionRef,
-        payload.amount_received || payload.request_amount,
-        payload.currency_code
-      );
+    if (decision.kind === "ignored") {
+      store.markWebhookProcessed(dedupeKey);
+      res.status(200).json({ received: true, ignored: true });
+      return;
     }
 
-    res.status(200).json({ received: true });
+    const result = await pipeline.applyPayazaWebhook(decision);
+    store.markWebhookProcessed(dedupeKey);
+    res.status(200).json({ received: true, matched: result.matched });
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }

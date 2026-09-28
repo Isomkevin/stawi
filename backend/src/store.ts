@@ -17,6 +17,7 @@ export class InMemoryStore {
   private payouts = new Map<string, Payout>(); // payout_id -> Payout
   private payoutsByAccount = new Map<string, Payout[]>(); // account_id -> Payout[]
   private payoutsByIdempotency = new Map<string, Payout>(); // idempotency_key -> Payout
+  private payoutsByPayazaRef = new Map<string, string>(); // payaza transaction_reference -> payout_id
   private processedWebhookRefs = new Set<string>();
 
   public normalizePhone(phone: string): string {
@@ -138,6 +139,24 @@ export class InMemoryStore {
     if (payout.idempotency_key) {
       this.payoutsByIdempotency.set(payout.idempotency_key, payout);
     }
+    if (payout.payaza_reference) {
+      this.payoutsByPayazaRef.set(payout.payaza_reference, payout.id);
+    }
+  }
+
+  public updatePayout(payout: Payout): void {
+    this.payouts.set(payout.id, payout);
+    const list = this.payoutsByAccount.get(payout.account_id);
+    if (list) {
+      const idx = list.findIndex((p) => p.id === payout.id);
+      if (idx >= 0) list[idx] = payout;
+    }
+    if (payout.idempotency_key) {
+      this.payoutsByIdempotency.set(payout.idempotency_key, payout);
+    }
+    if (payout.payaza_reference) {
+      this.payoutsByPayazaRef.set(payout.payaza_reference, payout.id);
+    }
   }
 
   public getPayout(id: string): Payout | undefined {
@@ -154,6 +173,11 @@ export class InMemoryStore {
 
   public getPayoutByIdempotency(idempotencyKey: string): Payout | undefined {
     return this.payoutsByIdempotency.get(idempotencyKey);
+  }
+
+  public getPayoutByPayazaReference(reference: string): Payout | undefined {
+    const id = this.payoutsByPayazaRef.get(reference);
+    return id ? this.payouts.get(id) : undefined;
   }
 
   // Webhook idempotency
@@ -176,6 +200,7 @@ export class InMemoryStore {
     this.payouts.clear();
     this.payoutsByAccount.clear();
     this.payoutsByIdempotency.clear();
+    this.payoutsByPayazaRef.clear();
     this.processedWebhookRefs.clear();
   }
 }

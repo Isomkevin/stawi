@@ -104,6 +104,46 @@ describe("REST API Endpoints", () => {
     expect(resGood.status).toBe(200);
     expect(resGood.body.received).toBe(true);
 
+    const updated = store.getInvoice(invId);
+    expect(updated?.status).toBe("completed");
+
+    process.env.PAYAZA_MODE = "mock";
+  });
+
+  it("does not credit an underpaid Payaza collection", async () => {
+    const secret = "test-secret-key";
+    process.env.PAYAZA_SECRET_KEY = secret;
+    process.env.PAYAZA_MODE = "live";
+
+    const invRes = await request(app).post("/invoices").send({
+      type: "direct",
+      account_id: "acc_demo",
+      buyer_name: "Artisan Importers",
+      buyer_email: "buyer@artisan.com",
+      amount: 1500,
+      currency: "USD",
+      description: "Underpay",
+    });
+    const invId = invRes.body.id;
+    const payload = JSON.stringify({
+      transaction_reference: `STAWI-${invId}-SHORT`,
+      merchant_reference: `STAWI-${invId}-SHORT`,
+      amount_received: 100,
+      request_amount: 1500,
+      amount_validation: "UNDERPAYMENT",
+      currency_code: "USD",
+      status: "Completed",
+      additional_details: { invoice_id: invId },
+    });
+    const sig = crypto.createHmac("sha512", secret).update(payload).digest("base64");
+    const res = await request(app)
+      .post("/webhooks/payaza")
+      .set("Content-Type", "application/json")
+      .set("x-payaza-signature", sig)
+      .send(payload);
+
+    expect(res.status).toBe(200);
+    expect(store.getInvoice(invId)?.status).toBe("failed");
     process.env.PAYAZA_MODE = "mock";
   });
 });

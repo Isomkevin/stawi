@@ -21,6 +21,15 @@ export async function handleUssdCallback(req: Request, res: Response): Promise<v
 
   res.setHeader("Content-Type", "text/plain");
 
+  try {
+    await renderUssdMenu(res, sessionId, phoneNumber, text);
+  } catch (err) {
+    console.error("[USSD] Handler error:", err);
+    res.status(200).send("END Stawi is unavailable right now. Please dial again.");
+  }
+}
+
+async function renderUssdMenu(res: Response, sessionId: string, phoneNumber: string, text: string): Promise<void> {
   const segments = text ? text.split("*") : [];
   const level = segments.length;
 
@@ -66,7 +75,9 @@ export async function handleUssdCallback(req: Request, res: Response): Promise<v
       const amt = (p.amount_kes_cents / 100).toLocaleString(undefined, {
         minimumFractionDigits: 2,
       });
-      return `${p.kind.toUpperCase()}: KES ${amt} (${p.status})`;
+      const invoice = p.invoice_id !== "withdrawal" ? store.getInvoice(p.invoice_id) : undefined;
+      const ref = invoice?.reference || (p.kind === "withdrawal" ? "Withdrawal" : p.invoice_id);
+      return `${ref} - ${p.status} - KES ${amt}`;
     });
 
     res.status(200).send(`END Recent:\n${lines.join("\n")}`);

@@ -4,6 +4,8 @@ export type PayoutDestination = {
   details: string;
   account_name: string;
   is_verified: boolean;
+  /** Payaza bank code. Required for bank payouts; M-Pesa uses SAFKEN unless overridden. */
+  bank_code?: string;
 };
 
 export type Account = {
@@ -58,6 +60,8 @@ export type Invoice = {
   fee_kes_cents: number | null;
   kes_total_cents: number | null;
   payaza_checkout_reference: string | null;
+  /** Payaza payment-link id, saved so webhooks can be correlated back to this invoice. */
+  payaza_link_id?: string | null;
   created_at: string;
   due_at: string | null;
 };
@@ -92,6 +96,8 @@ export type Payout = {
   status: PayoutStatus;
   created_at: string;
   idempotency_key?: string;
+  /** Beneficiary transaction_reference sent to Payaza, used to apply payout webhooks. */
+  payaza_reference?: string | null;
 };
 
 export type SplitLine = {

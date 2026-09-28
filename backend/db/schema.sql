@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS payout_destinations (
   type VARCHAR(32) NOT NULL CHECK (type IN ('mpesa', 'bank')),
   details VARCHAR(255) NOT NULL,
   account_name VARCHAR(255) NOT NULL,
+  bank_code VARCHAR(32),
   is_verified BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -60,6 +61,7 @@ CREATE TABLE IF NOT EXISTS invoices (
   fee_kes_cents BIGINT,
   kes_total_cents BIGINT,
   payaza_checkout_reference VARCHAR(128),
+  payaza_link_id VARCHAR(128),
   due_at TIMESTAMP WITH TIME ZONE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -87,6 +89,7 @@ CREATE TABLE IF NOT EXISTS payouts (
   destination_id VARCHAR(64) REFERENCES payout_destinations(id) ON DELETE SET NULL,
   status VARCHAR(32) NOT NULL CHECK (status IN ('pending', 'sent', 'confirmed', 'failed')),
   idempotency_key VARCHAR(128) UNIQUE,
+  payaza_reference VARCHAR(128),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
