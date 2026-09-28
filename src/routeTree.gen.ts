@@ -15,12 +15,14 @@ import { Route as CoopRouteImport } from './routes/coop'
 import { Route as DirectRouteImport } from './routes/direct'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
+import { Route as ApiCoopAssistantRouteImport } from './routes/api/coop-assistant'
 import { Route as AppIndexRouteImport } from './routes/app.index'
 import { Route as AppActivityRouteImport } from './routes/app.activity'
 import { Route as AppHomeRouteImport } from './routes/app.home'
 import { Route as AppProfileRouteImport } from './routes/app.profile'
 import { Route as AppWithdrawRouteImport } from './routes/app.withdraw'
 import { Route as CoopIndexRouteImport } from './routes/coop.index'
+import { Route as CoopAssistantRouteImport } from './routes/coop.assistant'
 import { Route as CoopMembersRouteImport } from './routes/coop.members'
 import { Route as CoopOverviewRouteImport } from './routes/coop.overview'
 import { Route as CoopPayoutsRouteImport } from './routes/coop.payouts'
@@ -64,6 +66,11 @@ const OnboardingRoute = OnboardingRouteImport.update({
   path: '/onboarding',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiCoopAssistantRoute = ApiCoopAssistantRouteImport.update({
+  id: '/api/coop-assistant',
+  path: '/api/coop-assistant',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AppIndexRoute = AppIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -92,6 +99,11 @@ const AppWithdrawRoute = AppWithdrawRouteImport.update({
 const CoopIndexRoute = CoopIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => CoopRoute,
+} as any)
+const CoopAssistantRoute = CoopAssistantRouteImport.update({
+  id: '/assistant',
+  path: '/assistant',
   getParentRoute: () => CoopRoute,
 } as any)
 const CoopMembersRoute = CoopMembersRouteImport.update({
@@ -162,10 +174,12 @@ export interface FileRoutesByFullPath {
   '/direct': typeof DirectRouteWithChildren
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
+  '/api/coop-assistant': typeof ApiCoopAssistantRoute
   '/app/activity': typeof AppActivityRoute
   '/app/home': typeof AppHomeRoute
   '/app/profile': typeof AppProfileRoute
   '/app/withdraw': typeof AppWithdrawRoute
+  '/coop/assistant': typeof CoopAssistantRoute
   '/coop/members': typeof CoopMembersRoute
   '/coop/overview': typeof CoopOverviewRoute
   '/coop/payouts': typeof CoopPayoutsRoute
@@ -185,10 +199,12 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
+  '/api/coop-assistant': typeof ApiCoopAssistantRoute
   '/app/activity': typeof AppActivityRoute
   '/app/home': typeof AppHomeRoute
   '/app/profile': typeof AppProfileRoute
   '/app/withdraw': typeof AppWithdrawRoute
+  '/coop/assistant': typeof CoopAssistantRoute
   '/coop/members': typeof CoopMembersRoute
   '/coop/overview': typeof CoopOverviewRoute
   '/coop/payouts': typeof CoopPayoutsRoute
@@ -212,10 +228,12 @@ export interface FileRoutesById {
   '/direct': typeof DirectRouteWithChildren
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
+  '/api/coop-assistant': typeof ApiCoopAssistantRoute
   '/app/activity': typeof AppActivityRoute
   '/app/home': typeof AppHomeRoute
   '/app/profile': typeof AppProfileRoute
   '/app/withdraw': typeof AppWithdrawRoute
+  '/coop/assistant': typeof CoopAssistantRoute
   '/coop/members': typeof CoopMembersRoute
   '/coop/overview': typeof CoopOverviewRoute
   '/coop/payouts': typeof CoopPayoutsRoute
@@ -240,10 +258,12 @@ export interface FileRouteTypes {
     | '/direct'
     | '/login'
     | '/onboarding'
+    | '/api/coop-assistant'
     | '/app/activity'
     | '/app/home'
     | '/app/profile'
     | '/app/withdraw'
+    | '/coop/assistant'
     | '/coop/members'
     | '/coop/overview'
     | '/coop/payouts'
@@ -263,10 +283,12 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/onboarding'
+    | '/api/coop-assistant'
     | '/app/activity'
     | '/app/home'
     | '/app/profile'
     | '/app/withdraw'
+    | '/coop/assistant'
     | '/coop/members'
     | '/coop/overview'
     | '/coop/payouts'
@@ -289,10 +311,12 @@ export interface FileRouteTypes {
     | '/direct'
     | '/login'
     | '/onboarding'
+    | '/api/coop-assistant'
     | '/app/activity'
     | '/app/home'
     | '/app/profile'
     | '/app/withdraw'
+    | '/coop/assistant'
     | '/coop/members'
     | '/coop/overview'
     | '/coop/payouts'
@@ -316,6 +340,7 @@ export interface RootRouteChildren {
   DirectRoute: typeof DirectRouteWithChildren
   LoginRoute: typeof LoginRoute
   OnboardingRoute: typeof OnboardingRoute
+  ApiCoopAssistantRoute: typeof ApiCoopAssistantRoute
   DemoUssdRoute: typeof DemoUssdRoute
   PayInvoiceIdRoute: typeof PayInvoiceIdRoute
 }
@@ -364,6 +389,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OnboardingRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/coop-assistant': {
+      id: '/api/coop-assistant'
+      path: '/api/coop-assistant'
+      fullPath: '/api/coop-assistant'
+      preLoaderRoute: typeof ApiCoopAssistantRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/app/': {
       id: '/app/'
       path: '/'
@@ -404,6 +436,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/coop/'
       preLoaderRoute: typeof CoopIndexRouteImport
+      parentRoute: typeof CoopRoute
+    }
+    '/coop/assistant': {
+      id: '/coop/assistant'
+      path: '/assistant'
+      fullPath: '/coop/assistant'
+      preLoaderRoute: typeof CoopAssistantRouteImport
       parentRoute: typeof CoopRoute
     }
     '/coop/members': {
@@ -512,6 +551,7 @@ const AppRouteChildren: AppRouteChildren = {
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 
 interface CoopRouteChildren {
+  CoopAssistantRoute: typeof CoopAssistantRoute
   CoopMembersRoute: typeof CoopMembersRoute
   CoopOverviewRoute: typeof CoopOverviewRoute
   CoopPayoutsRoute: typeof CoopPayoutsRoute
@@ -522,6 +562,7 @@ interface CoopRouteChildren {
 }
 
 const CoopRouteChildren: CoopRouteChildren = {
+  CoopAssistantRoute: CoopAssistantRoute,
   CoopMembersRoute: CoopMembersRoute,
   CoopOverviewRoute: CoopOverviewRoute,
   CoopPayoutsRoute: CoopPayoutsRoute,
@@ -557,6 +598,7 @@ const rootRouteChildren: RootRouteChildren = {
   DirectRoute: DirectRouteWithChildren,
   LoginRoute: LoginRoute,
   OnboardingRoute: OnboardingRoute,
+  ApiCoopAssistantRoute: ApiCoopAssistantRoute,
   DemoUssdRoute: DemoUssdRoute,
   PayInvoiceIdRoute: PayInvoiceIdRoute,
 }

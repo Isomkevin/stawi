@@ -109,7 +109,7 @@ function Assistant() {
 
   return (
     <div className="flex h-full flex-col gap-4">
-      <PageHeader title="Ask Stawi" subtitle="Plain-language answers from your co-op's live invoices, balances and payouts." />
+      <PageHeader title="Ask Stawi" description="Plain-language answers from your co-op's live invoices, balances and payouts." />
 
       <div className="flex-1 space-y-4">
         {messages.length === 0 ? (
