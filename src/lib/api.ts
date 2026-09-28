@@ -11,7 +11,9 @@ import {
   type CreateInvoiceBody,
   type Invoice,
   type InvoiceDetail,
+  type NewDestinationBody,
   type Payout,
+  type PayoutDestination,
   type WithdrawBody,
 } from "./types";
 
@@ -41,6 +43,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     };
     throw new ApiError(response.status, body.error ?? "Request failed", body.attemptsLeft);
   }
+  if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
 
@@ -131,8 +134,19 @@ export const api = {
   listCoopPayouts: (coopId: string): Promise<Payout[]> =>
     isMock ? mockApi.listCoopPayouts(coopId) : request(`/coops/${coopId}/payouts`),
 
+  // POST /accounts/{id}/destinations → PayoutDestination
+  addDestination: (accountId: string, body: NewDestinationBody): Promise<PayoutDestination> =>
+    isMock
+      ? mockApi.addDestination(accountId, body)
+      : request(`/accounts/${accountId}/destinations`, { method: "POST", body: JSON.stringify(body) }),
+
+  // DELETE /accounts/{id}/destinations/{destId} → 204
+  removeDestination: (accountId: string, destId: string): Promise<void> =>
+    isMock
+      ? mockApi.removeDestination(accountId, destId)
+      : request<void>(`/accounts/${accountId}/destinations/${destId}`, { method: "DELETE" }),
+
   // POST /name-enquiry → { account_name }
-  // TODO(backend): payout destination management (POST/DELETE /accounts/{id}/destinations)
   resolveAccountName: (type: "mpesa" | "bank", details: string): Promise<string> =>
     isMock
       ? mockApi.resolveAccountName(type, details)

@@ -153,6 +153,8 @@ export type WithdrawBody = {
   idempotency_key: string;
 };
 
+export type NewDestinationBody = { type: "mpesa" | "bank"; details: string; account_name: string };
+
 export type Role = "farmer" | "exporter" | "treasurer" | "buyer";
 
 export class ApiError extends Error {
