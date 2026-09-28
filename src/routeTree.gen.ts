@@ -20,7 +20,10 @@ import { Route as AppHomeRouteImport } from './routes/app.home'
 import { Route as AppProfileRouteImport } from './routes/app.profile'
 import { Route as AppWithdrawRouteImport } from './routes/app.withdraw'
 import { Route as CoopIndexRouteImport } from './routes/coop.index'
+import { Route as CoopMembersRouteImport } from './routes/coop.members'
 import { Route as CoopOverviewRouteImport } from './routes/coop.overview'
+import { Route as CoopPayoutsRouteImport } from './routes/coop.payouts'
+import { Route as CoopSettingsRouteImport } from './routes/coop.settings'
 import { Route as PayInvoiceIdRouteImport } from './routes/pay.$invoiceId'
 import { Route as CoopInvoicesIndexRouteImport } from './routes/coop.invoices.index'
 import { Route as CoopInvoicesIdRouteImport } from './routes/coop.invoices.$id'
@@ -80,9 +83,24 @@ const CoopIndexRoute = CoopIndexRouteImport.update({
   path: '/',
   getParentRoute: () => CoopRoute,
 } as any)
+const CoopMembersRoute = CoopMembersRouteImport.update({
+  id: '/members',
+  path: '/members',
+  getParentRoute: () => CoopRoute,
+} as any)
 const CoopOverviewRoute = CoopOverviewRouteImport.update({
   id: '/overview',
   path: '/overview',
+  getParentRoute: () => CoopRoute,
+} as any)
+const CoopPayoutsRoute = CoopPayoutsRouteImport.update({
+  id: '/payouts',
+  path: '/payouts',
+  getParentRoute: () => CoopRoute,
+} as any)
+const CoopSettingsRoute = CoopSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => CoopRoute,
 } as any)
 const PayInvoiceIdRoute = PayInvoiceIdRouteImport.update({
@@ -111,7 +129,10 @@ export interface FileRoutesByFullPath {
   '/app/home': typeof AppHomeRoute
   '/app/profile': typeof AppProfileRoute
   '/app/withdraw': typeof AppWithdrawRoute
+  '/coop/members': typeof CoopMembersRoute
   '/coop/overview': typeof CoopOverviewRoute
+  '/coop/payouts': typeof CoopPayoutsRoute
+  '/coop/settings': typeof CoopSettingsRoute
   '/pay/$invoiceId': typeof PayInvoiceIdRoute
   '/app/': typeof AppIndexRoute
   '/coop/': typeof CoopIndexRoute
@@ -126,7 +147,10 @@ export interface FileRoutesByTo {
   '/app/home': typeof AppHomeRoute
   '/app/profile': typeof AppProfileRoute
   '/app/withdraw': typeof AppWithdrawRoute
+  '/coop/members': typeof CoopMembersRoute
   '/coop/overview': typeof CoopOverviewRoute
+  '/coop/payouts': typeof CoopPayoutsRoute
+  '/coop/settings': typeof CoopSettingsRoute
   '/pay/$invoiceId': typeof PayInvoiceIdRoute
   '/app': typeof AppIndexRoute
   '/coop': typeof CoopIndexRoute
@@ -144,7 +168,10 @@ export interface FileRoutesById {
   '/app/home': typeof AppHomeRoute
   '/app/profile': typeof AppProfileRoute
   '/app/withdraw': typeof AppWithdrawRoute
+  '/coop/members': typeof CoopMembersRoute
   '/coop/overview': typeof CoopOverviewRoute
+  '/coop/payouts': typeof CoopPayoutsRoute
+  '/coop/settings': typeof CoopSettingsRoute
   '/pay/$invoiceId': typeof PayInvoiceIdRoute
   '/app/': typeof AppIndexRoute
   '/coop/': typeof CoopIndexRoute
@@ -163,7 +190,10 @@ export interface FileRouteTypes {
     | '/app/home'
     | '/app/profile'
     | '/app/withdraw'
+    | '/coop/members'
     | '/coop/overview'
+    | '/coop/payouts'
+    | '/coop/settings'
     | '/pay/$invoiceId'
     | '/app/'
     | '/coop/'
@@ -178,7 +208,10 @@ export interface FileRouteTypes {
     | '/app/home'
     | '/app/profile'
     | '/app/withdraw'
+    | '/coop/members'
     | '/coop/overview'
+    | '/coop/payouts'
+    | '/coop/settings'
     | '/pay/$invoiceId'
     | '/app'
     | '/coop'
@@ -195,7 +228,10 @@ export interface FileRouteTypes {
     | '/app/home'
     | '/app/profile'
     | '/app/withdraw'
+    | '/coop/members'
     | '/coop/overview'
+    | '/coop/payouts'
+    | '/coop/settings'
     | '/pay/$invoiceId'
     | '/app/'
     | '/coop/'
@@ -291,11 +327,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CoopIndexRouteImport
       parentRoute: typeof CoopRoute
     }
+    '/coop/members': {
+      id: '/coop/members'
+      path: '/members'
+      fullPath: '/coop/members'
+      preLoaderRoute: typeof CoopMembersRouteImport
+      parentRoute: typeof CoopRoute
+    }
     '/coop/overview': {
       id: '/coop/overview'
       path: '/overview'
       fullPath: '/coop/overview'
       preLoaderRoute: typeof CoopOverviewRouteImport
+      parentRoute: typeof CoopRoute
+    }
+    '/coop/payouts': {
+      id: '/coop/payouts'
+      path: '/payouts'
+      fullPath: '/coop/payouts'
+      preLoaderRoute: typeof CoopPayoutsRouteImport
+      parentRoute: typeof CoopRoute
+    }
+    '/coop/settings': {
+      id: '/coop/settings'
+      path: '/settings'
+      fullPath: '/coop/settings'
+      preLoaderRoute: typeof CoopSettingsRouteImport
       parentRoute: typeof CoopRoute
     }
     '/pay/$invoiceId': {
@@ -341,14 +398,20 @@ const AppRouteChildren: AppRouteChildren = {
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 
 interface CoopRouteChildren {
+  CoopMembersRoute: typeof CoopMembersRoute
   CoopOverviewRoute: typeof CoopOverviewRoute
+  CoopPayoutsRoute: typeof CoopPayoutsRoute
+  CoopSettingsRoute: typeof CoopSettingsRoute
   CoopIndexRoute: typeof CoopIndexRoute
   CoopInvoicesIdRoute: typeof CoopInvoicesIdRoute
   CoopInvoicesIndexRoute: typeof CoopInvoicesIndexRoute
 }
 
 const CoopRouteChildren: CoopRouteChildren = {
+  CoopMembersRoute: CoopMembersRoute,
   CoopOverviewRoute: CoopOverviewRoute,
+  CoopPayoutsRoute: CoopPayoutsRoute,
+  CoopSettingsRoute: CoopSettingsRoute,
   CoopIndexRoute: CoopIndexRoute,
   CoopInvoicesIdRoute: CoopInvoicesIdRoute,
   CoopInvoicesIndexRoute: CoopInvoicesIndexRoute,
