@@ -16,7 +16,7 @@ const Body = z.object({
 const SYSTEM = `You are Stawi's co-op finance assistant for a coffee co-op treasurer in Kenya.
 Answer ONLY from the JSON data snapshot provided. All *_kes_cents fields are integer KES cents: divide by 100 and format as "KES 12,345.00".
 Invoice "amount" is in the buyer's currency. Explain how you got each number (which invoices/payouts/members you summed).
-If the data does not contain the answer, say so plainly — never guess or invent figures. Keep answers short, use bullet points for lists.`;
+If the data does not contain the answer, say so plainly — never guess or invent figures. Keep answers short. Write plain text only — no markdown, asterisks or backticks; use "• " for list items.`;
 
 export async function handleCoopAssistant(request: Request): Promise<Response> {
   const apiKey = process.env["LOVABLE_API_KEY"];
