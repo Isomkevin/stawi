@@ -4,8 +4,8 @@ import { cn } from "@/lib/utils";
 
 export type TimelineStep = {
   label: string;
-  detail?: string;
-  at?: string;
+  detail?: string | undefined;
+  at?: string | undefined;
   state: "done" | "active" | "todo" | "failed";
 };
 

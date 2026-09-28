@@ -1,3 +1,5 @@
+import { DevMenu } from "@/components/stawi/DevMenu";
+import { Toaster } from "@/components/ui/sonner";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   Outlet,
@@ -137,6 +139,8 @@ function RootComponent() {
         <SessionProvider>
           {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
           <Outlet />
+          <DevMenu />
+          <Toaster />
         </SessionProvider>
       </I18nProvider>
     </QueryClientProvider>

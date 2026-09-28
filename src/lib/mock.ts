@@ -102,7 +102,7 @@ const accounts: Account[] = [
   })),
 ];
 
-export const FARMER_ID = "acc_farmer1";
+export const FARMER_ID = "acc_farmer_1";
 export const EXPORTER_ID = "acc_exporter";
 export const TREASURER_ID = "acc_treasurer";
 
@@ -334,7 +334,7 @@ function seedPayouts() {
   });
   const settling = invoices.find((i) => i.id === "inv_2410")!;
   splitFor(settling)?.forEach((line, i) => {
-    const failing = line.account_id === "acc_farmer8";
+    const failing = line.account_id === "acc_farmer_8";
     payouts.push({
       id: `pay_2410_${i}`,
       invoice_id: settling.id,

@@ -10,7 +10,7 @@ type Session = {
 };
 
 type SessionContextValue = Session & {
-  signIn: (role: Role) => void;
+  signIn: (role: Role, accountId?: string) => void;
   signOut: () => void;
 };
 
@@ -29,9 +29,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const value = useMemo<SessionContextValue>(
     () => ({
       ...session,
-      signIn: (role) => {
+      signIn: (role, accountId) => {
         setSessionToken(`demo-token-${role}`);
-        setSession(role === "buyer" ? { role, accountId: null, coopId: null } : roleDefaults[role]);
+        const base = role === "buyer" ? { role, accountId: null, coopId: null } : roleDefaults[role];
+        setSession(accountId ? { ...base, accountId } : base);
       },
       signOut: () => {
         setSessionToken(null);
