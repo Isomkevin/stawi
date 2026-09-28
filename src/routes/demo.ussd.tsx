@@ -49,9 +49,9 @@ function UssdSim() {
   };
 
   // Mirrors the backend USSD handler: text is the *-joined history of inputs.
-  const handle = async (p: string[]) => {
+  const handle = async (p: string[], sid: string = sessionId) => {
     const text = p.join("*");
-    setLog((l) => [...l, { dir: "req", body: JSON.stringify({ sessionId, phoneNumber: "+254712004501", serviceCode: CODE, text }) }]);
+    setLog((l) => [...l, { dir: "req", body: JSON.stringify({ sessionId: sid, phoneNumber: "+254712004501", serviceCode: CODE, text }) }]);
     setBusy(true);
     try {
       if (p.length === 0) return respond(MENU, p);
@@ -76,7 +76,7 @@ function UssdSim() {
             destination_id: "dst_f1",
             amount_kes_cents: Math.round(amount * 100),
             pin: rest[1] ?? "",
-            idempotency_key: `${sessionId}-${text}`,
+            idempotency_key: `${sid}-${text}`,
           });
           void qc.invalidateQueries({ queryKey: ["account", FARMER_ID] });
           return respond(`END Sent KES ${amount.toLocaleString()}. You will receive an M-Pesa SMS.`, []);
@@ -111,9 +111,10 @@ function UssdSim() {
       return;
     }
     setSessions((s) => s + 1);
-    setSessionId(`ATUid_${Date.now().toString(36)}`);
+    const sid = `ATUid_${Date.now().toString(36)}`;
+    setSessionId(sid);
     setDial("");
-    void handle([]);
+    void handle([], sid);
   };
   const hangup = () => {
     setScreen(null);
