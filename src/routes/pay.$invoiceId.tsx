@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { motion } from "motion/react";
 import {
   ArrowLeft,
@@ -99,14 +99,14 @@ function PayPage() {
         <ReceiptView
           invoice={invoice}
           payeeName={payeeName}
-          farmerCount={coopId ? (members?.length ?? 0) : null}
+          farmerCount={coopId ? (membersQuery.data?.length ?? 0) : null}
           transactions={data.transactions}
         />
       ) : (
         <UnpaidView
           invoice={invoice}
           payeeName={payeeName}
-          farmerCount={coopId ? (members?.length ?? 0) : null}
+          farmerCount={coopId ? (membersQuery.data?.length ?? 0) : null}
         />
       )}
     </Shell>
