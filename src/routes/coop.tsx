@@ -1,5 +1,5 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
-import { FileText, LayoutDashboard, Settings, Users, Wallet } from "lucide-react";
+import { FileText, LayoutDashboard, MessageCircleQuestion, Settings, Users, Wallet } from "lucide-react";
 import { RoleGate } from "@/components/stawi/RoleGate";
 import { DashboardShell } from "@/features/shared/DashboardShell";
 
@@ -28,6 +28,7 @@ function CoopLayout() {
           { to: "/coop/invoices", label: "Invoices", icon: FileText },
           { to: "/coop/members", label: "Members", icon: Users },
           { to: "/coop/payouts", label: "Payouts", icon: Wallet },
+          { to: "/coop/assistant", label: "Ask Stawi", icon: MessageCircleQuestion },
           { to: "/coop/settings", label: "Settings", icon: Settings },
         ]}
       >
