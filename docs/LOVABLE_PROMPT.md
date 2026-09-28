@@ -174,8 +174,6 @@ PATCH /coops/{id}/members/{accountId}   { contribution_share } -> CoopMember
 POST /name-enquiry                      { type, details } -> { account_name }  404 if unknown
 ```
 Demo seed IDs are shared by the frontend mock and backend seed: coop_kiambu, acc_treasurer, acc_exporter, acc_farmer_1..N, buyer invoice inv_2413.
-```
-```
 Errors are JSON `{ error: string }` with 400/403/404. Anything the UI needs beyond this (e.g. destination management, OTP login, invite links, list of payouts per co-op) mark clearly in `src/lib/api.ts` under `// TODO(backend): add to contract`.
 
 ## 9. Mock data (make the demo feel real)
