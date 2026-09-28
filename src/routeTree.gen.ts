@@ -13,7 +13,10 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/app'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppIndexRouteImport } from './routes/app.index'
+import { Route as AppActivityRouteImport } from './routes/app.activity'
 import { Route as AppHomeRouteImport } from './routes/app.home'
+import { Route as AppProfileRouteImport } from './routes/app.profile'
+import { Route as AppWithdrawRouteImport } from './routes/app.withdraw'
 import { Route as PayInvoiceIdRouteImport } from './routes/pay.$invoiceId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -36,9 +39,24 @@ const AppIndexRoute = AppIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppRoute,
 } as any)
+const AppActivityRoute = AppActivityRouteImport.update({
+  id: '/activity',
+  path: '/activity',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppHomeRoute = AppHomeRouteImport.update({
   id: '/home',
   path: '/home',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppProfileRoute = AppProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppWithdrawRoute = AppWithdrawRouteImport.update({
+  id: '/withdraw',
+  path: '/withdraw',
   getParentRoute: () => AppRoute,
 } as any)
 const PayInvoiceIdRoute = PayInvoiceIdRouteImport.update({
@@ -51,14 +69,20 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
+  '/app/activity': typeof AppActivityRoute
   '/app/home': typeof AppHomeRoute
+  '/app/profile': typeof AppProfileRoute
+  '/app/withdraw': typeof AppWithdrawRoute
   '/pay/$invoiceId': typeof PayInvoiceIdRoute
   '/app/': typeof AppIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/app/activity': typeof AppActivityRoute
   '/app/home': typeof AppHomeRoute
+  '/app/profile': typeof AppProfileRoute
+  '/app/withdraw': typeof AppWithdrawRoute
   '/pay/$invoiceId': typeof PayInvoiceIdRoute
   '/app': typeof AppIndexRoute
 }
@@ -67,21 +91,44 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
+  '/app/activity': typeof AppActivityRoute
   '/app/home': typeof AppHomeRoute
+  '/app/profile': typeof AppProfileRoute
+  '/app/withdraw': typeof AppWithdrawRoute
   '/pay/$invoiceId': typeof PayInvoiceIdRoute
   '/app/': typeof AppIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/app' | '/login' | '/app/home' | '/pay/$invoiceId' | '/app/'
+  fullPaths:
+    | '/'
+    | '/app'
+    | '/login'
+    | '/app/activity'
+    | '/app/home'
+    | '/app/profile'
+    | '/app/withdraw'
+    | '/pay/$invoiceId'
+    | '/app/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/login' | '/app/home' | '/pay/$invoiceId' | '/app'
+  to:
+    | '/'
+    | '/login'
+    | '/app/activity'
+    | '/app/home'
+    | '/app/profile'
+    | '/app/withdraw'
+    | '/pay/$invoiceId'
+    | '/app'
   id:
     | '__root__'
     | '/'
     | '/app'
     | '/login'
+    | '/app/activity'
     | '/app/home'
+    | '/app/profile'
+    | '/app/withdraw'
     | '/pay/$invoiceId'
     | '/app/'
   fileRoutesById: FileRoutesById
@@ -123,11 +170,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/activity': {
+      id: '/app/activity'
+      path: '/activity'
+      fullPath: '/app/activity'
+      preLoaderRoute: typeof AppActivityRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/app/home': {
       id: '/app/home'
       path: '/home'
       fullPath: '/app/home'
       preLoaderRoute: typeof AppHomeRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/profile': {
+      id: '/app/profile'
+      path: '/profile'
+      fullPath: '/app/profile'
+      preLoaderRoute: typeof AppProfileRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/withdraw': {
+      id: '/app/withdraw'
+      path: '/withdraw'
+      fullPath: '/app/withdraw'
+      preLoaderRoute: typeof AppWithdrawRouteImport
       parentRoute: typeof AppRoute
     }
     '/pay/$invoiceId': {
@@ -141,12 +209,18 @@ declare module '@tanstack/react-router' {
 }
 
 interface AppRouteChildren {
+  AppActivityRoute: typeof AppActivityRoute
   AppHomeRoute: typeof AppHomeRoute
+  AppProfileRoute: typeof AppProfileRoute
+  AppWithdrawRoute: typeof AppWithdrawRoute
   AppIndexRoute: typeof AppIndexRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppActivityRoute: AppActivityRoute,
   AppHomeRoute: AppHomeRoute,
+  AppProfileRoute: AppProfileRoute,
+  AppWithdrawRoute: AppWithdrawRoute,
   AppIndexRoute: AppIndexRoute,
 }
 
