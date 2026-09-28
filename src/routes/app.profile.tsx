@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { accountOptions } from "@/lib/queries";
 import { useAccountId, useSession } from "@/lib/session";
 import { useI18n } from "@/lib/i18n";
-import { initials, maskDestination } from "@/lib/format";
+import { initials } from "@/lib/format";
 import { DEMO_PIN } from "@/lib/mock";
 
 export const Route = createFileRoute("/app/profile")({
