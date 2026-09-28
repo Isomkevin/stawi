@@ -1,0 +1,152 @@
+import { mockApi } from "./mock";
+import {
+  ApiError,
+  type Account,
+  type Balance,
+  type CheckoutSession,
+  type Coop,
+  type CoopMember,
+  type CoopMetrics,
+  type CreateAccountBody,
+  type CreateInvoiceBody,
+  type Invoice,
+  type InvoiceDetail,
+  type Payout,
+  type WithdrawBody,
+} from "./types";
+
+export const API_MODE = (import.meta.env["VITE_API_MODE"] as "mock" | "live") ?? "mock";
+export const API_BASE_URL = (import.meta.env["VITE_API_BASE_URL"] as string) ?? "";
+export const isMock = API_MODE !== "live";
+
+let sessionToken: string | null = null; // memory only; live mode expects an httpOnly cookie too
+export function setSessionToken(token: string | null) {
+  sessionToken = token;
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...init,
+    credentials: "include",
+    headers: {
+      "content-type": "application/json",
+      ...(sessionToken ? { authorization: `Bearer ${sessionToken}` } : {}),
+      ...(init?.headers ?? {}),
+    },
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as {
+      error?: string;
+      attemptsLeft?: number;
+    };
+    throw new ApiError(response.status, body.error ?? "Request failed", body.attemptsLeft);
+  }
+  return (await response.json()) as T;
+}
+
+export const api = {
+  // POST /accounts
+  createAccount: (body: CreateAccountBody): Promise<Account> =>
+    isMock ? mockApi.createAccount(body) : request("/accounts", { method: "POST", body: JSON.stringify(body) }),
+
+  // GET /accounts/{id}
+  getAccount: (accountId: string): Promise<Account> =>
+    isMock ? mockApi.getAccount(accountId) : request(`/accounts/${accountId}`),
+
+  // GET /accounts/{id}/balance
+  getBalance: (accountId: string): Promise<Balance> =>
+    isMock ? mockApi.getBalance(accountId) : request(`/accounts/${accountId}/balance`),
+
+  // GET /accounts/{id}/transactions?limit
+  getAccountTransactions: (accountId: string, limit = 50): Promise<Payout[]> =>
+    isMock
+      ? mockApi.getAccountTransactions(accountId, limit)
+      : request(`/accounts/${accountId}/transactions?limit=${limit}`),
+
+  // POST /accounts/{id}/withdraw
+  withdraw: (accountId: string, body: WithdrawBody): Promise<Payout> =>
+    isMock
+      ? mockApi.withdraw(accountId, body)
+      : request(`/accounts/${accountId}/withdraw`, { method: "POST", body: JSON.stringify(body) }),
+
+  // GET /coops/{id}
+  getCoop: (coopId: string): Promise<Coop> =>
+    isMock ? mockApi.getCoop(coopId) : request(`/coops/${coopId}`),
+
+  // GET /coops/{id}/members
+  getCoopMembers: (coopId: string): Promise<CoopMember[]> =>
+    isMock ? mockApi.getCoopMembers(coopId) : request(`/coops/${coopId}/members`),
+
+  // POST /coops/{id}/members
+  addCoopMember: (coopId: string, member: Omit<CoopMember, "coop_id">): Promise<CoopMember> =>
+    isMock
+      ? mockApi.addCoopMember(coopId, member)
+      : request(`/coops/${coopId}/members`, { method: "POST", body: JSON.stringify(member) }),
+
+  // GET /coops/{id}/metrics
+  getCoopMetrics: (coopId: string): Promise<CoopMetrics> =>
+    isMock ? mockApi.getCoopMetrics(coopId) : request(`/coops/${coopId}/metrics`),
+
+  // GET /invoices?coop_id=&account_id=
+  listInvoices: (params: { coop_id?: string; account_id?: string }): Promise<Invoice[]> => {
+    if (isMock) return mockApi.listInvoices(params);
+    const query = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => Boolean(v)) as [string, string][],
+    );
+    return request(`/invoices?${query.toString()}`);
+  },
+
+  // POST /invoices
+  createInvoice: (body: CreateInvoiceBody): Promise<Invoice> =>
+    isMock ? mockApi.createInvoice(body) : request("/invoices", { method: "POST", body: JSON.stringify(body) }),
+
+  // GET /invoices/{id}
+  getInvoice: (invoiceId: string): Promise<InvoiceDetail> =>
+    isMock ? mockApi.getInvoice(invoiceId) : request(`/invoices/${invoiceId}`),
+
+  // POST /invoices/{id}/checkout-session
+  createCheckoutSession: (invoiceId: string): Promise<CheckoutSession> =>
+    isMock
+      ? mockApi.createCheckoutSession(invoiceId)
+      : request(`/invoices/${invoiceId}/checkout-session`, { method: "POST" }),
+
+  // POST /invoices/{id}/approve-split
+  approveSplit: (invoiceId: string, treasurerId: string, pin: string): Promise<Invoice> =>
+    isMock
+      ? mockApi.approveSplit(invoiceId, pin)
+      : request(`/invoices/${invoiceId}/approve-split`, {
+          method: "POST",
+          body: JSON.stringify({ treasurer_id: treasurerId, pin }),
+        }),
+
+  // POST /dev/simulate-payment/{invoiceId} — mock/demo backend only
+  simulatePayment: (invoiceId: string): Promise<Invoice> =>
+    isMock
+      ? mockApi.simulatePayment(invoiceId)
+      : request(`/dev/simulate-payment/${invoiceId}`, { method: "POST" }),
+
+  // TODO(backend): add to contract — list payouts for a co-op
+  listCoopPayouts: (coopId: string): Promise<Payout[]> =>
+    isMock ? mockApi.listCoopPayouts(coopId) : request(`/coops/${coopId}/payouts`),
+
+  // TODO(backend): add to contract — payout destination management
+  //   POST /accounts/{id}/destinations, DELETE /accounts/{id}/destinations/{destId}
+  // TODO(backend): add to contract — name enquiry for a destination
+  resolveAccountName: (type: "mpesa" | "bank", details: string): Promise<string> =>
+    isMock
+      ? mockApi.resolveAccountName(type, details)
+      : request(`/name-enquiry`, { method: "POST", body: JSON.stringify({ type, details }) }),
+
+  // TODO(backend): add to contract — OTP login (POST /auth/otp, POST /auth/verify)
+  // TODO(backend): add to contract — co-op invite links (POST /coops/{id}/invites)
+  // TODO(backend): add to contract — member share updates (PATCH /coops/{id}/members/{accountId})
+  updateMemberShare: (coopId: string, accountId: string, share: number): Promise<void> =>
+    isMock
+      ? mockApi.updateMemberShare(accountId, share)
+      : request(`/coops/${coopId}/members/${accountId}`, {
+          method: "PATCH",
+          body: JSON.stringify({ contribution_share: share }),
+        }),
+};
+
+export { ApiError };
