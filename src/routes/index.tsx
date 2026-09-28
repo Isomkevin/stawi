@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { motion } from "motion/react";
+import heroImg from "@/assets/hero.png";
 import {
   ArrowRight,
   Clock3,
@@ -115,46 +116,66 @@ function Hero() {
   return (
     <section className="motif grain relative overflow-hidden px-4 pt-32 pb-16 sm:px-6 sm:pt-40 sm:pb-24">
       <div className="mx-auto max-w-6xl">
-        <motion.div
-          initial={{ opacity: 0, y: 24 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, ease }}
-          className="max-w-3xl"
-        >
-          <p className="inline-flex items-center gap-2 rounded-full border border-border bg-card/70 px-3 py-1 text-xs font-medium tracking-wide text-sage uppercase">
-            <ShieldCheck className="size-3.5" strokeWidth={1.75} />
-            Cross-border payments for African exports
-          </p>
-          <h1 className="text-display mt-6 text-4xl leading-[1.05] font-medium sm:text-6xl">
-            One payment in.{" "}
-            <span className="text-lime">Every farmer paid, same day.</span>
-          </h1>
-          <p className="mt-6 max-w-xl text-lg text-muted-foreground">
-            Your buyer pays one invoice in dollars or euros. Stawi converts at a live rate, takes a
-            flat 0.8%, and splits the rest to every member's M-Pesa — today, not next month.
-          </p>
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <Button asChild size="lg" className="min-h-[48px] text-base">
-              <Link to="/login">
-                Get paid the same day
-                <ArrowRight className="size-4" strokeWidth={2} />
-              </Link>
-            </Button>
-            <Button
-              asChild
-              size="lg"
-              variant="outline"
-              className="min-h-[48px] border-border bg-transparent text-base"
-            >
-              <a href="#how">See how it works</a>
-            </Button>
-          </div>
-        </motion.div>
+        <div className="grid items-center gap-10 lg:grid-cols-[1.15fr_0.85fr] lg:gap-14">
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, ease }}
+          >
+            <p className="inline-flex items-center gap-2 rounded-full border border-border bg-card/70 px-3 py-1 text-xs font-medium tracking-wide text-sage uppercase">
+              <ShieldCheck className="size-3.5" strokeWidth={1.75} />
+              Cross-border payments for African exports
+            </p>
+            <h1 className="text-display mt-6 text-4xl leading-[1.05] font-medium sm:text-5xl xl:text-6xl">
+              One payment in.{" "}
+              <span className="text-lime">Every farmer paid, same day.</span>
+            </h1>
+            <p className="mt-6 max-w-xl text-lg text-muted-foreground">
+              Your buyer pays one invoice in dollars or euros. Stawi converts at a live rate, takes
+              a flat 0.8%, and splits the rest to every member's M-Pesa — today, not next month.
+            </p>
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <Button asChild size="lg" className="min-h-[48px] text-base">
+                <Link to="/login">
+                  Get paid the same day
+                  <ArrowRight className="size-4" strokeWidth={2} />
+                </Link>
+              </Button>
+              <Button
+                asChild
+                size="lg"
+                variant="outline"
+                className="min-h-[48px] border-border bg-transparent text-base"
+              >
+                <a href="#how">See how it works</a>
+              </Button>
+            </div>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15, duration: 0.7, ease }}
+            className="relative mx-auto w-full max-w-sm lg:max-w-none"
+          >
+            <div
+              aria-hidden
+              className="absolute -inset-6 rounded-[2.5rem] bg-lime/10 blur-2xl"
+            />
+            <img
+              src={heroImg}
+              width={1024}
+              height={1280}
+              alt="Illustration: one USD export invoice splitting into same-day KES mobile-money payments on three farmers' phones"
+              className="relative w-full rounded-3xl border border-border shadow-lift"
+            />
+          </motion.div>
+        </div>
 
         <motion.div
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2, duration: 0.7, ease }}
+          transition={{ delay: 0.25, duration: 0.7, ease }}
           className="mt-14 grid gap-3 sm:grid-cols-3"
         >
           <HeroStat value="KES 3.4M" label="moved this season through one co-op" />
