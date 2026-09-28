@@ -31,7 +31,6 @@ function HomeTab() {
   const balance = useQuery(balanceOptions(accountId));
   const txns = useQuery(accountTxnsOptions(accountId));
 
-  console.log("HOME", accountId, account.failureCount, String(account.failureReason), account.status, account.fetchStatus, balance.status, txns.status, String(account.error));
   const latest = txns.data?.find((p) => p.kind === "credit");
   const incoming = txns.data?.filter((p) => p.status === "pending" || p.status === "sent") ?? [];
 
