@@ -14,7 +14,7 @@
 │  ├─ src/ussd/handler.ts                      USSD menu (balance / status / withdraw + PIN), secret-checked callback
 │  ├─ src/routes/index.ts                      REST API (the contract in docs/LOVABLE_PROMPT.md §8)
 │  ├─ src/types.ts                             Domain types (money = integer cents) — mirror in the frontend
-│  ├─ src/store.ts, src/data/seed.ts           In-memory store; seeds a 10-farmer co-op + solo exporter (PIN 1234)
+│  ├─ src/store.ts, src/data/seed.ts           In-memory store; seeds 4 co-ops (76 farmers), 6 exporters, nine months of invoices (PIN 1234)
 │  ├─ db/schema.sql                            Postgres schema for the store swap
 │  ├─ scripts/e2e.py                           17-check end-to-end verification
 │  ├─ Dockerfile, .env.example

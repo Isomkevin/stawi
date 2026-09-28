@@ -1,7 +1,22 @@
 import bcrypt from "bcryptjs";
-import { store } from "../store";
-import { Account, Coop, Invoice, Payout, Transaction } from "../types";
+import {
+  assertCatalogShape,
+  BANKS,
+  CANONICAL,
+  CANONICAL_INVOICES,
+  EXTRA_COOPS,
+  EXTRA_EXPORTERS,
+  fxFor,
+  integerShares,
+  InvoiceBlueprint,
+  KIAMBU_EXTRA_INVOICES,
+  KIAMBU_FARMERS,
+  MPESA_BANK_CODE,
+  WANJIRU_EXTRA_INVOICES,
+} from "./catalog";
 import { feeCents, splitByShares, toKesCents } from "../services/money";
+import { store } from "../store";
+import { Account, CoopMember, Invoice, PayoutDestination, PayoutStatus } from "../types";
 
 export interface SeedIds {
   coop_id: string;
@@ -18,387 +33,572 @@ export interface SeedIds {
 }
 
 export let SEED_IDS: SeedIds = {
-  coop_id: "coop_kiambu",
-  treasurer_id: "acc_treasurer",
-  exporter_id: "acc_exporter",
+  coop_id: CANONICAL.coopId,
+  treasurer_id: CANONICAL.treasurerId,
+  exporter_id: CANONICAL.exporterId,
   farmer_ids: [],
-  invoice_ids: {
-    paid_coop: "inv_coop_hamburg_101",
-    awaiting_split_coop: "inv_coop_berlin_102",
-    pending_coop: "inv_coop_rotterdam_103",
-    paid_direct: "inv_direct_ny_201",
-    pending_direct: "inv_2413",
-  },
+  invoice_ids: { ...CANONICAL.invoices },
 };
 
-export async function seedDatabase(): Promise<SeedIds> {
-  const pinHash = await bcrypt.hash("1234", 10);
+const DEMO_PIN = "1234";
 
-  // 1. Co-op
-  const coop: Coop = {
-    id: "coop_kiambu",
-    name: "Kiambu Highlands Coffee Co-op",
-    treasurer_account_id: "acc_treasurer",
-  };
-  await store.saveCoop(coop);
+function shiftDays(days: number): string {
+  return new Date(Date.now() + days * 24 * 3600 * 1000).toISOString();
+}
 
-  // 2. Treasurer Account
-  const treasurer: Account = {
-    id: "acc_treasurer",
-    full_name: "David Kamau",
-    phone_number: "+254711000000",
-    id_number: "ID1000000",
-    payout_destinations: [
-      {
-        id: "dest_treasurer_mpesa",
-        type: "mpesa",
-        details: "+254711000000",
-        account_name: "David Kamau",
-        is_verified: true,
-      },
-    ],
-    coop_id: coop.id,
-    channel_capability: "webapp+ussd",
-    balance_kes_cents: 2500000, // KES 25,000.00
+function plusMinutes(iso: string, minutes: number): string {
+  return new Date(new Date(iso).getTime() + minutes * 60_000).toISOString();
+}
+
+function assertShort(id: string, label: string): void {
+  if (id.length > 64) throw new Error(`${label} is longer than 64 characters: ${id}`);
+}
+
+function hashCode(value: string): number {
+  let hash = 0;
+  for (let i = 0; i < value.length; i++) hash = (hash + value.charCodeAt(i) * (i + 1)) % 997;
+  return hash;
+}
+
+function bankAccountNumber(seedKey: string): string {
+  let hash = 0;
+  for (const char of seedKey) hash = (hash * 33 + char.charCodeAt(0)) % 1_000_000_000;
+  return String(1_000_000_000 + hash).padStart(11, "0");
+}
+
+function makeDestinations(
+  accountId: string,
+  personName: string,
+  phone: string,
+  bankIndex: number,
+  bankAccountName: string,
+  flags?: { mpesaVerified?: boolean; bankVerified?: boolean; mpesaId?: string; bankId?: string }
+): PayoutDestination[] {
+  const bank = BANKS[bankIndex % BANKS.length];
+  const mpesaId = flags?.mpesaId ?? `dest_mpesa_${accountId}`;
+  const bankId = flags?.bankId ?? `dest_bank_${accountId}`;
+  assertShort(mpesaId, "destination");
+  assertShort(bankId, "destination");
+  return [
+    {
+      id: mpesaId,
+      type: "mpesa",
+      details: phone,
+      account_name: personName,
+      is_verified: flags?.mpesaVerified !== false,
+      bank_code: MPESA_BANK_CODE,
+    },
+    {
+      id: bankId,
+      type: "bank",
+      details: bankAccountNumber(`${accountId}:${bank.code}`),
+      account_name: bankAccountName,
+      is_verified: flags?.bankVerified !== false,
+      bank_code: bank.code,
+    },
+  ];
+}
+
+function makeAccount(
+  pinHash: string,
+  fields: Omit<Account, "balance_kes_cents" | "incoming_kes_cents" | "pin_hash" | "pin_failed_attempts" | "pin_locked_until">
+): Account {
+  assertShort(fields.id, "account");
+  return {
+    ...fields,
+    balance_kes_cents: 0,
     incoming_kes_cents: 0,
     pin_hash: pinHash,
     pin_failed_attempts: 0,
     pin_locked_until: null,
   };
-  await store.saveAccount(treasurer);
+}
 
-  // 3. 10 Farmers
-  const farmersData = [
-    { name: "Wanjiku Mwangi", phone: "+254712000001", share: 15, kilos: 1500, balance: 1845000 },
-    { name: "Juma Omondi", phone: "+254712000002", share: 12, kilos: 1200, balance: 920000 },
-    { name: "Fatuma Ali", phone: "+254712000003", share: 10, kilos: 1000, balance: 750000 },
-    { name: "Kipchoge Cheruiyot", phone: "+254712000004", share: 10, kilos: 1000, balance: 680000 },
-    { name: "Achieng Otieno", phone: "+254712000005", share: 10, kilos: 1000, balance: 840000 },
-    { name: "Maina Njoroge", phone: "+254712000006", share: 9, kilos: 900, balance: 560000 },
-    { name: "Halima Hassan", phone: "+254712000007", share: 9, kilos: 900, balance: 610000 },
-    { name: "Mutua Musyoka", phone: "+254712000008", share: 9, kilos: 900, balance: 490000 },
-    { name: "Nyaboke Kerubo", phone: "+254712000009", share: 8, kilos: 800, balance: 420000 },
-    { name: "Kibet Rotich", phone: "+254712000010", share: 8, kilos: 800, balance: 380000 },
-  ];
+function materialize(
+  bp: InvoiceBlueprint,
+  owner: { type: "direct" | "coop"; account_id: string | null; coop_id: string | null }
+): Invoice {
+  const quoted = bp.status === "settling" || bp.status === "completed" || bp.status === "converting";
+  const settled = bp.status === "settling" || bp.status === "completed";
+  const rate = quoted ? fxFor(bp.currency) : null;
+  let fee: number | null = null;
+  let net: number | null = null;
+  if (settled && rate != null) {
+    const gross = toKesCents(bp.amount, bp.currency, rate);
+    fee = feeCents(gross, 0.8);
+    net = gross - fee;
+  }
+  assertShort(bp.id, "invoice");
+  return {
+    id: bp.id,
+    type: owner.type,
+    account_id: owner.account_id,
+    coop_id: owner.coop_id,
+    buyer_name: bp.buyer_name,
+    buyer_email: bp.buyer_email,
+    buyer_phone: bp.buyer_phone,
+    amount: bp.amount,
+    currency: bp.currency,
+    description: bp.description,
+    reference: bp.reference,
+    status: bp.status,
+    split_approved: owner.type === "coop" && bp.status === "completed",
+    fx_rate: rate,
+    fee_kes_cents: fee,
+    kes_total_cents: net,
+    payaza_checkout_reference: bp.checkoutRef,
+    payaza_link_id: bp.status === "pending" || bp.status === "paid" ? `link_${bp.reference}` : null,
+    created_at: shiftDays(-bp.createdDaysAgo),
+    due_at: shiftDays(bp.dueDaysFromNow),
+  };
+}
 
-  const farmerIds: string[] = [];
+async function seedRail(invoice: Invoice, members: CoopMember[]): Promise<void> {
+  await store.saveInvoice(invoice);
+  const at = (minutes: number) => plusMinutes(invoice.created_at, minutes);
 
-  for (let i = 0; i < farmersData.length; i++) {
-    const f = farmersData[i];
-    const farmerId = `acc_farmer_${i + 1}`;
-    farmerIds.push(farmerId);
+  if (invoice.status === "pending") return;
 
-    const farmerAcc: Account = {
-      id: farmerId,
-      full_name: f.name,
-      phone_number: f.phone,
-      id_number: `ID20000${(i + 1).toString().padStart(2, "0")}`,
-      payout_destinations: [
-        {
-          id: `dest_mpesa_${farmerId}`,
-          type: "mpesa",
-          details: f.phone,
-          account_name: f.name,
-          is_verified: true,
-        },
-        {
-          id: `dest_bank_${farmerId}`,
-          type: "bank",
-          details: `01109${(i + 1).toString().padStart(6, "0")}`,
-          account_name: f.name,
-          is_verified: true,
-        },
-      ],
-      coop_id: coop.id,
-      channel_capability: "webapp+ussd",
-      balance_kes_cents: f.balance,
-      incoming_kes_cents: 0,
-      pin_hash: pinHash,
-      pin_failed_attempts: 0,
-      pin_locked_until: null,
-    };
-    await store.saveAccount(farmerAcc);
-
-    await store.addCoopMember({
-      coop_id: coop.id,
-      account_id: farmerId,
-      full_name: f.name,
-      contribution_share: f.share,
-      kilos: f.kilos,
+  if (invoice.status === "failed") {
+    await store.addTransaction({
+      id: `tx_col_${invoice.id}`,
+      invoice_id: invoice.id,
+      type: "collection",
+      status: "failed",
+      amount: invoice.amount,
+      currency: invoice.currency,
+      payaza_reference: `PZ-COL-${invoice.reference}`,
+      fx_rate: null,
+      fee_kes_cents: null,
+      created_at: at(0),
     });
+    return;
   }
 
-  SEED_IDS.farmer_ids = farmerIds;
-
-  // 4. Solo Exporter
-  const exporter: Account = {
-    id: "acc_exporter",
-    full_name: "Grace Wanjiru (Wanjiru Crafts)",
-    phone_number: "+254722000001",
-    id_number: "ID3000001",
-    payout_destinations: [
-      {
-        id: "dest_exporter_mpesa",
-        type: "mpesa",
-        details: "+254722000001",
-        account_name: "Grace Wanjiru",
-        is_verified: true,
-      },
-      {
-        id: "dest_exporter_bank",
-        type: "bank",
-        details: "02209123456",
-        account_name: "Wanjiru Crafts Ltd",
-        is_verified: true,
-      },
-    ],
-    coop_id: null,
-    channel_capability: "webapp+ussd",
-    balance_kes_cents: 41280000, // KES 412,800.00
-    incoming_kes_cents: 0,
-    pin_hash: pinHash,
-    pin_failed_attempts: 0,
-    pin_locked_until: null,
-  };
-  await store.saveAccount(exporter);
-
-  // 5. Invoices & Transactions
-  // 5a. Completed and split Co-op invoice: USD 12,400 (Hamburg buyer)
-  const fxRate = 129.0;
-  const inv1GrossCents = toKesCents(12400, "USD", fxRate); // 159,960,000 cents = KES 1,599,600.00
-  const inv1FeeCents = feeCents(inv1GrossCents, 0.8); // 1,279,680 cents = KES 12,796.80
-  const inv1NetCents = inv1GrossCents - inv1FeeCents; // 158,680,320 cents = KES 1,586,803.20
-
-  const inv1: Invoice = {
-    id: SEED_IDS.invoice_ids.paid_coop,
-    type: "coop",
-    account_id: null,
-    coop_id: coop.id,
-    buyer_name: "Hanseatic Coffee Roasters GmbH",
-    buyer_email: "payments@hanseatic-coffee.de",
-    buyer_phone: "+494012345678",
-    amount: 12400,
-    currency: "USD",
-    description: "Container Lot AA Premium Arabica - Hamburg",
-    reference: "INV-COOP-HAMBURG-101",
-    status: "completed",
-    split_approved: true,
-    fx_rate: fxRate,
-    fee_kes_cents: inv1FeeCents,
-    kes_total_cents: inv1NetCents,
-    payaza_checkout_reference: "PZ-CHK-HAMBURG-001",
-    created_at: new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString(),
-    due_at: new Date(Date.now() - 5 * 24 * 3600 * 1000).toISOString(),
-  };
-  await store.saveInvoice(inv1);
-
   await store.addTransaction({
-    id: "tx_col_inv1",
-    invoice_id: inv1.id,
+    id: `tx_col_${invoice.id}`,
+    invoice_id: invoice.id,
     type: "collection",
     status: "completed",
-    amount: 12400,
-    currency: "USD",
-    payaza_reference: "PZ-COL-101",
+    amount: invoice.amount,
+    currency: invoice.currency,
+    payaza_reference: invoice.payaza_checkout_reference ?? `PZ-COL-${invoice.reference}`,
     fx_rate: null,
     fee_kes_cents: null,
-    created_at: new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString(),
+    created_at: at(0),
   });
 
+  if (invoice.status === "paid") return;
+
+  if (invoice.fx_rate == null) throw new Error(`Invoice ${invoice.id} is missing an FX rate`);
+  const gross = toKesCents(invoice.amount, invoice.currency, invoice.fx_rate);
+  const fee = invoice.fee_kes_cents ?? feeCents(gross, 0.8);
+
+  if (invoice.status === "converting") {
+    await store.addTransaction({
+      id: `tx_conv_${invoice.id}`,
+      invoice_id: invoice.id,
+      type: "conversion",
+      status: "pending",
+      amount: gross / 100,
+      currency: "KES",
+      payaza_reference: `PZ-CONV-${invoice.reference}`,
+      fx_rate: invoice.fx_rate,
+      fee_kes_cents: fee,
+      created_at: at(5),
+    });
+    return;
+  }
+
   await store.addTransaction({
-    id: "tx_conv_inv1",
-    invoice_id: inv1.id,
+    id: `tx_conv_${invoice.id}`,
+    invoice_id: invoice.id,
     type: "conversion",
     status: "completed",
-    amount: inv1GrossCents / 100,
+    amount: gross / 100,
     currency: "KES",
-    payaza_reference: "PZ-CONV-101",
-    fx_rate: fxRate,
-    fee_kes_cents: inv1FeeCents,
-    created_at: new Date(Date.now() - 7 * 24 * 3600 * 1000 + 300000).toISOString(),
+    payaza_reference: `PZ-CONV-${invoice.reference}`,
+    fx_rate: invoice.fx_rate,
+    fee_kes_cents: fee,
+    created_at: at(5),
   });
 
+  if (invoice.status === "settling") return;
+
+  const net = invoice.kes_total_cents ?? gross - fee;
+  const settleId = `tx_settle_${invoice.id}`;
   await store.addTransaction({
-    id: "tx_settle_inv1",
-    invoice_id: inv1.id,
+    id: settleId,
+    invoice_id: invoice.id,
     type: "settlement",
     status: "completed",
-    amount: inv1NetCents / 100,
+    amount: net / 100,
     currency: "KES",
-    payaza_reference: "PZ-SETTLE-101",
+    payaza_reference: `PZ-SETTLE-${invoice.reference}`,
     fx_rate: null,
-    fee_kes_cents: inv1FeeCents,
-    created_at: new Date(Date.now() - 7 * 24 * 3600 * 1000 + 600000).toISOString(),
+    fee_kes_cents: fee,
+    created_at: at(10),
   });
 
-  // Split payouts for inv1
-  const members = await store.getCoopMembers(coop.id);
-  const splitLines = splitByShares(inv1GrossCents, inv1FeeCents, members);
-  for (const line of splitLines) {
-    const payout: Payout = {
-      id: `payout_inv1_${line.account_id}`,
-      invoice_id: inv1.id,
-      transaction_id: "tx_settle_inv1",
+  if (invoice.type === "direct") {
+    if (!invoice.account_id) throw new Error(`Direct invoice ${invoice.id} has no exporter`);
+    await store.addPayout({
+      id: `payout_${invoice.id}_${invoice.account_id}`,
+      invoice_id: invoice.id,
+      transaction_id: settleId,
+      account_id: invoice.account_id,
+      kind: "credit",
+      amount_kes_cents: net,
+      destination_id: null,
+      status: "confirmed",
+      created_at: at(12),
+    });
+    return;
+  }
+
+  if (members.length === 0) throw new Error(`Co-op invoice ${invoice.id} has no members to split`);
+  const lines = splitByShares(gross, fee, members);
+  for (const line of lines) {
+    const payoutId = `payout_${invoice.id}_${line.account_id}`;
+    assertShort(payoutId, "payout");
+    await store.addPayout({
+      id: payoutId,
+      invoice_id: invoice.id,
+      transaction_id: settleId,
       account_id: line.account_id,
       kind: "credit",
       amount_kes_cents: line.net_kes_cents,
       destination_id: null,
       status: "confirmed",
-      created_at: new Date(Date.now() - 7 * 24 * 3600 * 1000 + 700000).toISOString(),
-    };
-    await store.addPayout(payout);
+      created_at: at(12),
+    });
   }
+}
 
-  // 5b. Co-op invoice awaiting split approval: USD 8,500 (Berlin buyer)
-  const inv2GrossCents = toKesCents(8500, "USD", fxRate);
-  const inv2FeeCents = feeCents(inv2GrossCents, 0.8);
-  const inv2NetCents = inv2GrossCents - inv2FeeCents;
+async function persistInvoice(
+  bp: InvoiceBlueprint,
+  owner: { type: "direct" | "coop"; account_id: string | null; coop_id: string | null }
+): Promise<void> {
+  const invoice = materialize(bp, owner);
+  const members = owner.coop_id ? await store.getCoopMembers(owner.coop_id) : [];
+  await seedRail(invoice, members);
+}
 
-  const inv2: Invoice = {
-    id: SEED_IDS.invoice_ids.awaiting_split_coop,
-    type: "coop",
-    account_id: null,
-    coop_id: coop.id,
-    buyer_name: "The Barn Berlin",
-    buyer_email: "orders@thebarn.de",
-    buyer_phone: "+493012345678",
-    amount: 8500,
-    currency: "USD",
-    description: "Specialty Peaberry Micro-Lot - Berlin",
-    reference: "INV-COOP-BERLIN-102",
-    status: "settling",
-    split_approved: false,
-    fx_rate: fxRate,
-    fee_kes_cents: inv2FeeCents,
-    kes_total_cents: inv2NetCents,
-    payaza_checkout_reference: "PZ-CHK-BERLIN-002",
-    created_at: new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString(),
-    due_at: new Date(Date.now() + 3 * 24 * 3600 * 1000).toISOString(),
-  };
-  await store.saveInvoice(inv2);
+function withdrawalAmount(credits: number, ratioPct: number, reduces: boolean): number | null {
+  let amount = Math.floor((credits * ratioPct) / 100);
+  if (reduces) {
+    const room = credits - 100_000;
+    if (room < 10_000) return null;
+    amount = Math.min(amount, room);
+  }
+  if (amount < 10_000) return null;
+  return amount;
+}
 
-  await store.addTransaction({
-    id: "tx_col_inv2",
-    invoice_id: inv2.id,
-    type: "collection",
-    status: "completed",
-    amount: 8500,
-    currency: "USD",
-    payaza_reference: "PZ-COL-102",
-    fx_rate: null,
-    fee_kes_cents: null,
-    created_at: new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString(),
-  });
+type PlannedWithdrawal = {
+  account: Account;
+  destinationId: string;
+  amount: number;
+  status: PayoutStatus;
+  suffix: string;
+  daysAgo: number;
+};
 
-  await store.addTransaction({
-    id: "tx_conv_inv2",
-    invoice_id: inv2.id,
-    type: "conversion",
-    status: "completed",
-    amount: inv2GrossCents / 100,
-    currency: "KES",
-    payaza_reference: "PZ-CONV-102",
-    fx_rate: fxRate,
-    fee_kes_cents: inv2FeeCents,
-    created_at: new Date(Date.now() - 2 * 24 * 3600 * 1000 + 300000).toISOString(),
-  });
+function planWithdrawal(
+  account: Account,
+  destinationId: string,
+  amount: number,
+  status: PayoutStatus,
+  suffix: string,
+  daysAgo: number
+): PlannedWithdrawal {
+  return { account, destinationId, amount, status, suffix, daysAgo };
+}
 
-  // Populate incoming_kes_cents on farmers for inv2
-  const inv2SplitLines = splitByShares(inv2GrossCents, inv2FeeCents, members);
-  for (const line of inv2SplitLines) {
-    const acc = await store.getAccount(line.account_id);
-    if (acc) {
-      acc.incoming_kes_cents += line.net_kes_cents;
-      await store.saveAccount(acc);
+/**
+ * Balances are derived from credits and withdrawals, then accounts are saved
+ * before withdrawal rows are inserted. Saving an account rewrites its
+ * destinations, which would clear destination links already stored on payouts.
+ */
+async function applyLedger(): Promise<void> {
+  const accounts = (await store.getAllAccounts()).sort((a, b) => a.id.localeCompare(b.id));
+  const invoices = await store.getInvoices();
+  const incoming = new Map<string, number>();
+
+  for (const invoice of invoices) {
+    if (invoice.type !== "coop" || invoice.status !== "settling" || !invoice.coop_id) continue;
+    if (invoice.fx_rate == null || invoice.fee_kes_cents == null) {
+      throw new Error(`Settling invoice ${invoice.id} is missing FX or fee`);
+    }
+    const members = await store.getCoopMembers(invoice.coop_id);
+    const gross = toKesCents(invoice.amount, invoice.currency, invoice.fx_rate);
+    const lines = splitByShares(gross, invoice.fee_kes_cents, members);
+    for (const line of lines) {
+      incoming.set(line.account_id, (incoming.get(line.account_id) ?? 0) + line.net_kes_cents);
     }
   }
 
-  // 5c. Pending Co-op invoice: USD 15,000 (Rotterdam buyer)
-  const inv3: Invoice = {
-    id: SEED_IDS.invoice_ids.pending_coop,
-    type: "coop",
-    account_id: null,
-    coop_id: coop.id,
-    buyer_name: "Rotterdam Commodity Traders B.V.",
-    buyer_email: "procurement@rctraders.nl",
-    buyer_phone: "+31101234567",
-    amount: 15000,
-    currency: "USD",
-    description: "Fairtrade Grade 1 Green Coffee - Rotterdam",
-    reference: "INV-COOP-ROTTERDAM-103",
-    status: "pending",
-    split_approved: false,
-    fx_rate: null,
-    fee_kes_cents: null,
-    kes_total_cents: null,
-    payaza_checkout_reference: null,
-    created_at: new Date(Date.now() - 1 * 24 * 3600 * 1000).toISOString(),
-    due_at: new Date(Date.now() + 10 * 24 * 3600 * 1000).toISOString(),
+  const planned: PlannedWithdrawal[] = [];
+
+  for (const account of accounts) {
+    const payouts = await store.getPayoutsByAccount(account.id);
+    const credits = payouts
+      .filter((payout) => payout.kind === "credit" && payout.status === "confirmed")
+      .reduce((sum, payout) => sum + payout.amount_kes_cents, 0);
+
+    let withdrawn = 0;
+    if (!account.id.startsWith("acc_treasurer") && credits >= 200_000) {
+      const unverifiedMpesa = account.payout_destinations.find((dest) => dest.type === "mpesa" && !dest.is_verified);
+      if (unverifiedMpesa) {
+        planned.push(planWithdrawal(account, unverifiedMpesa.id, 25_000, "failed", "failed", 3));
+      } else {
+        const isExporter = account.coop_id === null;
+        const take = isExporter || hashCode(account.id) % 3 === 0;
+        const destination = take
+          ? account.payout_destinations.find((dest) => dest.type === "mpesa" && dest.is_verified) ??
+            account.payout_destinations.find((dest) => dest.is_verified)
+          : undefined;
+        if (destination) {
+          const statuses: PayoutStatus[] = ["confirmed", "sent", "pending"];
+          const status = statuses[hashCode(`${account.id}:status`) % statuses.length];
+          const reduces = status === "confirmed" || status === "sent";
+          const first = withdrawalAmount(credits, 18, reduces);
+          if (first != null) {
+            planned.push(planWithdrawal(account, destination.id, first, status, "a", 18));
+            if (reduces) withdrawn += first;
+
+            if (hashCode(`${account.id}:extra`) % 5 === 0) {
+              const room = credits - withdrawn - 100_000;
+              let second = Math.floor((credits * 8) / 100);
+              if (room >= 10_000) {
+                second = Math.min(second, room);
+                if (second >= 10_000) {
+                  const bank =
+                    account.payout_destinations.find((dest) => dest.type === "bank" && dest.is_verified) ?? destination;
+                  planned.push(planWithdrawal(account, bank.id, second, "confirmed", "b", 46));
+                  withdrawn += second;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    const balance = credits - withdrawn;
+    if (!Number.isInteger(balance) || balance < 0) {
+      throw new Error(`Ledger balance for ${account.id} is ${balance}`);
+    }
+    account.balance_kes_cents = balance;
+    account.incoming_kes_cents = incoming.get(account.id) ?? 0;
+    await store.saveAccount(account);
+  }
+
+  for (const withdrawal of planned) {
+    const payoutId = `payout_wth_${withdrawal.account.id}_${withdrawal.suffix}`;
+    assertShort(payoutId, "payout");
+    await store.addPayout({
+      id: payoutId,
+      invoice_id: "withdrawal",
+      account_id: withdrawal.account.id,
+      kind: "withdrawal",
+      amount_kes_cents: withdrawal.amount,
+      destination_id: withdrawal.destinationId,
+      status: withdrawal.status,
+      created_at: shiftDays(-withdrawal.daysAgo),
+      idempotency_key: `seed-wth-${withdrawal.account.id}-${withdrawal.suffix}`,
+      payaza_reference: `PZ-WTH-${withdrawal.account.id}-${withdrawal.suffix.toUpperCase()}`,
+    });
+  }
+}
+
+export async function seedDatabase(): Promise<SeedIds> {
+  assertCatalogShape();
+  const pinHash = await bcrypt.hash(DEMO_PIN, 10);
+  const phones = new Set<string>();
+
+  const remember = (phone: string) => {
+    if (phones.has(phone)) throw new Error(`Duplicate phone ${phone}`);
+    phones.add(phone);
   };
-  await store.saveInvoice(inv3);
 
-  // 5d. Completed Direct invoice: USD 3,200 (New York buyer)
-  const inv4Gross = toKesCents(3200, "USD", fxRate);
-  const inv4Fee = feeCents(inv4Gross, 0.8);
-  const inv4Net = inv4Gross - inv4Fee;
-
-  const inv4: Invoice = {
-    id: SEED_IDS.invoice_ids.paid_direct,
-    type: "direct",
-    account_id: exporter.id,
-    coop_id: null,
-    buyer_name: "Brooklyn Artisan Goods",
-    buyer_email: "orders@brooklynartisan.com",
-    buyer_phone: "+12125550192",
-    amount: 3200,
-    currency: "USD",
-    description: "Handwoven Sisal & Banana Bark Baskets - New York",
-    reference: "INV-EXP-NY-201",
-    status: "completed",
-    split_approved: false,
-    fx_rate: fxRate,
-    fee_kes_cents: inv4Fee,
-    kes_total_cents: inv4Net,
-    payaza_checkout_reference: "PZ-CHK-NY-004",
-    created_at: new Date(Date.now() - 4 * 24 * 3600 * 1000).toISOString(),
-    due_at: new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString(),
-  };
-  await store.saveInvoice(inv4);
-
-  await store.addPayout({
-    id: "payout_direct_inv4",
-    invoice_id: inv4.id,
-    account_id: exporter.id,
-    kind: "credit",
-    amount_kes_cents: inv4Net,
-    destination_id: null,
-    status: "confirmed",
-    created_at: new Date(Date.now() - 4 * 24 * 3600 * 1000 + 400000).toISOString(),
+  await store.saveCoop({
+    id: CANONICAL.coopId,
+    name: CANONICAL.coopName,
+    treasurer_account_id: CANONICAL.treasurerId,
   });
 
-  // 5e. Pending Direct invoice: EUR 1,800 (London buyer)
-  const inv5: Invoice = {
-    id: SEED_IDS.invoice_ids.pending_direct,
-    type: "direct",
-    account_id: exporter.id,
-    coop_id: null,
-    buyer_name: "Covent Garden Fair Trade Ltd",
-    buyer_email: "finance@coventfairtrade.co.uk",
-    buyer_phone: "+442079460912",
-    amount: 1800,
-    currency: "EUR",
-    description: "Beaded Maasai Leather Accessories - London",
-    reference: "INV-EXP-LONDON-202",
-    status: "pending",
-    split_approved: false,
-    fx_rate: null,
-    fee_kes_cents: null,
-    kes_total_cents: null,
-    payaza_checkout_reference: null,
-    created_at: new Date().toISOString(),
-    due_at: new Date(Date.now() + 14 * 24 * 3600 * 1000).toISOString(),
-  };
-  await store.saveInvoice(inv5);
+  remember("+254711000000");
+  await store.saveAccount(
+    makeAccount(pinHash, {
+      id: CANONICAL.treasurerId,
+      full_name: "David Kamau",
+      phone_number: "+254711000000",
+      id_number: "ID1000000",
+      coop_id: CANONICAL.coopId,
+      channel_capability: "webapp+ussd",
+      payout_destinations: makeDestinations(
+        CANONICAL.treasurerId,
+        "David Kamau",
+        "+254711000000",
+        0,
+        CANONICAL.coopName,
+        { mpesaId: "dest_treasurer_mpesa", bankId: "dest_treasurer_bank" }
+      ),
+    })
+  );
 
+  const farmerIds: string[] = [];
+  for (let i = 0; i < KIAMBU_FARMERS.length; i++) {
+    const farmer = KIAMBU_FARMERS[i];
+    if (!farmer.phone || !farmer.id_number || farmer.share == null) {
+      throw new Error(`Canonical farmer ${farmer.name} is missing phone, id, or share`);
+    }
+    const id = `acc_farmer_${i + 1}`;
+    farmerIds.push(id);
+    remember(farmer.phone);
+    await store.saveAccount(
+      makeAccount(pinHash, {
+        id,
+        full_name: farmer.name,
+        phone_number: farmer.phone,
+        id_number: farmer.id_number,
+        coop_id: CANONICAL.coopId,
+        channel_capability: "webapp+ussd",
+        payout_destinations: makeDestinations(id, farmer.name, farmer.phone, i, farmer.name, {
+          bankVerified: (i + 1) % 9 !== 0,
+        }),
+      })
+    );
+    await store.addCoopMember({
+      coop_id: CANONICAL.coopId,
+      account_id: id,
+      full_name: farmer.name,
+      contribution_share: farmer.share,
+      kilos: farmer.kilos,
+    });
+  }
+  SEED_IDS.farmer_ids = farmerIds;
+
+  remember("+254722000001");
+  await store.saveAccount(
+    makeAccount(pinHash, {
+      id: CANONICAL.exporterId,
+      full_name: "Grace Wanjiru (Wanjiru Crafts)",
+      phone_number: "+254722000001",
+      id_number: "ID3000001",
+      coop_id: null,
+      channel_capability: "webapp+ussd",
+      payout_destinations: makeDestinations(
+        CANONICAL.exporterId,
+        "Grace Wanjiru",
+        "+254722000001",
+        1,
+        "Wanjiru Crafts Ltd",
+        { mpesaId: "dest_exporter_mpesa", bankId: "dest_exporter_bank" }
+      ),
+    })
+  );
+
+  for (const coop of EXTRA_COOPS) {
+    await store.saveCoop({
+      id: coop.id,
+      name: coop.name,
+      treasurer_account_id: coop.treasurer.id,
+    });
+    remember(coop.treasurer.phone);
+    await store.saveAccount(
+      makeAccount(pinHash, {
+        id: coop.treasurer.id,
+        full_name: coop.treasurer.full_name,
+        phone_number: coop.treasurer.phone,
+        id_number: coop.treasurer.id_number,
+        coop_id: coop.id,
+        channel_capability: "webapp+ussd",
+        payout_destinations: makeDestinations(
+          coop.treasurer.id,
+          coop.treasurer.full_name,
+          coop.treasurer.phone,
+          0,
+          coop.name
+        ),
+      })
+    );
+
+    const shares = integerShares(coop.farmers.map((farmer) => farmer.kilos));
+    for (let i = 0; i < coop.farmers.length; i++) {
+      const farmer = coop.farmers[i];
+      const id = `acc_${coop.slug}_${i + 1}`;
+      const phone = `+254${coop.phoneStem}${String(i + 1).padStart(6, "0")}`;
+      remember(phone);
+      await store.saveAccount(
+        makeAccount(pinHash, {
+          id,
+          full_name: farmer.name,
+          phone_number: phone,
+          id_number: String(coop.idStem + i + 1),
+          coop_id: coop.id,
+          channel_capability: i % 5 === 4 ? "webapp" : "webapp+ussd",
+          payout_destinations: makeDestinations(id, farmer.name, phone, i, farmer.name, {
+            mpesaVerified: !farmer.unverifiedMpesa,
+            bankVerified: (i + 1) % 9 !== 0,
+          }),
+        })
+      );
+      await store.addCoopMember({
+        coop_id: coop.id,
+        account_id: id,
+        full_name: farmer.name,
+        contribution_share: shares[i],
+        kilos: farmer.kilos,
+      });
+    }
+  }
+
+  for (const exporter of EXTRA_EXPORTERS) {
+    remember(exporter.phone);
+    await store.saveAccount(
+      makeAccount(pinHash, {
+        id: exporter.id,
+        full_name: exporter.full_name,
+        phone_number: exporter.phone,
+        id_number: exporter.id_number,
+        coop_id: null,
+        channel_capability: "webapp+ussd",
+        payout_destinations: makeDestinations(exporter.id, exporter.full_name, exporter.phone, 2, exporter.business),
+      })
+    );
+  }
+
+  for (const invoice of CANONICAL_INVOICES) {
+    await persistInvoice(
+      invoice,
+      invoice.type === "coop"
+        ? { type: "coop", coop_id: CANONICAL.coopId, account_id: null }
+        : { type: "direct", coop_id: null, account_id: CANONICAL.exporterId }
+    );
+  }
+
+  for (const invoice of KIAMBU_EXTRA_INVOICES) {
+    await persistInvoice(invoice, { type: "coop", coop_id: CANONICAL.coopId, account_id: null });
+  }
+
+  for (const invoice of WANJIRU_EXTRA_INVOICES) {
+    await persistInvoice(invoice, { type: "direct", coop_id: null, account_id: CANONICAL.exporterId });
+  }
+
+  for (const coop of EXTRA_COOPS) {
+    for (const invoice of coop.invoices) {
+      await persistInvoice(invoice, { type: "coop", coop_id: coop.id, account_id: null });
+    }
+  }
+
+  for (const exporter of EXTRA_EXPORTERS) {
+    for (const invoice of exporter.invoices) {
+      await persistInvoice(invoice, { type: "direct", coop_id: null, account_id: exporter.id });
+    }
+  }
+
+  await applyLedger();
   return SEED_IDS;
 }

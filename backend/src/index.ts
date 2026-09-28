@@ -34,7 +34,7 @@ async function main() {
   if (shouldSeed) {
     const existing = await store.getAccount("acc_treasurer");
     if (!existing) {
-      console.log("[Seed] Seeding demo data (10-farmer co-op + solo exporter, PIN: 1234)...");
+      console.log("[Seed] Seeding demo ledger (4 co-ops, 76 farmers, 6 exporters, PIN 1234)...");
       await seedDatabase();
       console.log("[Seed] Demo data seeded successfully.");
     }
