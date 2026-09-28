@@ -119,7 +119,7 @@ function UnpaidView({
   payeeName,
   farmerCount,
 }: {
-  invoice: ReturnType<typeof getInvoiceOf>;
+  invoice: Invoice;
   payeeName: string;
   farmerCount: number | null;
 }) {
@@ -252,10 +252,10 @@ function ReceiptView({
   farmerCount,
   transactions,
 }: {
-  invoice: ReturnType<typeof getInvoiceOf>;
+  invoice: Invoice;
   payeeName: string;
   farmerCount: number | null;
-  transactions: ReturnType<typeof getTxnsOf>;
+  transactions: Transaction[];
 }) {
   const steps: TimelineStep[] = [
     { label: "Payment received", state: "done", detail: `${formatCurrency(invoice.amount, invoice.currency)} · ${payeeName}` },
@@ -270,7 +270,7 @@ function ReceiptView({
     steps.push({
       label: farmerCount ? `Split across ${farmerCount} farmers` : "Split across members",
       state: invoice.split_approved ? "done" : "todo",
-ecord      });
+    });
   }
   steps.push({
     label: invoice.type === "coop" ? "M-Pesa payouts sent" : "Payout to bank account",
