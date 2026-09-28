@@ -20,7 +20,9 @@ const roleDefaults: Record<Exclude<Role, "buyer">, Session> = {
   exporter: { role: "exporter", accountId: EXPORTER_ID, coopId: null },
 };
 
-const SessionContext = createContext<SessionContextValue | null>(null);
+// Kept on globalThis so a hot reload of this file doesn't create a second, empty context.
+const g = globalThis as { __stawiSessionCtx?: ReturnType<typeof createContext<SessionContextValue | null>> };
+const SessionContext = (g.__stawiSessionCtx ??= createContext<SessionContextValue | null>(null));
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   // Session lives in memory only; live mode expects an httpOnly cookie alongside it.
