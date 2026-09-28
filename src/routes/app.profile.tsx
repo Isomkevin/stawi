@@ -2,9 +2,9 @@ import { useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Landmark, LifeBuoy, LogOut, Smartphone } from "lucide-react";
+import { LifeBuoy, LogOut } from "lucide-react";
 import { PinPad } from "@/components/stawi/PinPad";
-import { StatusChip } from "@/components/stawi/StatusChip";
+import { DestinationManager } from "@/features/farmer/DestinationManager";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -80,19 +80,7 @@ function ProfileTab() {
       </Card>
 
       <Card title={t("profile.destinations")}>
-        {a?.payout_destinations.map((d) => (
-          <div key={d.id} className="flex items-center gap-3 py-1">
-            {d.type === "mpesa" ? <Smartphone className="size-5 text-lime" /> : <Landmark className="size-5 text-sage" />}
-            <div className="flex-1 text-sm">
-              <p className="font-medium">{maskDestination(d.details)}</p>
-              <p className="text-xs text-muted-foreground">{d.account_name}</p>
-            </div>
-            <StatusChip status={d.is_verified ? "verified" : "pending"} label={d.is_verified ? "Verified" : "Checking"} />
-          </div>
-        ))}
-        <Button variant="outline" className="mt-2 h-11 w-full" onClick={() => toast("Adding destinations is coming soon")}>
-          Add a destination
-        </Button>
+        <DestinationManager account={a} />
       </Card>
 
       <Card title={t("profile.pin")}>
