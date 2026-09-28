@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/app'
 import { Route as CoopRouteImport } from './routes/coop'
+import { Route as DirectRouteImport } from './routes/direct'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as AppIndexRouteImport } from './routes/app.index'
@@ -24,9 +25,14 @@ import { Route as CoopMembersRouteImport } from './routes/coop.members'
 import { Route as CoopOverviewRouteImport } from './routes/coop.overview'
 import { Route as CoopPayoutsRouteImport } from './routes/coop.payouts'
 import { Route as CoopSettingsRouteImport } from './routes/coop.settings'
+import { Route as DemoUssdRouteImport } from './routes/demo.ussd'
+import { Route as DirectIndexRouteImport } from './routes/direct.index'
+import { Route as DirectOverviewRouteImport } from './routes/direct.overview'
 import { Route as PayInvoiceIdRouteImport } from './routes/pay.$invoiceId'
 import { Route as CoopInvoicesIndexRouteImport } from './routes/coop.invoices.index'
 import { Route as CoopInvoicesIdRouteImport } from './routes/coop.invoices.$id'
+import { Route as DirectInvoicesIndexRouteImport } from './routes/direct.invoices.index'
+import { Route as DirectInvoicesIdRouteImport } from './routes/direct.invoices.$id'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -41,6 +47,11 @@ const AppRoute = AppRouteImport.update({
 const CoopRoute = CoopRouteImport.update({
   id: '/coop',
   path: '/coop',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DirectRoute = DirectRouteImport.update({
+  id: '/direct',
+  path: '/direct',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -103,6 +114,21 @@ const CoopSettingsRoute = CoopSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => CoopRoute,
 } as any)
+const DemoUssdRoute = DemoUssdRouteImport.update({
+  id: '/demo/ussd',
+  path: '/demo/ussd',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DirectIndexRoute = DirectIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => DirectRoute,
+} as any)
+const DirectOverviewRoute = DirectOverviewRouteImport.update({
+  id: '/overview',
+  path: '/overview',
+  getParentRoute: () => DirectRoute,
+} as any)
 const PayInvoiceIdRoute = PayInvoiceIdRouteImport.update({
   id: '/pay/$invoiceId',
   path: '/pay/$invoiceId',
@@ -118,11 +144,22 @@ const CoopInvoicesIdRoute = CoopInvoicesIdRouteImport.update({
   path: '/invoices/$id',
   getParentRoute: () => CoopRoute,
 } as any)
+const DirectInvoicesIndexRoute = DirectInvoicesIndexRouteImport.update({
+  id: '/invoices/',
+  path: '/invoices/',
+  getParentRoute: () => DirectRoute,
+} as any)
+const DirectInvoicesIdRoute = DirectInvoicesIdRouteImport.update({
+  id: '/invoices/$id',
+  path: '/invoices/$id',
+  getParentRoute: () => DirectRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/app': typeof AppRouteWithChildren
   '/coop': typeof CoopRouteWithChildren
+  '/direct': typeof DirectRouteWithChildren
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
   '/app/activity': typeof AppActivityRoute
@@ -133,11 +170,16 @@ export interface FileRoutesByFullPath {
   '/coop/overview': typeof CoopOverviewRoute
   '/coop/payouts': typeof CoopPayoutsRoute
   '/coop/settings': typeof CoopSettingsRoute
+  '/demo/ussd': typeof DemoUssdRoute
+  '/direct/overview': typeof DirectOverviewRoute
   '/pay/$invoiceId': typeof PayInvoiceIdRoute
   '/app/': typeof AppIndexRoute
   '/coop/': typeof CoopIndexRoute
+  '/direct/': typeof DirectIndexRoute
   '/coop/invoices/$id': typeof CoopInvoicesIdRoute
+  '/direct/invoices/$id': typeof DirectInvoicesIdRoute
   '/coop/invoices/': typeof CoopInvoicesIndexRoute
+  '/direct/invoices/': typeof DirectInvoicesIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -151,17 +193,23 @@ export interface FileRoutesByTo {
   '/coop/overview': typeof CoopOverviewRoute
   '/coop/payouts': typeof CoopPayoutsRoute
   '/coop/settings': typeof CoopSettingsRoute
+  '/demo/ussd': typeof DemoUssdRoute
+  '/direct/overview': typeof DirectOverviewRoute
   '/pay/$invoiceId': typeof PayInvoiceIdRoute
   '/app': typeof AppIndexRoute
   '/coop': typeof CoopIndexRoute
+  '/direct': typeof DirectIndexRoute
   '/coop/invoices/$id': typeof CoopInvoicesIdRoute
+  '/direct/invoices/$id': typeof DirectInvoicesIdRoute
   '/coop/invoices': typeof CoopInvoicesIndexRoute
+  '/direct/invoices': typeof DirectInvoicesIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/app': typeof AppRouteWithChildren
   '/coop': typeof CoopRouteWithChildren
+  '/direct': typeof DirectRouteWithChildren
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
   '/app/activity': typeof AppActivityRoute
@@ -172,11 +220,16 @@ export interface FileRoutesById {
   '/coop/overview': typeof CoopOverviewRoute
   '/coop/payouts': typeof CoopPayoutsRoute
   '/coop/settings': typeof CoopSettingsRoute
+  '/demo/ussd': typeof DemoUssdRoute
+  '/direct/overview': typeof DirectOverviewRoute
   '/pay/$invoiceId': typeof PayInvoiceIdRoute
   '/app/': typeof AppIndexRoute
   '/coop/': typeof CoopIndexRoute
+  '/direct/': typeof DirectIndexRoute
   '/coop/invoices/$id': typeof CoopInvoicesIdRoute
+  '/direct/invoices/$id': typeof DirectInvoicesIdRoute
   '/coop/invoices/': typeof CoopInvoicesIndexRoute
+  '/direct/invoices/': typeof DirectInvoicesIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -184,6 +237,7 @@ export interface FileRouteTypes {
     | '/'
     | '/app'
     | '/coop'
+    | '/direct'
     | '/login'
     | '/onboarding'
     | '/app/activity'
@@ -194,11 +248,16 @@ export interface FileRouteTypes {
     | '/coop/overview'
     | '/coop/payouts'
     | '/coop/settings'
+    | '/demo/ussd'
+    | '/direct/overview'
     | '/pay/$invoiceId'
     | '/app/'
     | '/coop/'
+    | '/direct/'
     | '/coop/invoices/$id'
+    | '/direct/invoices/$id'
     | '/coop/invoices/'
+    | '/direct/invoices/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -212,16 +271,22 @@ export interface FileRouteTypes {
     | '/coop/overview'
     | '/coop/payouts'
     | '/coop/settings'
+    | '/demo/ussd'
+    | '/direct/overview'
     | '/pay/$invoiceId'
     | '/app'
     | '/coop'
+    | '/direct'
     | '/coop/invoices/$id'
+    | '/direct/invoices/$id'
     | '/coop/invoices'
+    | '/direct/invoices'
   id:
     | '__root__'
     | '/'
     | '/app'
     | '/coop'
+    | '/direct'
     | '/login'
     | '/onboarding'
     | '/app/activity'
@@ -232,19 +297,26 @@ export interface FileRouteTypes {
     | '/coop/overview'
     | '/coop/payouts'
     | '/coop/settings'
+    | '/demo/ussd'
+    | '/direct/overview'
     | '/pay/$invoiceId'
     | '/app/'
     | '/coop/'
+    | '/direct/'
     | '/coop/invoices/$id'
+    | '/direct/invoices/$id'
     | '/coop/invoices/'
+    | '/direct/invoices/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
   CoopRoute: typeof CoopRouteWithChildren
+  DirectRoute: typeof DirectRouteWithChildren
   LoginRoute: typeof LoginRoute
   OnboardingRoute: typeof OnboardingRoute
+  DemoUssdRoute: typeof DemoUssdRoute
   PayInvoiceIdRoute: typeof PayInvoiceIdRoute
 }
 
@@ -269,6 +341,13 @@ declare module '@tanstack/react-router' {
       path: '/coop'
       fullPath: '/coop'
       preLoaderRoute: typeof CoopRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/direct': {
+      id: '/direct'
+      path: '/direct'
+      fullPath: '/direct'
+      preLoaderRoute: typeof DirectRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -355,6 +434,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CoopSettingsRouteImport
       parentRoute: typeof CoopRoute
     }
+    '/demo/ussd': {
+      id: '/demo/ussd'
+      path: '/demo/ussd'
+      fullPath: '/demo/ussd'
+      preLoaderRoute: typeof DemoUssdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/direct/': {
+      id: '/direct/'
+      path: '/'
+      fullPath: '/direct/'
+      preLoaderRoute: typeof DirectIndexRouteImport
+      parentRoute: typeof DirectRoute
+    }
+    '/direct/overview': {
+      id: '/direct/overview'
+      path: '/overview'
+      fullPath: '/direct/overview'
+      preLoaderRoute: typeof DirectOverviewRouteImport
+      parentRoute: typeof DirectRoute
+    }
     '/pay/$invoiceId': {
       id: '/pay/$invoiceId'
       path: '/pay/$invoiceId'
@@ -375,6 +475,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/coop/invoices/$id'
       preLoaderRoute: typeof CoopInvoicesIdRouteImport
       parentRoute: typeof CoopRoute
+    }
+    '/direct/invoices/': {
+      id: '/direct/invoices/'
+      path: '/invoices'
+      fullPath: '/direct/invoices/'
+      preLoaderRoute: typeof DirectInvoicesIndexRouteImport
+      parentRoute: typeof DirectRoute
+    }
+    '/direct/invoices/$id': {
+      id: '/direct/invoices/$id'
+      path: '/invoices/$id'
+      fullPath: '/direct/invoices/$id'
+      preLoaderRoute: typeof DirectInvoicesIdRouteImport
+      parentRoute: typeof DirectRoute
     }
   }
 }
@@ -419,12 +533,31 @@ const CoopRouteChildren: CoopRouteChildren = {
 
 const CoopRouteWithChildren = CoopRoute._addFileChildren(CoopRouteChildren)
 
+interface DirectRouteChildren {
+  DirectOverviewRoute: typeof DirectOverviewRoute
+  DirectIndexRoute: typeof DirectIndexRoute
+  DirectInvoicesIdRoute: typeof DirectInvoicesIdRoute
+  DirectInvoicesIndexRoute: typeof DirectInvoicesIndexRoute
+}
+
+const DirectRouteChildren: DirectRouteChildren = {
+  DirectOverviewRoute: DirectOverviewRoute,
+  DirectIndexRoute: DirectIndexRoute,
+  DirectInvoicesIdRoute: DirectInvoicesIdRoute,
+  DirectInvoicesIndexRoute: DirectInvoicesIndexRoute,
+}
+
+const DirectRouteWithChildren =
+  DirectRoute._addFileChildren(DirectRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
   CoopRoute: CoopRouteWithChildren,
+  DirectRoute: DirectRouteWithChildren,
   LoginRoute: LoginRoute,
   OnboardingRoute: OnboardingRoute,
+  DemoUssdRoute: DemoUssdRoute,
   PayInvoiceIdRoute: PayInvoiceIdRoute,
 }
 export const routeTree = rootRouteImport

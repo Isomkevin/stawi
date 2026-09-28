@@ -10,5 +10,10 @@ export const Route = createFileRoute("/coop/invoices/$id")({
       { property: "og:description", content: "Payment timeline and farmer split for this invoice." },
     ],
   }),
-  component: () => <InvoiceDetailView invoiceId={Route.useParams().id} backTo="/coop/invoices" />,
+  component: CoopInvoiceDetail,
 });
+
+function CoopInvoiceDetail() {
+  const { id } = Route.useParams();
+  return <InvoiceDetailView invoiceId={id} backTo="/coop/invoices" />;
+}
