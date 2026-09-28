@@ -43,7 +43,7 @@ async function renderUssdMenu(res: Response, sessionId: string, phoneNumber: str
 
   // Option 1: My balance
   if (rootChoice === "1") {
-    const account = store.getAccountByPhone(phoneNumber);
+    const account = await store.getAccountByPhone(phoneNumber);
     if (!account) {
       res.status(200).send("END Stawi account not found for this phone number.");
       return;
@@ -59,26 +59,26 @@ async function renderUssdMenu(res: Response, sessionId: string, phoneNumber: str
 
   // Option 2: Transaction status
   if (rootChoice === "2") {
-    const account = store.getAccountByPhone(phoneNumber);
+    const account = await store.getAccountByPhone(phoneNumber);
     if (!account) {
       res.status(200).send("END Stawi account not found for this phone number.");
       return;
     }
 
-    const payouts = store.getPayoutsByAccount(account.id, 3);
+    const payouts = await store.getPayoutsByAccount(account.id, 3);
     if (payouts.length === 0) {
       res.status(200).send("END No recent transactions found.");
       return;
     }
 
-    const lines = payouts.map((p) => {
+    const lines = await Promise.all(payouts.map(async (p) => {
       const amt = (p.amount_kes_cents / 100).toLocaleString(undefined, {
         minimumFractionDigits: 2,
       });
-      const invoice = p.invoice_id !== "withdrawal" ? store.getInvoice(p.invoice_id) : undefined;
+      const invoice = p.invoice_id !== "withdrawal" ? await store.getInvoice(p.invoice_id) : undefined;
       const ref = invoice?.reference || (p.kind === "withdrawal" ? "Withdrawal" : p.invoice_id);
       return `${ref} - ${p.status} - KES ${amt}`;
-    });
+    }));
 
     res.status(200).send(`END Recent:\n${lines.join("\n")}`);
     return;
@@ -120,7 +120,7 @@ async function renderUssdMenu(res: Response, sessionId: string, phoneNumber: str
     // 3*1*amt*pin -> Process withdrawal
     if (level === 4) {
       const pin = segments[3];
-      const account = store.getAccountByPhone(phoneNumber);
+      const account = await store.getAccountByPhone(phoneNumber);
       if (!account) {
         res.status(200).send("END Stawi account not found for this phone number.");
         return;

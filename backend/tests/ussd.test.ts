@@ -10,7 +10,7 @@ describe("USSD Gateway Adapter", () => {
   process.env.AT_CALLBACK_SECRET = secret;
 
   beforeEach(async () => {
-    store.reset();
+    await store.reset();
 
     const pinHash = await hashPin("1234");
     const account: Account = {
@@ -33,7 +33,7 @@ describe("USSD Gateway Adapter", () => {
       incoming_kes_cents: 0,
       pin_hash: pinHash,
     };
-    store.saveAccount(account);
+    await store.saveAccount(account);
   });
 
   it("rejects unauthorized requests without valid secret", async () => {
@@ -92,7 +92,7 @@ describe("USSD Gateway Adapter", () => {
     expect(res4.text).toContain("END Withdrawal of KES 1,000.00 to +254700112233 initiated.");
 
     // Verify balance was reduced
-    const updated = store.getAccountByPhone("+254700112233");
+    const updated = await store.getAccountByPhone("+254700112233");
     expect(updated?.balance_kes_cents).toBe(250000);
   });
 });

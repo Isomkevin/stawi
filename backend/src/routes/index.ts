@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { SEED_IDS } from "../data/seed";
 import { feeCents, toKesCents } from "../services/money";
+import { enforceAuth, hashToken, readToken, requestOtp, sessionCookie, verifyOtp } from "../services/auth";
 import { classifyPayazaWebhook, payaza } from "../services/payaza";
 import { hashPin } from "../services/pin";
 import { pipeline } from "../services/pipeline";
@@ -9,6 +10,8 @@ import { Account, CoopMember, Invoice, PublicAccount } from "../types";
 import { handleUssdCallback } from "../ussd/handler";
 
 export const apiRouter = Router();
+
+apiRouter.use(enforceAuth);
 
 function getParam(param: string | string[] | undefined): string {
   if (Array.isArray(param)) return param[0] || "";
@@ -23,8 +26,50 @@ function toPublicAccount(account: Account): PublicAccount {
 // -------------------------------------------------------------
 // Health
 // -------------------------------------------------------------
-apiRouter.get("/health", (req: Request, res: Response) => {
+apiRouter.get("/health", async (req: Request, res: Response) => {
   res.status(200).json({ status: "ok" });
+});
+
+apiRouter.post("/auth/otp", async (req: Request, res: Response) => {
+  const phone = req.body?.phone_number;
+  if (!phone) {
+    res.status(400).json({ error: "Missing phone_number" });
+    return;
+  }
+  const result = await requestOtp(String(phone));
+  if ("error" in result) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.status(200).json(result);
+});
+
+apiRouter.post("/auth/verify", async (req: Request, res: Response) => {
+  const phone = req.body?.phone_number;
+  const code = req.body?.code;
+  if (!phone || !code) {
+    res.status(400).json({ error: "Missing phone_number or code" });
+    return;
+  }
+  const result = await verifyOtp(String(phone), String(code));
+  if ("error" in result) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.setHeader("Set-Cookie", sessionCookie(result.token));
+  res.status(200).json({
+    token: result.token,
+    account_id: result.account.id,
+    role: result.role,
+    account: toPublicAccount(result.account),
+  });
+});
+
+apiRouter.post("/auth/logout", async (req: Request, res: Response) => {
+  const token = readToken(req);
+  if (token) await store.deleteSession(hashToken(token));
+  res.setHeader("Set-Cookie", "stawi_session=; HttpOnly; Path=/; Max-Age=0");
+  res.status(204).end();
 });
 
 // -------------------------------------------------------------
@@ -82,15 +127,15 @@ apiRouter.post("/accounts", async (req: Request, res: Response) => {
       pin_locked_until: null,
     };
 
-    store.saveAccount(newAccount);
+    await store.saveAccount(newAccount);
     res.status(201).json(toPublicAccount(newAccount));
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
 });
 
-apiRouter.get("/accounts/:id", (req: Request, res: Response) => {
-  const account = store.getAccount(getParam(req.params.id));
+apiRouter.get("/accounts/:id", async (req: Request, res: Response) => {
+  const account = await store.getAccount(getParam(req.params.id));
   if (!account) {
     res.status(404).json({ error: "Account not found" });
     return;
@@ -98,8 +143,8 @@ apiRouter.get("/accounts/:id", (req: Request, res: Response) => {
   res.status(200).json(toPublicAccount(account));
 });
 
-apiRouter.get("/accounts/:id/balance", (req: Request, res: Response) => {
-  const account = store.getAccount(getParam(req.params.id));
+apiRouter.get("/accounts/:id/balance", async (req: Request, res: Response) => {
+  const account = await store.getAccount(getParam(req.params.id));
   if (!account) {
     res.status(404).json({ error: "Account not found" });
     return;
@@ -110,19 +155,19 @@ apiRouter.get("/accounts/:id/balance", (req: Request, res: Response) => {
   });
 });
 
-apiRouter.get("/accounts/:id/transactions", (req: Request, res: Response) => {
-  const account = store.getAccount(getParam(req.params.id));
+apiRouter.get("/accounts/:id/transactions", async (req: Request, res: Response) => {
+  const account = await store.getAccount(getParam(req.params.id));
   if (!account) {
     res.status(404).json({ error: "Account not found" });
     return;
   }
   const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : undefined;
-  const payouts = store.getPayoutsByAccount(account.id, limit);
+  const payouts = await store.getPayoutsByAccount(account.id, limit);
   res.status(200).json(payouts);
 });
 
-apiRouter.post("/accounts/:id/destinations", (req: Request, res: Response) => {
-  const account = store.getAccount(getParam(req.params.id));
+apiRouter.post("/accounts/:id/destinations", async (req: Request, res: Response) => {
+  const account = await store.getAccount(getParam(req.params.id));
   if (!account) {
     res.status(404).json({ error: "Account not found" });
     return;
@@ -153,12 +198,12 @@ apiRouter.post("/accounts/:id/destinations", (req: Request, res: Response) => {
     ...(bank_code ? { bank_code: String(bank_code) } : {}),
   } as const;
   account.payout_destinations.push({ ...destination });
-  store.saveAccount(account);
+  await store.saveAccount(account);
   res.status(201).json(destination);
 });
 
-apiRouter.delete("/accounts/:id/destinations/:destId", (req: Request, res: Response) => {
-  const account = store.getAccount(getParam(req.params.id));
+apiRouter.delete("/accounts/:id/destinations/:destId", async (req: Request, res: Response) => {
+  const account = await store.getAccount(getParam(req.params.id));
   if (!account) {
     res.status(404).json({ error: "Account not found" });
     return;
@@ -173,7 +218,7 @@ apiRouter.delete("/accounts/:id/destinations/:destId", (req: Request, res: Respo
     return;
   }
   account.payout_destinations = account.payout_destinations.filter((d) => d.id !== destId);
-  store.saveAccount(account);
+  await store.saveAccount(account);
   res.status(204).end();
 });
 
@@ -215,34 +260,34 @@ apiRouter.post("/accounts/:id/withdraw", async (req: Request, res: Response) => 
 // -------------------------------------------------------------
 // Co-ops
 // -------------------------------------------------------------
-apiRouter.post("/coops", (req: Request, res: Response) => {
+apiRouter.post("/coops", async (req: Request, res: Response) => {
   const { name, treasurer_account_id } = req.body;
   if (!name || !treasurer_account_id) {
     res.status(400).json({ error: "Missing name or treasurer_account_id" });
     return;
   }
 
-  const treasurer = store.getAccount(treasurer_account_id);
+  const treasurer = await store.getAccount(treasurer_account_id);
   if (!treasurer) {
     res.status(400).json({ error: "Treasurer account does not exist" });
     return;
   }
 
   const coopId = `coop_${Date.now()}`;
-  const coop = store.saveCoop({
+  const coop = await store.saveCoop({
     id: coopId,
     name,
     treasurer_account_id,
   });
 
   treasurer.coop_id = coopId;
-  store.saveAccount(treasurer);
+  await store.saveAccount(treasurer);
 
   res.status(201).json(coop);
 });
 
-apiRouter.get("/coops/:id", (req: Request, res: Response) => {
-  const coop = store.getCoop(getParam(req.params.id));
+apiRouter.get("/coops/:id", async (req: Request, res: Response) => {
+  const coop = await store.getCoop(getParam(req.params.id));
   if (!coop) {
     res.status(404).json({ error: "Co-op not found" });
     return;
@@ -250,18 +295,18 @@ apiRouter.get("/coops/:id", (req: Request, res: Response) => {
   res.status(200).json(coop);
 });
 
-apiRouter.get("/coops/:id/members", (req: Request, res: Response) => {
-  const coop = store.getCoop(getParam(req.params.id));
+apiRouter.get("/coops/:id/members", async (req: Request, res: Response) => {
+  const coop = await store.getCoop(getParam(req.params.id));
   if (!coop) {
     res.status(404).json({ error: "Co-op not found" });
     return;
   }
-  const members = store.getCoopMembers(getParam(req.params.id));
+  const members = await store.getCoopMembers(getParam(req.params.id));
   res.status(200).json(members);
 });
 
-apiRouter.post("/coops/:id/members", (req: Request, res: Response) => {
-  const coop = store.getCoop(getParam(req.params.id));
+apiRouter.post("/coops/:id/members", async (req: Request, res: Response) => {
+  const coop = await store.getCoop(getParam(req.params.id));
   if (!coop) {
     res.status(404).json({ error: "Co-op not found" });
     return;
@@ -273,14 +318,14 @@ apiRouter.post("/coops/:id/members", (req: Request, res: Response) => {
     return;
   }
 
-  const account = store.getAccount(account_id);
+  const account = await store.getAccount(account_id);
   if (!account) {
     res.status(400).json({ error: "Account does not exist" });
     return;
   }
 
   account.coop_id = coop.id;
-  store.saveAccount(account);
+  await store.saveAccount(account);
 
   const member: CoopMember = {
     coop_id: coop.id,
@@ -290,14 +335,15 @@ apiRouter.post("/coops/:id/members", (req: Request, res: Response) => {
     kilos: kilos !== undefined ? Number(kilos) : undefined,
   };
 
-  store.addCoopMember(member);
+  await store.addCoopMember(member);
   res.status(201).json(member);
 });
 
-apiRouter.patch("/coops/:id/members/:accountId", (req: Request, res: Response) => {
+apiRouter.patch("/coops/:id/members/:accountId", async (req: Request, res: Response) => {
   const coopId = getParam(req.params.id);
   const accountId = getParam(req.params.accountId);
-  const existing = store.getCoopMembers(coopId).find((m) => m.account_id === accountId);
+  const members = await store.getCoopMembers(coopId);
+  const existing = members.find((m) => m.account_id === accountId);
   if (!existing) {
     res.status(404).json({ error: "Member not found" });
     return;
@@ -308,36 +354,39 @@ apiRouter.patch("/coops/:id/members/:accountId", (req: Request, res: Response) =
     return;
   }
   const updated: CoopMember = { ...existing, contribution_share: share };
-  store.addCoopMember(updated);
+  await store.addCoopMember(updated);
   res.status(200).json(updated);
 });
 
-apiRouter.get("/coops/:id/payouts", (req: Request, res: Response) => {
-  const coop = store.getCoop(getParam(req.params.id));
+apiRouter.get("/coops/:id/payouts", async (req: Request, res: Response) => {
+  const coop = await store.getCoop(getParam(req.params.id));
   if (!coop) {
     res.status(404).json({ error: "Co-op not found" });
     return;
   }
-  const invoiceIds = new Set(store.getInvoices({ coop_id: coop.id }).map((i) => i.id));
-  const payouts = store
-    .getCoopMembers(coop.id)
-    .flatMap((m) => store.getPayoutsByAccount(m.account_id))
+  const invoices = await store.getInvoices({ coop_id: coop.id });
+  const invoiceIds = new Set(invoices.map((i) => i.id));
+  const members = await store.getCoopMembers(coop.id);
+  const groups = await Promise.all(members.map((m) => store.getPayoutsByAccount(m.account_id)));
+  const payouts = groups
+    .flat()
     .filter((p) => invoiceIds.has(p.invoice_id))
     .sort((a, b) => b.created_at.localeCompare(a.created_at));
   res.status(200).json(payouts);
 });
 
 // Local name check. Payaza's name enquiry is documented for NGN and GHS only.
-apiRouter.post("/name-enquiry", (req: Request, res: Response) => {
+apiRouter.post("/name-enquiry", async (req: Request, res: Response) => {
   const { type, details } = req.body ?? {};
   if ((type !== "mpesa" && type !== "bank") || !details) {
     res.status(400).json({ error: "Missing type or details" });
     return;
   }
+  const accounts = await store.getAllAccounts();
   const match =
     type === "mpesa"
-      ? store.getAccountByPhone(String(details))
-      : store.getAllAccounts().find((a) => a.payout_destinations.some((d) => d.details === details));
+      ? await store.getAccountByPhone(String(details))
+      : accounts.find((a) => a.payout_destinations.some((d) => d.details === details));
   if (!match) {
     res.status(404).json({ error: "Account name not found" });
     return;
@@ -345,14 +394,14 @@ apiRouter.post("/name-enquiry", (req: Request, res: Response) => {
   res.status(200).json({ account_name: match.full_name });
 });
 
-apiRouter.get("/coops/:id/metrics", (req: Request, res: Response) => {
-  const coop = store.getCoop(getParam(req.params.id));
+apiRouter.get("/coops/:id/metrics", async (req: Request, res: Response) => {
+  const coop = await store.getCoop(getParam(req.params.id));
   if (!coop) {
     res.status(404).json({ error: "Co-op not found" });
     return;
   }
 
-  const invoices = store.getInvoices({ coop_id: coop.id });
+  const invoices = await store.getInvoices({ coop_id: coop.id });
   let total_collected_kes_cents = 0;
   let fee_taken_kes_cents = 0;
   let total_split_kes_cents = 0;
@@ -380,14 +429,14 @@ apiRouter.get("/coops/:id/metrics", (req: Request, res: Response) => {
 // -------------------------------------------------------------
 // Invoices
 // -------------------------------------------------------------
-apiRouter.get("/invoices", (req: Request, res: Response) => {
+apiRouter.get("/invoices", async (req: Request, res: Response) => {
   const coop_id = req.query.coop_id as string | undefined;
   const account_id = req.query.account_id as string | undefined;
-  const invoices = store.getInvoices({ coop_id, account_id });
+  const invoices = await store.getInvoices({ coop_id, account_id });
   res.status(200).json(invoices);
 });
 
-apiRouter.post("/invoices", (req: Request, res: Response) => {
+apiRouter.post("/invoices", async (req: Request, res: Response) => {
   const {
     type,
     account_id,
@@ -442,19 +491,19 @@ apiRouter.post("/invoices", (req: Request, res: Response) => {
     due_at: due_at || null,
   };
 
-  store.saveInvoice(invoice);
+  await store.saveInvoice(invoice);
   res.status(201).json(invoice);
 });
 
-apiRouter.get("/invoices/:id", (req: Request, res: Response) => {
-  const invoice = store.getInvoice(getParam(req.params.id));
+apiRouter.get("/invoices/:id", async (req: Request, res: Response) => {
+  const invoice = await store.getInvoice(getParam(req.params.id));
   if (!invoice) {
     res.status(404).json({ error: "Invoice not found" });
     return;
   }
 
-  const transactions = store.getTransactions(invoice.id);
-  const split_preview = invoice.type === "coop" ? pipeline.getSplitPreview(invoice.id) : null;
+  const transactions = await store.getTransactions(invoice.id);
+  const split_preview = invoice.type === "coop" ? await pipeline.getSplitPreview(invoice.id) : null;
 
   res.status(200).json({
     invoice,
@@ -465,7 +514,7 @@ apiRouter.get("/invoices/:id", (req: Request, res: Response) => {
 
 apiRouter.post("/invoices/:id/checkout-session", async (req: Request, res: Response) => {
   try {
-    const invoice = store.getInvoice(getParam(req.params.id));
+    const invoice = await store.getInvoice(getParam(req.params.id));
     if (!invoice) {
       res.status(404).json({ error: "Invoice not found" });
       return;
@@ -474,7 +523,7 @@ apiRouter.post("/invoices/:id/checkout-session", async (req: Request, res: Respo
     const session = await payaza.createCheckoutSession(invoice);
     invoice.payaza_checkout_reference = session.transaction_reference;
     if (session.link_id) invoice.payaza_link_id = session.link_id;
-    store.saveInvoice(invoice);
+    await store.saveInvoice(invoice);
 
     res.status(200).json(session);
   } catch (err) {
@@ -538,19 +587,19 @@ apiRouter.post("/webhooks/payaza", async (req: Request, res: Response) => {
     }
 
     const dedupeKey = decision.reference || decision.merchantReference || decision.invoiceId || "";
-    if (store.isWebhookProcessed(dedupeKey)) {
+    if (await store.isWebhookProcessed(dedupeKey)) {
       res.status(200).json({ received: true, duplicate: true });
       return;
     }
 
     if (decision.kind === "ignored") {
-      store.markWebhookProcessed(dedupeKey);
+      await store.markWebhookProcessed(dedupeKey);
       res.status(200).json({ received: true, ignored: true });
       return;
     }
 
     const result = await pipeline.applyPayazaWebhook(decision);
-    store.markWebhookProcessed(dedupeKey);
+    await store.markWebhookProcessed(dedupeKey);
     res.status(200).json({ received: true, matched: result.matched });
   } catch (err) {
     res.status(500).json({ error: String(err) });
@@ -572,7 +621,7 @@ apiRouter.post("/dev/simulate-payment/:invoiceId", async (req: Request, res: Res
   }
 
   try {
-    const invoice = store.getInvoice(getParam(req.params.invoiceId));
+    const invoice = await store.getInvoice(getParam(req.params.invoiceId));
     if (!invoice) {
       res.status(404).json({ error: "Invoice not found" });
       return;
@@ -590,7 +639,7 @@ apiRouter.post("/dev/simulate-payment/:invoiceId", async (req: Request, res: Res
   }
 });
 
-apiRouter.get("/dev/seed-ids", (req: Request, res: Response) => {
+apiRouter.get("/dev/seed-ids", async (req: Request, res: Response) => {
   if (payaza.getMode() !== "mock") {
     res.status(403).json({ error: "Seed IDs only available when PAYAZA_MODE=mock" });
     return;

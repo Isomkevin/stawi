@@ -1,0 +1,502 @@
+import { AsyncLocalStorage } from "async_hooks";
+import fs from "fs";
+import path from "path";
+import { Pool, PoolClient, QueryResult, QueryResultRow } from "pg";
+import { InMemoryStore } from "../store";
+import { Account, Coop, CoopMember, Invoice, Payout, PayoutDestination, Transaction } from "../types";
+
+const txClient = new AsyncLocalStorage<PoolClient>();
+
+function num(value: unknown): number {
+  if (value === null || value === undefined) return 0;
+  return typeof value === "number" ? value : Number(value);
+}
+
+function iso(value: unknown): string | null {
+  if (!value) return null;
+  return value instanceof Date ? value.toISOString() : String(value);
+}
+
+export class PostgresStore extends InMemoryStore {
+  constructor(private pool: Pool) {
+    super();
+  }
+
+  private async q<T extends QueryResultRow = QueryResultRow>(sql: string, params: unknown[] = []): Promise<QueryResult<T>> {
+    const client = txClient.getStore();
+    if (client) return client.query<T>(sql, params);
+    return this.pool.query<T>(sql, params);
+  }
+
+  public async withTransaction<T>(fn: () => Promise<T>): Promise<T> {
+    if (txClient.getStore()) return fn();
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await txClient.run(client, fn);
+      await client.query("COMMIT");
+      return result;
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async destinationsFor(accountIds: string[]): Promise<Map<string, PayoutDestination[]>> {
+    const grouped = new Map<string, PayoutDestination[]>();
+    if (accountIds.length === 0) return grouped;
+    const result = await this.q(
+      "SELECT * FROM payout_destinations WHERE account_id = ANY($1::varchar[]) ORDER BY created_at",
+      [accountIds]
+    );
+    for (const row of result.rows) {
+      const dest: PayoutDestination = {
+        id: row.id,
+        type: row.type,
+        details: row.details,
+        account_name: row.account_name,
+        is_verified: row.is_verified,
+        ...(row.bank_code ? { bank_code: row.bank_code } : {}),
+      };
+      const list = grouped.get(row.account_id) || [];
+      list.push(dest);
+      grouped.set(row.account_id, list);
+    }
+    return grouped;
+  }
+
+  private mapAccount(row: QueryResultRow, destinations: PayoutDestination[]): Account {
+    return {
+      id: row.id,
+      full_name: row.full_name,
+      phone_number: row.phone_number,
+      id_number: row.id_number,
+      payout_destinations: destinations,
+      coop_id: row.coop_id,
+      channel_capability: row.channel_capability,
+      balance_kes_cents: num(row.balance_kes_cents),
+      incoming_kes_cents: num(row.incoming_kes_cents),
+      pin_hash: row.pin_hash,
+      pin_failed_attempts: num(row.pin_failed_attempts),
+      pin_locked_until: iso(row.pin_locked_until),
+    };
+  }
+
+  public async saveAccount(account: Account): Promise<Account> {
+    const phone = this.normalizePhone(account.phone_number);
+    await this.q(
+      `INSERT INTO accounts (
+         id, full_name, phone_number, phone_normalized, id_number, coop_id, channel_capability,
+         balance_kes_cents, incoming_kes_cents, pin_hash, pin_failed_attempts, pin_locked_until
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+       ON CONFLICT (id) DO UPDATE SET
+         full_name = EXCLUDED.full_name,
+         phone_number = EXCLUDED.phone_number,
+         phone_normalized = EXCLUDED.phone_normalized,
+         id_number = EXCLUDED.id_number,
+         coop_id = EXCLUDED.coop_id,
+         channel_capability = EXCLUDED.channel_capability,
+         balance_kes_cents = EXCLUDED.balance_kes_cents,
+         incoming_kes_cents = EXCLUDED.incoming_kes_cents,
+         pin_hash = EXCLUDED.pin_hash,
+         pin_failed_attempts = EXCLUDED.pin_failed_attempts,
+         pin_locked_until = EXCLUDED.pin_locked_until`,
+      [
+        account.id,
+        account.full_name,
+        account.phone_number,
+        phone,
+        account.id_number,
+        account.coop_id,
+        account.channel_capability,
+        account.balance_kes_cents,
+        account.incoming_kes_cents,
+        account.pin_hash ?? null,
+        account.pin_failed_attempts ?? 0,
+        account.pin_locked_until,
+      ]
+    );
+    await this.q("DELETE FROM payout_destinations WHERE account_id = $1", [account.id]);
+    for (const dest of account.payout_destinations) {
+      await this.q(
+        `INSERT INTO payout_destinations (id, account_id, type, details, account_name, bank_code, is_verified)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [dest.id, account.id, dest.type, dest.details, dest.account_name, dest.bank_code ?? null, dest.is_verified]
+      );
+    }
+    return account;
+  }
+
+  public async getAccount(id: string): Promise<Account | undefined> {
+    const result = await this.q("SELECT * FROM accounts WHERE id = $1", [id]);
+    if (result.rows.length === 0) return undefined;
+    const destinations = await this.destinationsFor([id]);
+    return this.mapAccount(result.rows[0], destinations.get(id) || []);
+  }
+
+  public async getAccountByPhone(phone: string): Promise<Account | undefined> {
+    const result = await this.q("SELECT * FROM accounts WHERE phone_normalized = $1", [this.normalizePhone(phone)]);
+    if (result.rows.length === 0) return undefined;
+    const row = result.rows[0];
+    const destinations = await this.destinationsFor([row.id]);
+    return this.mapAccount(row, destinations.get(row.id) || []);
+  }
+
+  public async getAllAccounts(): Promise<Account[]> {
+    const result = await this.q("SELECT * FROM accounts");
+    const ids = result.rows.map((row) => row.id as string);
+    const destinations = await this.destinationsFor(ids);
+    return result.rows.map((row) => this.mapAccount(row, destinations.get(row.id) || []));
+  }
+
+  public async saveCoop(coop: Coop): Promise<Coop> {
+    await this.q(
+      `INSERT INTO coops (id, name, treasurer_account_id) VALUES ($1,$2,$3)
+       ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, treasurer_account_id = EXCLUDED.treasurer_account_id`,
+      [coop.id, coop.name, coop.treasurer_account_id]
+    );
+    return coop;
+  }
+
+  public async getCoop(id: string): Promise<Coop | undefined> {
+    const result = await this.q("SELECT * FROM coops WHERE id = $1", [id]);
+    if (result.rows.length === 0) return undefined;
+    const row = result.rows[0];
+    return { id: row.id, name: row.name, treasurer_account_id: row.treasurer_account_id };
+  }
+
+  public async getAllCoops(): Promise<Coop[]> {
+    const result = await this.q("SELECT * FROM coops");
+    return result.rows.map((row) => ({ id: row.id, name: row.name, treasurer_account_id: row.treasurer_account_id }));
+  }
+
+  public async getCoopMembers(coopId: string): Promise<CoopMember[]> {
+    const result = await this.q(
+      `SELECT m.coop_id, m.account_id, m.contribution_share, m.kilos, a.full_name
+       FROM coop_members m JOIN accounts a ON a.id = m.account_id WHERE m.coop_id = $1`,
+      [coopId]
+    );
+    return result.rows.map((row) => ({
+      coop_id: row.coop_id,
+      account_id: row.account_id,
+      full_name: row.full_name,
+      contribution_share: num(row.contribution_share),
+      kilos: row.kilos === null ? undefined : num(row.kilos),
+    }));
+  }
+
+  public async addCoopMember(member: CoopMember): Promise<void> {
+    await this.q(
+      `INSERT INTO coop_members (coop_id, account_id, contribution_share, kilos)
+       VALUES ($1,$2,$3,$4)
+       ON CONFLICT (coop_id, account_id) DO UPDATE SET
+         contribution_share = EXCLUDED.contribution_share,
+         kilos = EXCLUDED.kilos`,
+      [member.coop_id, member.account_id, member.contribution_share, member.kilos ?? null]
+    );
+  }
+
+  private mapInvoice(row: QueryResultRow): Invoice {
+    return {
+      id: row.id,
+      type: row.type,
+      account_id: row.account_id,
+      coop_id: row.coop_id,
+      buyer_name: row.buyer_name,
+      buyer_email: row.buyer_email,
+      buyer_phone: row.buyer_phone ?? undefined,
+      amount: num(row.amount),
+      currency: row.currency,
+      description: row.description || "",
+      reference: row.reference,
+      status: row.status,
+      split_approved: row.split_approved,
+      fx_rate: row.fx_rate === null ? null : num(row.fx_rate),
+      fee_kes_cents: row.fee_kes_cents === null ? null : num(row.fee_kes_cents),
+      kes_total_cents: row.kes_total_cents === null ? null : num(row.kes_total_cents),
+      payaza_checkout_reference: row.payaza_checkout_reference,
+      payaza_link_id: row.payaza_link_id,
+      created_at: iso(row.created_at) || new Date().toISOString(),
+      due_at: iso(row.due_at),
+    };
+  }
+
+  public async saveInvoice(invoice: Invoice): Promise<Invoice> {
+    await this.q(
+      `INSERT INTO invoices (
+         id, type, account_id, coop_id, buyer_name, buyer_email, buyer_phone, amount, currency,
+         description, reference, status, split_approved, fx_rate, fee_kes_cents, kes_total_cents,
+         payaza_checkout_reference, payaza_link_id, due_at, created_at
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+       ON CONFLICT (id) DO UPDATE SET
+         type = EXCLUDED.type,
+         account_id = EXCLUDED.account_id,
+         coop_id = EXCLUDED.coop_id,
+         buyer_name = EXCLUDED.buyer_name,
+         buyer_email = EXCLUDED.buyer_email,
+         buyer_phone = EXCLUDED.buyer_phone,
+         amount = EXCLUDED.amount,
+         currency = EXCLUDED.currency,
+         description = EXCLUDED.description,
+         reference = EXCLUDED.reference,
+         status = EXCLUDED.status,
+         split_approved = EXCLUDED.split_approved,
+         fx_rate = EXCLUDED.fx_rate,
+         fee_kes_cents = EXCLUDED.fee_kes_cents,
+         kes_total_cents = EXCLUDED.kes_total_cents,
+         payaza_checkout_reference = EXCLUDED.payaza_checkout_reference,
+         payaza_link_id = EXCLUDED.payaza_link_id,
+         due_at = EXCLUDED.due_at`,
+      [
+        invoice.id,
+        invoice.type,
+        invoice.account_id,
+        invoice.coop_id,
+        invoice.buyer_name,
+        invoice.buyer_email,
+        invoice.buyer_phone ?? null,
+        invoice.amount,
+        invoice.currency,
+        invoice.description,
+        invoice.reference,
+        invoice.status,
+        invoice.split_approved,
+        invoice.fx_rate,
+        invoice.fee_kes_cents,
+        invoice.kes_total_cents,
+        invoice.payaza_checkout_reference,
+        invoice.payaza_link_id ?? null,
+        invoice.due_at,
+        invoice.created_at,
+      ]
+    );
+    return invoice;
+  }
+
+  public async getInvoice(id: string): Promise<Invoice | undefined> {
+    const lock = txClient.getStore() ? " FOR UPDATE" : "";
+    const result = await this.q(`SELECT * FROM invoices WHERE id = $1${lock}`, [id]);
+    return result.rows[0] ? this.mapInvoice(result.rows[0]) : undefined;
+  }
+
+  public async getInvoices(filters?: { coop_id?: string; account_id?: string }): Promise<Invoice[]> {
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+    if (filters?.coop_id) {
+      params.push(filters.coop_id);
+      clauses.push(`coop_id = $${params.length}`);
+    }
+    if (filters?.account_id) {
+      params.push(filters.account_id);
+      clauses.push(`account_id = $${params.length}`);
+    }
+    const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+    const result = await this.q(`SELECT * FROM invoices ${where} ORDER BY created_at DESC`, params);
+    return result.rows.map((row) => this.mapInvoice(row));
+  }
+
+  private mapTransaction(row: QueryResultRow): Transaction {
+    return {
+      id: row.id,
+      invoice_id: row.invoice_id,
+      type: row.type,
+      status: row.status,
+      amount: num(row.amount),
+      currency: row.currency,
+      payaza_reference: row.payaza_reference,
+      fx_rate: row.fx_rate === null ? null : num(row.fx_rate),
+      fee_kes_cents: row.fee_kes_cents === null ? null : num(row.fee_kes_cents),
+      created_at: iso(row.created_at) || new Date().toISOString(),
+    };
+  }
+
+  public async addTransaction(transaction: Transaction): Promise<void> {
+    await this.q(
+      `INSERT INTO transactions (
+         id, invoice_id, type, status, amount, currency, payaza_reference, fx_rate, fee_kes_cents, created_at
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       ON CONFLICT (id) DO NOTHING`,
+      [
+        transaction.id,
+        transaction.invoice_id,
+        transaction.type,
+        transaction.status,
+        transaction.amount,
+        transaction.currency,
+        transaction.payaza_reference,
+        transaction.fx_rate,
+        transaction.fee_kes_cents,
+        transaction.created_at,
+      ]
+    );
+  }
+
+  public async getTransactions(invoiceId: string): Promise<Transaction[]> {
+    const result = await this.q("SELECT * FROM transactions WHERE invoice_id = $1 ORDER BY created_at", [invoiceId]);
+    return result.rows.map((row) => this.mapTransaction(row));
+  }
+
+  public async getAllTransactions(): Promise<Transaction[]> {
+    const result = await this.q("SELECT * FROM transactions ORDER BY created_at");
+    return result.rows.map((row) => this.mapTransaction(row));
+  }
+
+  private mapPayout(row: QueryResultRow): Payout {
+    return {
+      id: row.id,
+      invoice_id: row.invoice_id,
+      transaction_id: row.transaction_id ?? undefined,
+      account_id: row.account_id,
+      kind: row.kind,
+      amount_kes_cents: num(row.amount_kes_cents),
+      destination_id: row.destination_id,
+      status: row.status,
+      created_at: iso(row.created_at) || new Date().toISOString(),
+      idempotency_key: row.idempotency_key ?? undefined,
+      payaza_reference: row.payaza_reference,
+    };
+  }
+
+  public async addPayout(payout: Payout): Promise<void> {
+    await this.q(
+      `INSERT INTO payouts (
+         id, invoice_id, transaction_id, account_id, kind, amount_kes_cents, destination_id,
+         status, idempotency_key, payaza_reference, created_at
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [
+        payout.id,
+        payout.invoice_id,
+        payout.transaction_id ?? null,
+        payout.account_id,
+        payout.kind,
+        payout.amount_kes_cents,
+        payout.destination_id,
+        payout.status,
+        payout.idempotency_key ?? null,
+        payout.payaza_reference ?? null,
+        payout.created_at,
+      ]
+    );
+  }
+
+  public async updatePayout(payout: Payout): Promise<void> {
+    await this.q(
+      `UPDATE payouts SET status = $2, idempotency_key = $3, payaza_reference = $4, destination_id = $5
+       WHERE id = $1`,
+      [payout.id, payout.status, payout.idempotency_key ?? null, payout.payaza_reference ?? null, payout.destination_id]
+    );
+  }
+
+  public async getPayout(id: string): Promise<Payout | undefined> {
+    const result = await this.q("SELECT * FROM payouts WHERE id = $1", [id]);
+    return result.rows[0] ? this.mapPayout(result.rows[0]) : undefined;
+  }
+
+  public async getPayoutsByAccount(accountId: string, limit?: number): Promise<Payout[]> {
+    const sql = limit
+      ? "SELECT * FROM payouts WHERE account_id = $1 ORDER BY created_at DESC LIMIT $2"
+      : "SELECT * FROM payouts WHERE account_id = $1 ORDER BY created_at DESC";
+    const result = await this.q(sql, limit ? [accountId, limit] : [accountId]);
+    return result.rows.map((row) => this.mapPayout(row));
+  }
+
+  public async getPayoutByIdempotency(idempotencyKey: string): Promise<Payout | undefined> {
+    const result = await this.q("SELECT * FROM payouts WHERE idempotency_key = $1", [idempotencyKey]);
+    return result.rows[0] ? this.mapPayout(result.rows[0]) : undefined;
+  }
+
+  public async getPayoutByPayazaReference(reference: string): Promise<Payout | undefined> {
+    const result = await this.q("SELECT * FROM payouts WHERE payaza_reference = $1", [reference]);
+    return result.rows[0] ? this.mapPayout(result.rows[0]) : undefined;
+  }
+
+  public async isWebhookProcessed(reference: string): Promise<boolean> {
+    const result = await this.q("SELECT 1 FROM webhook_events WHERE reference = $1", [reference]);
+    return result.rows.length > 0;
+  }
+
+  public async markWebhookProcessed(reference: string): Promise<void> {
+    await this.q("INSERT INTO webhook_events (reference) VALUES ($1) ON CONFLICT DO NOTHING", [reference]);
+  }
+
+  public async saveOtp(phone: string, codeHash: string, expiresAt: string): Promise<void> {
+    const normalized = this.normalizePhone(phone);
+    await this.q(
+      `INSERT INTO otp_codes (phone_number, code_hash, expires_at, attempts)
+       VALUES ($1,$2,$3,0)
+       ON CONFLICT (phone_number) DO UPDATE SET code_hash = EXCLUDED.code_hash, expires_at = EXCLUDED.expires_at, attempts = 0, created_at = CURRENT_TIMESTAMP`,
+      [normalized, codeHash, expiresAt]
+    );
+  }
+
+  public async getOtp(phone: string): Promise<{ codeHash: string; expiresAt: string; attempts: number } | undefined> {
+    const result = await this.q("SELECT * FROM otp_codes WHERE phone_number = $1", [this.normalizePhone(phone)]);
+    if (!result.rows[0]) return undefined;
+    const row = result.rows[0];
+    return { codeHash: row.code_hash, expiresAt: iso(row.expires_at) || "", attempts: num(row.attempts) };
+  }
+
+  public async incrementOtpAttempts(phone: string): Promise<number> {
+    const result = await this.q(
+      "UPDATE otp_codes SET attempts = attempts + 1 WHERE phone_number = $1 RETURNING attempts",
+      [this.normalizePhone(phone)]
+    );
+    return result.rows[0] ? num(result.rows[0].attempts) : 0;
+  }
+
+  public async deleteOtp(phone: string): Promise<void> {
+    await this.q("DELETE FROM otp_codes WHERE phone_number = $1", [this.normalizePhone(phone)]);
+  }
+
+  public async saveSession(tokenHash: string, accountId: string, expiresAt: string): Promise<void> {
+    await this.q(
+      `INSERT INTO sessions (token_hash, account_id, expires_at) VALUES ($1,$2,$3)
+       ON CONFLICT (token_hash) DO UPDATE SET expires_at = EXCLUDED.expires_at`,
+      [tokenHash, accountId, expiresAt]
+    );
+  }
+
+  public async getSessionAccount(tokenHash: string): Promise<Account | undefined> {
+    const result = await this.q("SELECT account_id, expires_at FROM sessions WHERE token_hash = $1", [tokenHash]);
+    const row = result.rows[0];
+    if (!row) return undefined;
+    if (new Date(row.expires_at).getTime() <= Date.now()) {
+      await this.deleteSession(tokenHash);
+      return undefined;
+    }
+    return this.getAccount(row.account_id);
+  }
+
+  public async deleteSession(tokenHash: string): Promise<void> {
+    await this.q("DELETE FROM sessions WHERE token_hash = $1", [tokenHash]);
+  }
+
+  public async reset(): Promise<void> {
+    await this.q(
+      `TRUNCATE webhook_events, otp_codes, sessions, payouts, transactions, invoices, coop_members, payout_destinations, accounts, coops RESTART IDENTITY CASCADE`
+    );
+  }
+}
+
+export async function connectPostgres(connectionString: string): Promise<PostgresStore> {
+  const pool = new Pool({
+    connectionString,
+    ssl: /localhost|127\.0\.0\.1/.test(connectionString) ? undefined : { rejectUnauthorized: false },
+  });
+  const schemaPath = path.resolve(__dirname, "../../db/schema.sql");
+  const schema = fs.readFileSync(schemaPath, "utf8");
+  const stripped = schema
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("--"))
+    .join("\n");
+  const statements = stripped
+    .split(";")
+    .map((statement) => statement.trim())
+    .filter(Boolean);
+  for (const statement of statements) {
+    await pool.query(statement);
+  }
+  return new PostgresStore(pool);
+}

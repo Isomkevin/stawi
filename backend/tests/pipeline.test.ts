@@ -5,7 +5,7 @@ import { hashPin } from "../src/services/pin";
 
 describe("Pipeline Service", () => {
   beforeEach(async () => {
-    store.reset();
+    await store.reset();
   });
 
   it("completes Stawi Direct collection, conversion, and credits exporter balance", async () => {
@@ -22,7 +22,7 @@ describe("Pipeline Service", () => {
       incoming_kes_cents: 0,
       pin_hash: pinHash,
     };
-    store.saveAccount(exporter);
+    await store.saveAccount(exporter);
 
     const inv: Invoice = {
       id: "inv_dir_test",
@@ -44,17 +44,17 @@ describe("Pipeline Service", () => {
       created_at: new Date().toISOString(),
       due_at: null,
     };
-    store.saveInvoice(inv);
+    await store.saveInvoice(inv);
 
     const res = await pipeline.processPayment(inv.id);
     expect(res.invoice.status).toBe("completed");
     expect(res.invoice.fx_rate).toBe(129.0);
     expect(res.invoice.kes_total_cents).toBeGreaterThan(0);
 
-    const updatedExp = store.getAccount(exporter.id);
+    const updatedExp = await store.getAccount(exporter.id);
     expect(updatedExp?.balance_kes_cents).toBe(res.invoice.kes_total_cents);
 
-    const payouts = store.getPayoutsByAccount(exporter.id);
+    const payouts = await store.getPayoutsByAccount(exporter.id);
     expect(payouts.length).toBe(1);
     expect(payouts[0].kind).toBe("credit");
     expect(payouts[0].status).toBe("confirmed");
@@ -68,7 +68,7 @@ describe("Pipeline Service", () => {
       name: "Test Co-op",
       treasurer_account_id: "acc_treasurer",
     };
-    store.saveCoop(coop);
+    await store.saveCoop(coop);
 
     const treasurer: Account = {
       id: "acc_treasurer",
@@ -82,7 +82,7 @@ describe("Pipeline Service", () => {
       incoming_kes_cents: 0,
       pin_hash: pinHash,
     };
-    store.saveAccount(treasurer);
+    await store.saveAccount(treasurer);
 
     const farmer1: Account = {
       id: "acc_f1",
@@ -108,11 +108,11 @@ describe("Pipeline Service", () => {
       incoming_kes_cents: 0,
       pin_hash: pinHash,
     };
-    store.saveAccount(farmer1);
-    store.saveAccount(farmer2);
+    await store.saveAccount(farmer1);
+    await store.saveAccount(farmer2);
 
-    store.addCoopMember({ coop_id: coop.id, account_id: farmer1.id, contribution_share: 60 });
-    store.addCoopMember({ coop_id: coop.id, account_id: farmer2.id, contribution_share: 40 });
+    await store.addCoopMember({ coop_id: coop.id, account_id: farmer1.id, contribution_share: 60 });
+    await store.addCoopMember({ coop_id: coop.id, account_id: farmer2.id, contribution_share: 40 });
 
     const inv: Invoice = {
       id: "inv_coop_test",
@@ -134,14 +134,14 @@ describe("Pipeline Service", () => {
       created_at: new Date().toISOString(),
       due_at: null,
     };
-    store.saveInvoice(inv);
+    await store.saveInvoice(inv);
 
     // 1. Process payment: puts into settling state, populates incoming_kes_cents
     const step1 = await pipeline.processPayment(inv.id);
     expect(step1.invoice.status).toBe("settling");
     expect(step1.invoice.split_approved).toBe(false);
 
-    const f1AfterPayment = store.getAccount(farmer1.id);
+    const f1AfterPayment = await store.getAccount(farmer1.id);
     expect(f1AfterPayment?.incoming_kes_cents).toBeGreaterThan(0);
     expect(f1AfterPayment?.balance_kes_cents).toBe(0); // Not yet available!
 
@@ -153,8 +153,8 @@ describe("Pipeline Service", () => {
     expect(approval.payouts?.length).toBe(2);
 
     // Verify balances credited
-    const f1Final = store.getAccount(farmer1.id);
-    const f2Final = store.getAccount(farmer2.id);
+    const f1Final = await store.getAccount(farmer1.id);
+    const f2Final = await store.getAccount(farmer2.id);
     expect(f1Final?.balance_kes_cents).toBeGreaterThan(0);
     expect(f2Final?.balance_kes_cents).toBeGreaterThan(0);
     expect(f1Final?.balance_kes_cents! + f2Final?.balance_kes_cents!).toBe(inv.kes_total_cents);
@@ -187,7 +187,7 @@ describe("Pipeline Service", () => {
       incoming_kes_cents: 0,
       pin_hash: pinHash,
     };
-    store.saveAccount(account);
+    await store.saveAccount(account);
 
     // Overdraw rejected
     const overdraw = await pipeline.withdraw(
@@ -211,7 +211,7 @@ describe("Pipeline Service", () => {
     expect(wth.success).toBe(true);
     expect(wth.payout?.amount_kes_cents).toBe(200000);
 
-    const updated = store.getAccount(account.id);
+    const updated = await store.getAccount(account.id);
     expect(updated?.balance_kes_cents).toBe(300000);
 
     // Replay with same idempotency key returns existing payout without double deducting
@@ -224,6 +224,6 @@ describe("Pipeline Service", () => {
     );
     expect(replay.success).toBe(true);
     expect(replay.payout?.id).toBe(wth.payout?.id);
-    expect(store.getAccount(account.id)?.balance_kes_cents).toBe(300000);
+    expect((await store.getAccount(account.id))?.balance_kes_cents).toBe(300000);
   });
 });

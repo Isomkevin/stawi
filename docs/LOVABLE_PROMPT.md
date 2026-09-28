@@ -158,6 +158,10 @@ type SplitLine = { account_id: string; share: number; gross_kes_cents: number; f
 
 Endpoints (client methods mirror these 1:1):
 ```
+POST /auth/otp                         { phone_number } -> { sent: true }  (texts a 6-digit code; mock mode also returns dev_code)
+POST /auth/verify                      { phone_number, code } -> { token, account_id, role, account }
+POST /auth/logout                      clears the session cookie
+Authorization: Bearer <token> is required on every route except health, account creation, OTP, buyer invoice view, checkout, Payaza webhooks, and USSD, whenever the API is in production or PAYAZA_MODE is sandbox/live.
 POST /accounts                          body: { full_name, phone_number, id_number, pin(4 digits), destination:{type,details,account_name}, ussd:boolean, coop_id? }
 GET  /accounts/{id}                     GET /accounts/{id}/balance -> { balance_kes_cents, incoming_kes_cents }
 GET  /accounts/{id}/transactions?limit  -> Payout[] (credits and withdrawals, newest first)

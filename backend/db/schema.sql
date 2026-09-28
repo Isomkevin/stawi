@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS accounts (
   id VARCHAR(64) PRIMARY KEY,
   full_name VARCHAR(255) NOT NULL,
   phone_number VARCHAR(32) NOT NULL UNIQUE,
+  phone_normalized VARCHAR(32),
   id_number VARCHAR(64) NOT NULL,
   coop_id VARCHAR(64) REFERENCES coops(id) ON DELETE SET NULL,
   channel_capability VARCHAR(32) NOT NULL DEFAULT 'webapp',
@@ -93,6 +94,26 @@ CREATE TABLE IF NOT EXISTS payouts (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS sessions (
+  token_hash VARCHAR(128) PRIMARY KEY,
+  account_id VARCHAR(64) NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS otp_codes (
+  phone_number VARCHAR(32) PRIMARY KEY,
+  code_hash VARCHAR(128) NOT NULL,
+  expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+  attempts INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS webhook_events (
+  reference VARCHAR(128) PRIMARY KEY,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_accounts_phone ON accounts(phone_number);
 CREATE INDEX IF NOT EXISTS idx_invoices_coop ON invoices(coop_id);
@@ -100,3 +121,8 @@ CREATE INDEX IF NOT EXISTS idx_invoices_account ON invoices(account_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_invoice ON transactions(invoice_id);
 CREATE INDEX IF NOT EXISTS idx_payouts_account ON payouts(account_id);
 CREATE INDEX IF NOT EXISTS idx_payouts_idempotency ON payouts(idempotency_key);
+CREATE INDEX IF NOT EXISTS idx_payouts_payaza_ref ON payouts(payaza_reference);
+CREATE INDEX IF NOT EXISTS idx_sessions_account ON sessions(account_id);
+
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS phone_normalized VARCHAR(32);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_phone_norm ON accounts(phone_normalized);

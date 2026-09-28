@@ -6,8 +6,8 @@ import { store } from "../src/store";
 describe("REST API Endpoints", () => {
   const app = createApp();
 
-  beforeEach(() => {
-    store.reset();
+  beforeEach(async () => {
+    await store.reset();
   });
 
   it("GET /health returns 200 { status: 'ok' }", async () => {
@@ -64,6 +64,7 @@ describe("REST API Endpoints", () => {
     const secret = "test-secret-key";
     process.env.PAYAZA_SECRET_KEY = secret;
     process.env.PAYAZA_MODE = "live"; // Force signature verification
+    process.env.AUTH_REQUIRED = "false";
 
     // Create an invoice first
     const invRes = await request(app).post("/invoices").send({
@@ -104,16 +105,18 @@ describe("REST API Endpoints", () => {
     expect(resGood.status).toBe(200);
     expect(resGood.body.received).toBe(true);
 
-    const updated = store.getInvoice(invId);
+    const updated = await store.getInvoice(invId);
     expect(updated?.status).toBe("completed");
 
     process.env.PAYAZA_MODE = "mock";
+    delete process.env.AUTH_REQUIRED;
   });
 
   it("does not credit an underpaid Payaza collection", async () => {
     const secret = "test-secret-key";
     process.env.PAYAZA_SECRET_KEY = secret;
     process.env.PAYAZA_MODE = "live";
+    process.env.AUTH_REQUIRED = "false";
 
     const invRes = await request(app).post("/invoices").send({
       type: "direct",
@@ -143,7 +146,8 @@ describe("REST API Endpoints", () => {
       .send(payload);
 
     expect(res.status).toBe(200);
-    expect(store.getInvoice(invId)?.status).toBe("failed");
+    expect((await store.getInvoice(invId))?.status).toBe("failed");
     process.env.PAYAZA_MODE = "mock";
+    delete process.env.AUTH_REQUIRED;
   });
 });

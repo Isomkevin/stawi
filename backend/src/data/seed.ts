@@ -40,7 +40,7 @@ export async function seedDatabase(): Promise<SeedIds> {
     name: "Kiambu Highlands Coffee Co-op",
     treasurer_account_id: "acc_treasurer",
   };
-  store.saveCoop(coop);
+  await store.saveCoop(coop);
 
   // 2. Treasurer Account
   const treasurer: Account = {
@@ -65,7 +65,7 @@ export async function seedDatabase(): Promise<SeedIds> {
     pin_failed_attempts: 0,
     pin_locked_until: null,
   };
-  store.saveAccount(treasurer);
+  await store.saveAccount(treasurer);
 
   // 3. 10 Farmers
   const farmersData = [
@@ -117,9 +117,9 @@ export async function seedDatabase(): Promise<SeedIds> {
       pin_failed_attempts: 0,
       pin_locked_until: null,
     };
-    store.saveAccount(farmerAcc);
+    await store.saveAccount(farmerAcc);
 
-    store.addCoopMember({
+    await store.addCoopMember({
       coop_id: coop.id,
       account_id: farmerId,
       full_name: f.name,
@@ -160,7 +160,7 @@ export async function seedDatabase(): Promise<SeedIds> {
     pin_failed_attempts: 0,
     pin_locked_until: null,
   };
-  store.saveAccount(exporter);
+  await store.saveAccount(exporter);
 
   // 5. Invoices & Transactions
   // 5a. Completed and split Co-op invoice: USD 12,400 (Hamburg buyer)
@@ -190,9 +190,9 @@ export async function seedDatabase(): Promise<SeedIds> {
     created_at: new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString(),
     due_at: new Date(Date.now() - 5 * 24 * 3600 * 1000).toISOString(),
   };
-  store.saveInvoice(inv1);
+  await store.saveInvoice(inv1);
 
-  store.addTransaction({
+  await store.addTransaction({
     id: "tx_col_inv1",
     invoice_id: inv1.id,
     type: "collection",
@@ -205,7 +205,7 @@ export async function seedDatabase(): Promise<SeedIds> {
     created_at: new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString(),
   });
 
-  store.addTransaction({
+  await store.addTransaction({
     id: "tx_conv_inv1",
     invoice_id: inv1.id,
     type: "conversion",
@@ -218,7 +218,7 @@ export async function seedDatabase(): Promise<SeedIds> {
     created_at: new Date(Date.now() - 7 * 24 * 3600 * 1000 + 300000).toISOString(),
   });
 
-  store.addTransaction({
+  await store.addTransaction({
     id: "tx_settle_inv1",
     invoice_id: inv1.id,
     type: "settlement",
@@ -232,7 +232,7 @@ export async function seedDatabase(): Promise<SeedIds> {
   });
 
   // Split payouts for inv1
-  const members = store.getCoopMembers(coop.id);
+  const members = await store.getCoopMembers(coop.id);
   const splitLines = splitByShares(inv1GrossCents, inv1FeeCents, members);
   for (const line of splitLines) {
     const payout: Payout = {
@@ -246,7 +246,7 @@ export async function seedDatabase(): Promise<SeedIds> {
       status: "confirmed",
       created_at: new Date(Date.now() - 7 * 24 * 3600 * 1000 + 700000).toISOString(),
     };
-    store.addPayout(payout);
+    await store.addPayout(payout);
   }
 
   // 5b. Co-op invoice awaiting split approval: USD 8,500 (Berlin buyer)
@@ -275,9 +275,9 @@ export async function seedDatabase(): Promise<SeedIds> {
     created_at: new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString(),
     due_at: new Date(Date.now() + 3 * 24 * 3600 * 1000).toISOString(),
   };
-  store.saveInvoice(inv2);
+  await store.saveInvoice(inv2);
 
-  store.addTransaction({
+  await store.addTransaction({
     id: "tx_col_inv2",
     invoice_id: inv2.id,
     type: "collection",
@@ -290,7 +290,7 @@ export async function seedDatabase(): Promise<SeedIds> {
     created_at: new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString(),
   });
 
-  store.addTransaction({
+  await store.addTransaction({
     id: "tx_conv_inv2",
     invoice_id: inv2.id,
     type: "conversion",
@@ -306,10 +306,10 @@ export async function seedDatabase(): Promise<SeedIds> {
   // Populate incoming_kes_cents on farmers for inv2
   const inv2SplitLines = splitByShares(inv2GrossCents, inv2FeeCents, members);
   for (const line of inv2SplitLines) {
-    const acc = store.getAccount(line.account_id);
+    const acc = await store.getAccount(line.account_id);
     if (acc) {
       acc.incoming_kes_cents += line.net_kes_cents;
-      store.saveAccount(acc);
+      await store.saveAccount(acc);
     }
   }
 
@@ -335,7 +335,7 @@ export async function seedDatabase(): Promise<SeedIds> {
     created_at: new Date(Date.now() - 1 * 24 * 3600 * 1000).toISOString(),
     due_at: new Date(Date.now() + 10 * 24 * 3600 * 1000).toISOString(),
   };
-  store.saveInvoice(inv3);
+  await store.saveInvoice(inv3);
 
   // 5d. Completed Direct invoice: USD 3,200 (New York buyer)
   const inv4Gross = toKesCents(3200, "USD", fxRate);
@@ -363,9 +363,9 @@ export async function seedDatabase(): Promise<SeedIds> {
     created_at: new Date(Date.now() - 4 * 24 * 3600 * 1000).toISOString(),
     due_at: new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString(),
   };
-  store.saveInvoice(inv4);
+  await store.saveInvoice(inv4);
 
-  store.addPayout({
+  await store.addPayout({
     id: "payout_direct_inv4",
     invoice_id: inv4.id,
     account_id: exporter.id,
@@ -398,7 +398,7 @@ export async function seedDatabase(): Promise<SeedIds> {
     created_at: new Date().toISOString(),
     due_at: new Date(Date.now() + 14 * 24 * 3600 * 1000).toISOString(),
   };
-  store.saveInvoice(inv5);
+  await store.saveInvoice(inv5);
 
   return SEED_IDS;
 }

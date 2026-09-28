@@ -1,3 +1,8 @@
+databases:
+  - name: stawi-db
+    plan: free
+    databaseName: stawi
+
 services:
   - type: web
     name: stawi-backend
@@ -9,13 +14,31 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: stawi-db
+          property: connectionString
+      - key: SEED
+        value: "false"
       - key: PAYAZA_MODE
-        value: mock
+        sync: false
+      - key: PAYAZA_PUBLIC_KEY
+        sync: false
+      - key: PAYAZA_SECRET_KEY
+        sync: false
+      - key: PAYAZA_PIN
+        sync: false
+      - key: PAYAZA_TENANT
+        value: test
       - key: AT_ENV
-        value: sandbox
+        sync: false
+      - key: AT_USERNAME
+        sync: false
+      - key: AT_API_KEY
+        sync: false
       - key: AT_CALLBACK_SECRET
         generateValue: true
-      - key: SEED
-        value: "true"
+      - key: AT_SENDER_ID
+        value: STAWI
       - key: CORS_ORIGIN
-        value: "*"
+        sync: false

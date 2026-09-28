@@ -45,8 +45,8 @@ Verified (production build, `node dist`): exact-sum splits, Direct and Co-op flo
 
 Not done, on purpose and clearly marked:
 1. **Payaza FX conversion** has no documented endpoint. Stawi records an illustrative rate on the conversion transaction. Payment links, KES payouts, webhook HMAC, and KES account enquiry follow `docs/skills/payaza/SKILL.md`. Do not create a Payaza sub-account per farmer.
-2. **Auth.** Routes are open. Add OTP login + sessions and enforce that a caller can only act on their own account and that only the treasurer approves splits, **before the API is publicly reachable with real data**. Set `SEED=false` outside demos.
-3. **Persistence.** In-memory store resets on every restart/deploy (Render free tier also sleeps). Move to Postgres (`db/schema.sql`) before real money; make balance changes and payout rows one DB transaction.
+2. **Auth is on for production and for Payaza sandbox/live.** `POST /auth/otp` then `POST /auth/verify` with the SMS code. The Lovable login screen still uses a hardcoded demo code and must be pointed at these endpoints (see `docs/LOVABLE_PROMPT.md`). Set `SEED=false` outside demos.
+3. **Persistence.** Set `DATABASE_URL`. The API applies `db/schema.sql` on startup and keeps balance changes and payout rows in one database transaction. Without `DATABASE_URL` the process uses memory and resets on restart.
 4. **M-Pesa name enquiry** is not in Payaza's docs (NGN and GHS only). Destinations can be added and removed; the account holder confirms the name. Invite links are still open.
 5. **Africa's Talking live**: shortcode + sender-ID approvals (start now; lead times), permanent HTTPS callback, IP allowlist.
 6. **Licensing**: holding farmer balances before withdrawal may require authorisation in Kenya. Confirm with Payaza and a Kenyan fintech lawyer; a safer design if unclear is paying out directly at split time.

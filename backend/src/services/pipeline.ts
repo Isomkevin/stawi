@@ -37,18 +37,27 @@ export class PipelineService {
     paidAmount?: number,
     paidCurrency?: string
   ): Promise<{ invoice: Invoice; transactions: Transaction[]; payouts: Payout[] }> {
-    const invoice = store.getInvoice(invoiceId);
+    return await store.withTransaction(() => this.applyCollection(invoiceId, payazaRef, paidAmount, paidCurrency));
+  }
+
+  private async applyCollection(
+    invoiceId: string,
+    payazaRef?: string,
+    paidAmount?: number,
+    paidCurrency?: string
+  ): Promise<{ invoice: Invoice; transactions: Transaction[]; payouts: Payout[] }> {
+    const invoice = await store.getInvoice(invoiceId);
     if (!invoice) {
       throw new Error(`Invoice ${invoiceId} not found`);
     }
 
     if (invoice.status === "completed") {
+      const accounts = await store.getAllAccounts();
+      const groups = await Promise.all(accounts.map((a) => store.getPayoutsByAccount(a.id)));
       return {
         invoice,
-        transactions: store.getTransactions(invoiceId),
-        payouts: store.getAllAccounts().flatMap((a) =>
-          store.getPayoutsByAccount(a.id).filter((p) => p.invoice_id === invoiceId)
-        ),
+        transactions: await store.getTransactions(invoiceId),
+        payouts: groups.flat().filter((p) => p.invoice_id === invoiceId),
       };
     }
 
@@ -69,7 +78,7 @@ export class PipelineService {
       fee_kes_cents: null,
       created_at: new Date().toISOString(),
     };
-    store.addTransaction(colTx);
+    await store.addTransaction(colTx);
 
     // 2. Conversion
     const fxRate = this.getFxRate(effectiveCurrency);
@@ -96,14 +105,14 @@ export class PipelineService {
       fee_kes_cents: platformFeeCents,
       created_at: new Date().toISOString(),
     };
-    store.addTransaction(convTx);
+    await store.addTransaction(convTx);
 
     const generatedPayouts: Payout[] = [];
 
     if (invoice.type === "direct") {
       // Stawi Direct Flow: Immediate settlement & credit to exporter
       invoice.status = "completed";
-      store.saveInvoice(invoice);
+      await store.saveInvoice(invoice);
 
       const settleTx: Transaction = {
         id: `tx_settle_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
@@ -117,13 +126,13 @@ export class PipelineService {
         fee_kes_cents: platformFeeCents,
         created_at: new Date().toISOString(),
       };
-      store.addTransaction(settleTx);
+      await store.addTransaction(settleTx);
 
       if (invoice.account_id) {
-        const exporter = store.getAccount(invoice.account_id);
+        const exporter = await store.getAccount(invoice.account_id);
         if (exporter) {
           exporter.balance_kes_cents += netKesCents;
-          store.saveAccount(exporter);
+          await store.saveAccount(exporter);
 
           const payout: Payout = {
             id: `payout_direct_${Date.now()}`,
@@ -136,7 +145,7 @@ export class PipelineService {
             status: "confirmed",
             created_at: new Date().toISOString(),
           };
-          store.addPayout(payout);
+          await store.addPayout(payout);
           generatedPayouts.push(payout);
 
           // Best-effort SMS alert
@@ -147,17 +156,17 @@ export class PipelineService {
       // Stawi Co-op Flow: Awaiting treasurer split approval
       invoice.status = "settling";
       invoice.split_approved = false;
-      store.saveInvoice(invoice);
+      await store.saveInvoice(invoice);
 
       // Pre-calculate preview and mark incoming_kes_cents on members
       if (invoice.coop_id) {
-        const members = store.getCoopMembers(invoice.coop_id);
+        const members = await store.getCoopMembers(invoice.coop_id);
         const splitLines = splitByShares(grossKesCents, platformFeeCents, members);
         for (const line of splitLines) {
-          const acc = store.getAccount(line.account_id);
+          const acc = await store.getAccount(line.account_id);
           if (acc) {
             acc.incoming_kes_cents += line.net_kes_cents;
-            store.saveAccount(acc);
+            await store.saveAccount(acc);
           }
         }
       }
@@ -165,7 +174,7 @@ export class PipelineService {
 
     return {
       invoice,
-      transactions: store.getTransactions(invoiceId),
+      transactions: await store.getTransactions(invoiceId),
       payouts: generatedPayouts,
     };
   }
@@ -173,13 +182,13 @@ export class PipelineService {
   /**
    * Computes split preview for a Co-op invoice.
    */
-  public getSplitPreview(invoiceId: string): SplitLine[] | null {
-    const invoice = store.getInvoice(invoiceId);
+  public async getSplitPreview(invoiceId: string): Promise<SplitLine[] | null> {
+    const invoice = await store.getInvoice(invoiceId);
     if (!invoice || invoice.type !== "coop" || !invoice.coop_id) {
       return null;
     }
 
-    const members = store.getCoopMembers(invoice.coop_id);
+    const members = await store.getCoopMembers(invoice.coop_id);
     if (members.length === 0) return [];
 
     const fxRate = invoice.fx_rate || this.getFxRate(invoice.currency);
@@ -201,7 +210,15 @@ export class PipelineService {
     treasurerId: string,
     pin: string
   ): Promise<{ success: boolean; invoice?: Invoice; payouts?: Payout[]; error?: string; attemptsLeft?: number; lockedUntil?: string }> {
-    const invoice = store.getInvoice(invoiceId);
+    return await store.withTransaction(() => this.applyCoopSplit(invoiceId, treasurerId, pin));
+  }
+
+  private async applyCoopSplit(
+    invoiceId: string,
+    treasurerId: string,
+    pin: string
+  ): Promise<{ success: boolean; invoice?: Invoice; payouts?: Payout[]; error?: string; attemptsLeft?: number; lockedUntil?: string }> {
+    const invoice = await store.getInvoice(invoiceId);
     if (!invoice) {
       return { success: false, error: "Invoice not found" };
     }
@@ -214,7 +231,7 @@ export class PipelineService {
       return { success: false, error: "Split already approved for this invoice" };
     }
 
-    const coop = store.getCoop(invoice.coop_id);
+    const coop = await store.getCoop(invoice.coop_id);
     if (!coop) {
       return { success: false, error: "Co-op not found" };
     }
@@ -223,14 +240,14 @@ export class PipelineService {
       return { success: false, error: "Only the designated co-op treasurer can approve splits" };
     }
 
-    const treasurer = store.getAccount(treasurerId);
+    const treasurer = await store.getAccount(treasurerId);
     if (!treasurer) {
       return { success: false, error: "Treasurer account not found" };
     }
 
     // Verify PIN with lockout protection
     const pinCheck = await verifyAccountPin(treasurer, pin);
-    store.saveAccount(treasurer); // Save updated failed attempts / lockout state
+    await store.saveAccount(treasurer); // Save updated failed attempts / lockout state
 
     if (!pinCheck.valid) {
       return {
@@ -241,7 +258,7 @@ export class PipelineService {
       };
     }
 
-    const members = store.getCoopMembers(coop.id);
+    const members = await store.getCoopMembers(coop.id);
     if (members.length === 0) {
       return { success: false, error: "Co-op has no members to receive payout" };
     }
@@ -256,7 +273,7 @@ export class PipelineService {
     invoice.kes_total_cents = netKesCents;
     invoice.split_approved = true;
     invoice.status = "completed";
-    store.saveInvoice(invoice);
+    await store.saveInvoice(invoice);
 
     const settleTx: Transaction = {
       id: `tx_settle_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
@@ -270,18 +287,18 @@ export class PipelineService {
       fee_kes_cents: platformFeeCents,
       created_at: new Date().toISOString(),
     };
-    store.addTransaction(settleTx);
+    await store.addTransaction(settleTx);
 
     // Exact allocation by shares
     const splitLines = splitByShares(grossKesCents, platformFeeCents, members);
     const createdPayouts: Payout[] = [];
 
     for (const line of splitLines) {
-      const farmer = store.getAccount(line.account_id);
+      const farmer = await store.getAccount(line.account_id);
       if (farmer) {
         farmer.incoming_kes_cents = Math.max(0, farmer.incoming_kes_cents - line.net_kes_cents);
         farmer.balance_kes_cents += line.net_kes_cents;
-        store.saveAccount(farmer);
+        await store.saveAccount(farmer);
 
         const payout: Payout = {
           id: `payout_split_${invoice.id}_${farmer.id}`,
@@ -294,7 +311,7 @@ export class PipelineService {
           status: "confirmed",
           created_at: new Date().toISOString(),
         };
-        store.addPayout(payout);
+        await store.addPayout(payout);
         createdPayouts.push(payout);
 
         notify.notifyPayoutLanded(farmer.phone_number, line.net_kes_cents, "Stawi").catch(() => {});
@@ -322,15 +339,15 @@ export class PipelineService {
   }): Promise<{ matched: boolean }> {
     if (decision.kind === "payout_success" || decision.kind === "payout_failed") {
       const payout =
-        store.getPayoutByPayazaReference(decision.reference) ||
-        (decision.merchantReference ? store.getPayoutByPayazaReference(decision.merchantReference) : undefined);
+        await store.getPayoutByPayazaReference(decision.reference) ||
+        (decision.merchantReference ? await store.getPayoutByPayazaReference(decision.merchantReference) : undefined);
       if (!payout) return { matched: false };
 
       if (decision.kind === "payout_success") {
         if (payout.status !== "confirmed") {
           payout.status = "confirmed";
-          store.updatePayout(payout);
-          const account = store.getAccount(payout.account_id);
+          await store.updatePayout(payout);
+          const account = await store.getAccount(payout.account_id);
           const destination = account?.payout_destinations.find((d) => d.id === payout.destination_id);
           if (account) {
             notify
@@ -342,25 +359,25 @@ export class PipelineService {
       }
 
       if (payout.status !== "failed" && payout.kind === "withdrawal") {
-        const account = store.getAccount(payout.account_id);
+        const account = await store.getAccount(payout.account_id);
         if (account) {
           account.balance_kes_cents += payout.amount_kes_cents;
-          store.saveAccount(account);
+          await store.saveAccount(account);
         }
       }
       payout.status = "failed";
-      store.updatePayout(payout);
+      await store.updatePayout(payout);
       return { matched: true };
     }
 
-    const invoice = this.findInvoiceForWebhook(decision);
+    const invoice = await this.findInvoiceForWebhook(decision);
     if (!invoice) return { matched: false };
 
     if (decision.kind === "collection_failed" || decision.kind === "underpayment") {
       if (invoice.status === "pending" || invoice.status === "paid") {
         invoice.status = "failed";
-        store.saveInvoice(invoice);
-        store.addTransaction({
+        await store.saveInvoice(invoice);
+        await store.addTransaction({
           id: `tx_col_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
           invoice_id: invoice.id,
           type: "collection",
@@ -389,18 +406,19 @@ export class PipelineService {
     return { matched: false };
   }
 
-  private findInvoiceForWebhook(decision: {
+  private async findInvoiceForWebhook(decision: {
     reference: string;
     merchantReference: string | null;
     invoiceId: string | null;
   }) {
     if (decision.invoiceId) {
-      const byId = store.getInvoice(decision.invoiceId);
+      const byId = await store.getInvoice(decision.invoiceId);
       if (byId) return byId;
     }
     const refs = [decision.merchantReference, decision.reference].filter((r): r is string => Boolean(r));
+    const invoices = await store.getInvoices();
     return (
-      store.getInvoices().find(
+      invoices.find(
         (inv) =>
           (inv.payaza_checkout_reference && refs.includes(inv.payaza_checkout_reference)) ||
           (inv.payaza_link_id && refs.includes(inv.payaza_link_id)) ||
@@ -424,15 +442,25 @@ export class PipelineService {
     pin: string,
     idempotencyKey?: string
   ): Promise<{ success: boolean; payout?: Payout; error?: string; attemptsLeft?: number; lockedUntil?: string }> {
+    return await store.withTransaction(() => this.applyWithdraw(accountId, destinationId, amountKesCents, pin, idempotencyKey));
+  }
+
+  private async applyWithdraw(
+    accountId: string,
+    destinationId: string,
+    amountKesCents: number,
+    pin: string,
+    idempotencyKey?: string
+  ): Promise<{ success: boolean; payout?: Payout; error?: string; attemptsLeft?: number; lockedUntil?: string }> {
     // 1. Idempotency Check
     if (idempotencyKey) {
-      const existing = store.getPayoutByIdempotency(idempotencyKey);
+      const existing = await store.getPayoutByIdempotency(idempotencyKey);
       if (existing) {
         return { success: true, payout: existing };
       }
     }
 
-    const account = store.getAccount(accountId);
+    const account = await store.getAccount(accountId);
     if (!account) {
       return { success: false, error: "Account not found" };
     }
@@ -444,7 +472,7 @@ export class PipelineService {
 
     // 3. Verify PIN
     const pinCheck = await verifyAccountPin(account, pin);
-    store.saveAccount(account);
+    await store.saveAccount(account);
 
     if (!pinCheck.valid) {
       return {
@@ -482,7 +510,7 @@ export class PipelineService {
 
     // 6. Deduct balance
     account.balance_kes_cents -= amountKesCents;
-    store.saveAccount(account);
+    await store.saveAccount(account);
 
     // 7. Execute Payaza payout. Amounts are major KES; payout_amount equals credit_amount.
     const payoutTxRef = ensureTransactionReference(`WTH-${accountId.slice(-6)}-${Date.now()}`);
@@ -505,7 +533,7 @@ export class PipelineService {
 
     if (!payazaResult.success) {
       account.balance_kes_cents += amountKesCents;
-      store.saveAccount(account);
+      await store.saveAccount(account);
       const failed: Payout = {
         id: `payout_wth_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         invoice_id: "withdrawal",
@@ -517,7 +545,7 @@ export class PipelineService {
         created_at: new Date().toISOString(),
         payaza_reference: payoutTxRef,
       };
-      store.addPayout(failed);
+      await store.addPayout(failed);
       return { success: false, error: payazaResult.error || "Payaza payout failed", payout: failed };
     }
 
@@ -535,7 +563,7 @@ export class PipelineService {
       idempotency_key: idempotencyKey,
       payaza_reference: payoutTxRef,
     };
-    store.addPayout(payout);
+    await store.addPayout(payout);
 
     if (settled) {
       notify.notifyPayoutLanded(account.phone_number, amountKesCents, destination.details).catch(() => {});

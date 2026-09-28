@@ -19,6 +19,8 @@ export class InMemoryStore {
   private payoutsByIdempotency = new Map<string, Payout>(); // idempotency_key -> Payout
   private payoutsByPayazaRef = new Map<string, string>(); // payaza transaction_reference -> payout_id
   private processedWebhookRefs = new Set<string>();
+  private otps = new Map<string, { codeHash: string; expiresAt: string; attempts: number }>();
+  private sessions = new Map<string, { accountId: string; expiresAt: string }>();
 
   public normalizePhone(phone: string): string {
     const cleaned = phone.replace(/[^\d+]/g, "");
@@ -35,48 +37,48 @@ export class InMemoryStore {
   }
 
   // Account
-  public saveAccount(account: Account): Account {
+  public async saveAccount(account: Account): Promise<Account> {
     this.accounts.set(account.id, account);
     const normalized = this.normalizePhone(account.phone_number);
     this.accountPhones.set(normalized, account.id);
     return account;
   }
 
-  public getAccount(id: string): Account | undefined {
+  public async getAccount(id: string): Promise<Account | undefined> {
     return this.accounts.get(id);
   }
 
-  public getAccountByPhone(phone: string): Account | undefined {
+  public async getAccountByPhone(phone: string): Promise<Account | undefined> {
     const normalized = this.normalizePhone(phone);
     const accountId = this.accountPhones.get(normalized);
     if (!accountId) return undefined;
     return this.accounts.get(accountId);
   }
 
-  public getAllAccounts(): Account[] {
+  public async getAllAccounts(): Promise<Account[]> {
     return Array.from(this.accounts.values());
   }
 
   // Coop
-  public saveCoop(coop: Coop): Coop {
+  public async saveCoop(coop: Coop): Promise<Coop> {
     this.coops.set(coop.id, coop);
     return coop;
   }
 
-  public getCoop(id: string): Coop | undefined {
+  public async getCoop(id: string): Promise<Coop | undefined> {
     return this.coops.get(id);
   }
 
-  public getAllCoops(): Coop[] {
+  public async getAllCoops(): Promise<Coop[]> {
     return Array.from(this.coops.values());
   }
 
   // CoopMember
-  public getCoopMembers(coopId: string): CoopMember[] {
+  public async getCoopMembers(coopId: string): Promise<CoopMember[]> {
     return this.coopMembers.get(coopId) || [];
   }
 
-  public addCoopMember(member: CoopMember): void {
+  public async addCoopMember(member: CoopMember): Promise<void> {
     const members = this.coopMembers.get(member.coop_id) || [];
     const existingIndex = members.findIndex((m) => m.account_id === member.account_id);
     if (existingIndex >= 0) {
@@ -88,16 +90,16 @@ export class InMemoryStore {
   }
 
   // Invoice
-  public saveInvoice(invoice: Invoice): Invoice {
+  public async saveInvoice(invoice: Invoice): Promise<Invoice> {
     this.invoices.set(invoice.id, invoice);
     return invoice;
   }
 
-  public getInvoice(id: string): Invoice | undefined {
+  public async getInvoice(id: string): Promise<Invoice | undefined> {
     return this.invoices.get(id);
   }
 
-  public getInvoices(filters?: { coop_id?: string; account_id?: string }): Invoice[] {
+  public async getInvoices(filters?: { coop_id?: string; account_id?: string }): Promise<Invoice[]> {
     const all = Array.from(this.invoices.values());
     if (!filters) return all;
 
@@ -109,17 +111,17 @@ export class InMemoryStore {
   }
 
   // Transaction
-  public addTransaction(transaction: Transaction): void {
+  public async addTransaction(transaction: Transaction): Promise<void> {
     const txs = this.transactions.get(transaction.invoice_id) || [];
     txs.push(transaction);
     this.transactions.set(transaction.invoice_id, txs);
   }
 
-  public getTransactions(invoiceId: string): Transaction[] {
+  public async getTransactions(invoiceId: string): Promise<Transaction[]> {
     return this.transactions.get(invoiceId) || [];
   }
 
-  public getAllTransactions(): Transaction[] {
+  public async getAllTransactions(): Promise<Transaction[]> {
     const all: Transaction[] = [];
     for (const list of this.transactions.values()) {
       all.push(...list);
@@ -128,7 +130,7 @@ export class InMemoryStore {
   }
 
   // Payout
-  public addPayout(payout: Payout): void {
+  public async addPayout(payout: Payout): Promise<void> {
     this.payouts.set(payout.id, payout);
 
     const accountList = this.payoutsByAccount.get(payout.account_id) || [];
@@ -144,7 +146,7 @@ export class InMemoryStore {
     }
   }
 
-  public updatePayout(payout: Payout): void {
+  public async updatePayout(payout: Payout): Promise<void> {
     this.payouts.set(payout.id, payout);
     const list = this.payoutsByAccount.get(payout.account_id);
     if (list) {
@@ -159,11 +161,11 @@ export class InMemoryStore {
     }
   }
 
-  public getPayout(id: string): Payout | undefined {
+  public async getPayout(id: string): Promise<Payout | undefined> {
     return this.payouts.get(id);
   }
 
-  public getPayoutsByAccount(accountId: string, limit?: number): Payout[] {
+  public async getPayoutsByAccount(accountId: string, limit?: number): Promise<Payout[]> {
     const list = this.payoutsByAccount.get(accountId) || [];
     if (limit && limit > 0) {
       return list.slice(0, limit);
@@ -171,26 +173,67 @@ export class InMemoryStore {
     return list;
   }
 
-  public getPayoutByIdempotency(idempotencyKey: string): Payout | undefined {
+  public async getPayoutByIdempotency(idempotencyKey: string): Promise<Payout | undefined> {
     return this.payoutsByIdempotency.get(idempotencyKey);
   }
 
-  public getPayoutByPayazaReference(reference: string): Payout | undefined {
+  public async getPayoutByPayazaReference(reference: string): Promise<Payout | undefined> {
     const id = this.payoutsByPayazaRef.get(reference);
     return id ? this.payouts.get(id) : undefined;
   }
 
+  public async withTransaction<T>(fn: () => Promise<T>): Promise<T> {
+    return fn();
+  }
+
+  public async saveOtp(phone: string, codeHash: string, expiresAt: string): Promise<void> {
+    this.otps.set(this.normalizePhone(phone), { codeHash, expiresAt, attempts: 0 });
+  }
+
+  public async getOtp(phone: string): Promise<{ codeHash: string; expiresAt: string; attempts: number } | undefined> {
+    return this.otps.get(this.normalizePhone(phone));
+  }
+
+  public async incrementOtpAttempts(phone: string): Promise<number> {
+    const row = this.otps.get(this.normalizePhone(phone));
+    if (!row) return 0;
+    row.attempts += 1;
+    return row.attempts;
+  }
+
+  public async deleteOtp(phone: string): Promise<void> {
+    this.otps.delete(this.normalizePhone(phone));
+  }
+
+  public async saveSession(tokenHash: string, accountId: string, expiresAt: string): Promise<void> {
+    this.sessions.set(tokenHash, { accountId, expiresAt });
+  }
+
+  public async getSessionAccount(tokenHash: string): Promise<Account | undefined> {
+    const row = this.sessions.get(tokenHash);
+    if (!row) return undefined;
+    if (new Date(row.expiresAt).getTime() <= Date.now()) {
+      this.sessions.delete(tokenHash);
+      return undefined;
+    }
+    return this.accounts.get(row.accountId);
+  }
+
+  public async deleteSession(tokenHash: string): Promise<void> {
+    this.sessions.delete(tokenHash);
+  }
+
   // Webhook idempotency
-  public isWebhookProcessed(reference: string): boolean {
+  public async isWebhookProcessed(reference: string): Promise<boolean> {
     return this.processedWebhookRefs.has(reference);
   }
 
-  public markWebhookProcessed(reference: string): void {
+  public async markWebhookProcessed(reference: string): Promise<void> {
     this.processedWebhookRefs.add(reference);
   }
 
   // Reset store (for testing)
-  public reset(): void {
+  public async reset(): Promise<void> {
     this.accounts.clear();
     this.accountPhones.clear();
     this.coops.clear();
@@ -202,7 +245,21 @@ export class InMemoryStore {
     this.payoutsByIdempotency.clear();
     this.payoutsByPayazaRef.clear();
     this.processedWebhookRefs.clear();
+    this.otps.clear();
+    this.sessions.clear();
   }
 }
 
-export const store = new InMemoryStore();
+const memoryStore = new InMemoryStore();
+let activeStore: InMemoryStore = memoryStore;
+
+export function setStore(next: InMemoryStore): void {
+  activeStore = next;
+}
+
+export const store: InMemoryStore = new Proxy({} as InMemoryStore, {
+  get(_target, prop) {
+    const value = (activeStore as unknown as Record<string | symbol, unknown>)[prop];
+    return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(activeStore) : value;
+  },
+});
