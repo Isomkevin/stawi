@@ -167,8 +167,14 @@ GET  /coops/{id}/members                GET /coops/{id}/metrics -> { invoices, t
 GET  /invoices?coop_id=&account_id=     POST /invoices { type, account_id|coop_id, buyer_name, buyer_email, amount, currency, description, reference? }
 GET  /invoices/{id}                     -> { invoice, transactions, split_preview: SplitLine[] | null }
 POST /invoices/{id}/checkout-session    -> { reference, checkoutUrl|null, public_key, transaction_reference }  (open the Payaza widget client-side with public_key and transaction_reference)
-POST /invoices/{id}/approve-split       { treasurer_id, pin }
-POST /dev/simulate-payment/{invoiceId}  (mock backend only; powers the "Simulate buyer payment" dev button in mock/demo mode)
+POST /invoices/{id}/approve-split       { treasurer_id, pin } -> { success, invoice, payouts }
+POST /dev/simulate-payment/{invoiceId}  -> { success, invoice, transactions, payouts } (mock backend only)
+GET  /coops/{id}                        GET /coops/{id}/payouts -> Payout[] (members' payouts for this co-op's invoices, newest first)
+PATCH /coops/{id}/members/{accountId}   { contribution_share } -> CoopMember
+POST /name-enquiry                      { type, details } -> { account_name }  404 if unknown
+```
+Demo seed IDs are shared by the frontend mock and backend seed: coop_kiambu, acc_treasurer, acc_exporter, acc_farmer_1..N, buyer invoice inv_2413.
+```
 ```
 Errors are JSON `{ error: string }` with 400/403/404. Anything the UI needs beyond this (e.g. destination management, OTP login, invite links, list of payouts per co-op) mark clearly in `src/lib/api.ts` under `// TODO(backend): add to contract`.
 
