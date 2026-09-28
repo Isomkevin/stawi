@@ -11,6 +11,7 @@ This folder is the full context set for building Stawi end-to-end with AI coding
 | File | What it's for | Give it to |
 |---|---|---|
 | `00-BUILD-SPEC.md` | Master spec: personas, data model, both flows, three surfaces, build order, acceptance criteria | Every agent, first |
+| `SCAFFOLD.md` | Repo layout, how to run the backend, and the demo seed (accounts, phones, PIN, invoices) | Backend agent, and anyone pointing the app at the live API |
 | `skills/stawi-domain/SKILL.md` | Stawi's own internal API contract + shared account/channel-parity model | Whichever agent builds the backend — this is the source of truth every other surface must match |
 | `skills/payaza/SKILL.md` | Payaza checkout / multi-currency / settlement / sub-accounts integration patterns | Backend agent, and whichever agent wires up payment calls |
 | `skills/africas-talking/SKILL.md` | USSD + SMS integration for the farmer 2G channel | Backend agent building the USSD webhook + SMS notifications |

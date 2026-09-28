@@ -116,4 +116,4 @@ A transparent transaction fee on the converted amount (illustrative: 0.5–1%), 
 - `AT_USERNAME=sandbox`, `AT_API_KEY` — from Africa's Talking dashboard
 - `AT_USSD_CALLBACK_URL` — registered in the AT sandbox app's USSD channel settings
 - Database connection string
-- A seeded co-op with 8–10 fake farmer Accounts for the demo (contribution shares summing to 100%)
+- Demo ledger from `backend/src/data/catalog.ts` (see `docs/SCAFFOLD.md`, Demo seed): 4 co-ops, 76 farmers, 6 exporters, PIN `1234`. Each co-op's contribution shares sum to 100%. `GET /dev/seed-ids` still returns the original Kiambu 10.

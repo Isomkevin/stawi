@@ -14,7 +14,8 @@
 │  ├─ src/ussd/handler.ts                      USSD menu (balance / status / withdraw + PIN), secret-checked callback
 │  ├─ src/routes/index.ts                      REST API (the contract in docs/LOVABLE_PROMPT.md §8)
 │  ├─ src/types.ts                             Domain types (money = integer cents) — mirror in the frontend
-│  ├─ src/store.ts, src/data/seed.ts           In-memory store; seeds 4 co-ops (76 farmers), 6 exporters, nine months of invoices (PIN 1234)
+│  ├─ src/store.ts, src/data/seed.ts           In-memory store. seed.ts writes the demo ledger; catalog.ts is the deterministic dataset
+│  ├─ src/data/catalog.ts                      4 co-ops, 76 farmers, 6 exporters, 78 invoices (PIN 1234)
 │  ├─ db/schema.sql                            Postgres schema for the store swap
 │  ├─ scripts/e2e.py                           17-check end-to-end verification
 │  ├─ Dockerfile, .env.example
@@ -34,11 +35,47 @@ Backend changes happen in `backend/` (Claude Code / Cursor / Codex). Frontend ch
 ## Run the backend locally (mock mode, no keys)
 ```bash
 cd backend && cp .env.example .env && npm install
-PORT=4100 AT_CALLBACK_SECRET=s3cret npm run dev          # terminal 1 (seeds demo data, PIN 1234)
+PORT=4100 AT_CALLBACK_SECRET=s3cret npm run dev          # terminal 1 (seeds the demo ledger, PIN 1234)
 python3 scripts/e2e.py http://localhost:4100 s3cret        # terminal 2 -> ALL PASSED
 npm test                                                   # unit tests
 ```
-Simulate a buyer paying in mock mode: `POST /dev/simulate-payment/:invoiceId`, then for co-op invoices `POST /invoices/:id/approve-split`. `GET /dev/seed-ids` returns the seeded co-op/treasurer/exporter IDs. Those `/dev/*` routes exist only when `PAYAZA_MODE=mock`.
+Simulate a buyer paying in mock mode: `POST /dev/simulate-payment/:invoiceId`, then for co-op invoices `POST /invoices/:id/approve-split`. `GET /dev/seed-ids` returns the Kiambu co-op, its treasurer, the Wanjiru exporter, the 10 Kiambu farmer ids, and the five canonical invoice ids. Those `/dev/*` routes exist only when `PAYAZA_MODE=mock`.
+
+## Demo seed
+
+`backend/src/data/catalog.ts` is the dataset. `backend/src/data/seed.ts` writes it through the store and `splitByShares`, so every co-op's shares sum to 100 and every completed invoice's credit payouts sum to its net. Money is integer KES cents. The fee on settled invoices is 0.8%. Historical FX stored on those invoices is USD 129, EUR 140.5, GBP 168.2. Every seeded account uses PIN `1234`.
+
+The ledger is 4 co-ops, 76 farmers, 4 treasurers, 6 exporters (86 accounts), and 78 invoices over about nine months. Statuses cover `pending`, `paid`, `converting`, `settling`, `completed`, and `failed`. Completed co-op invoices are split to members. Settling invoices sit in `incoming_kes_cents` until a treasurer approves the split. A slice of farmers and every exporter also have withdrawals (`confirmed`, `sent`, `pending`, or `failed`). Kipkemoi Kosgei (`acc_kericho_8`) has an unverified M-Pesa destination and a failed withdrawal. Balances are the ledger: confirmed credits minus confirmed and sent withdrawals. They are not the old hand-set KES 18,450 figure.
+
+| Who | Id | Phone | Signs in as |
+|---|---|---|---|
+| Kiambu Highlands Coffee Co-op | `coop_kiambu` | treasurer David Kamau `+254711000000` | `acc_treasurer` |
+| Kiambu farmers (10) | `acc_farmer_1` … `acc_farmer_10` | `+254712000001` … `+254712000010` | farmer 1 is Wanjiku Mwangi |
+| Kericho Gold Tea Growers (28 farmers) | `coop_kericho` | treasurer Chebet Langat `+254713000000` | `acc_treasurer_kericho` |
+| Meru Macadamia Union (22 farmers) | `coop_meru` | treasurer Muriuki Mwenda `+254714000000` | `acc_treasurer_meru` |
+| Naivasha Floriculture Co-op (16 farmers) | `coop_naivasha` | treasurer Naomi Wairimu `+254715000000` | `acc_treasurer_naivasha` |
+| Wanjiru Crafts | `acc_exporter` | Grace Wanjiru `+254722000001` | solo exporter |
+| Kitui Highlands Honey | `acc_exporter_honey` | Nzisa Mutua `+254722000002` | solo exporter |
+| Ole Nkai Leather | `acc_exporter_leather` | Sankale Ole Nkai `+254722000003` | solo exporter |
+| Mugo Avocado Exports | `acc_exporter_avocado` | Wangari Mugo `+254722000004` | solo exporter |
+| Taita Sisal Works | `acc_exporter_sisal` | Hamisi Juma `+254722000005` | solo exporter |
+| Lamu Spice House | `acc_exporter_spices` | Amina Yusuf `+254722000006` | solo exporter |
+
+Canonical invoices, also returned by `GET /dev/seed-ids`:
+
+| Id | Product | Status | Amount |
+|---|---|---|---|
+| `inv_coop_hamburg_101` | Kiambu | completed, split | USD 12,400, Hanseatic Coffee Roasters |
+| `inv_coop_berlin_102` | Kiambu | settling, awaiting split | USD 8,500, The Barn Berlin |
+| `inv_coop_rotterdam_103` | Kiambu | pending | USD 15,000, Rotterdam Commodity Traders |
+| `inv_direct_ny_201` | Wanjiru Crafts | completed | USD 3,200, Brooklyn Artisan Goods |
+| `inv_2413` | Wanjiru Crafts | pending | EUR 1,800, Covent Garden Fair Trade |
+
+Other co-op and exporter invoices use references such as `KRC-001`, `MRU-001`, `NVS-001`, `HNY-001`. Each account has an M-Pesa destination (`SAFKEN`) and a bank destination (KCB `01`, Equity `68`, Co-operative `11`, or NCBA `07`). A few bank destinations are unverified.
+
+Seeding runs on startup when `SEED=true`, or when `NODE_ENV` is not `production` and `SEED` is not `false`. It runs only if `acc_treasurer` is missing. An in-memory server loads this on every fresh start. A Postgres database that already has that row is left as-is; empty it before expecting the new ledger. `SEED=false` starts empty. Production (`render.yaml`) sets `SEED=false`.
+
+The Lovable mock in `src/lib/mock.ts` is a smaller Kiambu story for `VITE_API_MODE=mock`. It shares the canonical ids above. The live API (`VITE_API_MODE=live`) returns this ledger instead.
 
 ## Verified vs still yours to do
 Verified (production build, `node dist`): exact-sum splits, Direct and Co-op flows, treasurer-PIN split approval, double-approve rejection, idempotent webhooks and withdrawals, overdraw rejection, USSD menu + PIN handling, callback-secret rejection, clean JSON errors, CORS allow/deny. The Dockerfile has **not** been built or run (no Docker in the build environment) — test it before relying on it.

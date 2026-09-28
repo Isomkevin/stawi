@@ -179,11 +179,15 @@ POST /name-enquiry                      { type, details } -> { account_name }  4
 POST /accounts/{id}/destinations        { type, details, account_name, bank_code? } -> PayoutDestination  409 duplicate
 DELETE /accounts/{id}/destinations/{destId} -> 204  400 if it is the last one
 ```
-Demo seed IDs are shared by the frontend mock and backend seed: coop_kiambu, acc_treasurer, acc_exporter, acc_farmer_1..N, buyer invoice inv_2413.
+Canonical demo ids exist in both the frontend mock and the backend seed: coop_kiambu, acc_treasurer, acc_exporter, acc_farmer_1..10, buyer invoice inv_2413. The live backend ledger is larger; see `docs/SCAFFOLD.md` (Demo seed). `GET /dev/seed-ids` returns only those Kiambu ids.
 Errors are JSON `{ error: string }` with 400/403/404. Anything the UI needs beyond this (e.g. destination management, OTP login, invite links, list of payouts per co-op) mark clearly in `src/lib/api.ts` under `// TODO(backend): add to contract`.
 
 ## 9. Mock data (make the demo feel real)
+This section is the in-app mock (`VITE_API_MODE=mock` only). Keep it small so every screen is reviewable without the API.
+
 Co-op: "Kiambu Highlands Coffee Co-op", 10 farmers with plausible Kenyan names and shares summing to 100%. Invoices: one paid and split (USD 12,400 from a buyer in Hamburg), one awaiting split approval, one pending payment, one failed payout for a farmer missing details. Solo exporter: "Wanjiru Crafts" with two USD/EUR invoices. Realistic FX (USD→KES ≈ 129), fee 0.8%. Farmer balance KES 18,450.00 (stored as 1845000 cents) with a recent payout.
+
+When `VITE_API_MODE=live`, ignore this mock and read the backend. That ledger is 4 co-ops (Kiambu, Kericho tea, Meru macadamia, Naivasha flowers), 76 farmers, and 6 exporters, with the same canonical ids and PIN `1234`. Balances there come from payout history, so they will not match KES 18,450. Details, phones, and invoice ids: `docs/SCAFFOLD.md` (Demo seed).
 
 ## 10. Deliverables and conventions
 - Clean folder structure: `src/pages`, `src/components`, `src/features/{farmer,coop,direct,buyer,ussd}`, `src/lib/{api,mock,format,i18n}`, `src/hooks`.
