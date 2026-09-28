@@ -1,31 +1,42 @@
 {
   "name": "stawi-backend",
-  "version": "0.1.0",
-  "private": true,
-  "type": "module",
-  "engines": { "node": ">=20" },
+  "version": "1.0.0",
+  "description": "Stawi backend API - Direct and Co-op cross-border export payments",
+  "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc -p .",
+    "build": "tsc",
     "start": "node dist/index.js",
-    "test": "vitest run",
-    "typecheck": "tsc -p . --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "jest --runInBand"
   },
+  "keywords": [
+    "stawi",
+    "payaza",
+    "africastalking",
+    "ussd",
+    "cross-border",
+    "payments"
+  ],
+  "author": "Stawi Team (LESOM)",
+  "license": "ISC",
   "dependencies": {
-    "africastalking": "^0.7.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
-    "express": "^4.19.2",
-    "zod": "^3.23.8"
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/cors": "^2.8.17",
-    "@types/express": "^4.17.21",
-    "@types/node": "^20.14.0",
-    "tsx": "^4.16.0",
-    "typescript": "^5.5.0",
-    "vitest": "^2.0.0"
+    "@types/express": "^5.0.0",
+    "@types/jest": "^29.5.14",
+    "@types/node": "^22.13.0",
+    "@types/supertest": "^6.0.2",
+    "jest": "^29.7.0",
+    "supertest": "^7.0.0",
+    "ts-jest": "^29.2.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
   }
 }

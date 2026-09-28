@@ -1,21 +1,30 @@
-import express from "express";
-import cors from "cors";
-import { config } from "./config.js";
-import { api } from "./routes/index.js";
-import { ussd } from "./ussd/handler.js";
-import { seed } from "./data/seed.js";
+import { createApp } from "./app";
+import { seedDatabase } from "./data/seed";
 
-const app = express();
-const allowed = (origin: string) => config.corsOrigins.some((o) => o.startsWith("*.") ? new URL(origin).hostname.endsWith(o.slice(1)) : o === origin);
-app.use(cors({ origin: (origin, cb) => cb(null, !origin || allowed(origin)) }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: false })); // Africa's Talking posts form-encoded
+const PORT = parseInt(process.env.PORT || "4100", 10);
+const shouldSeed = process.env.SEED !== "false";
 
-app.get("/health", (_req, res) => res.json({ ok: true, payaza: config.payaza.mode, at: config.at.env }));
-app.use("/", api);
-app.use("/ussd", ussd);
+async function main() {
+  if (shouldSeed) {
+    console.log("[Seed] Seeding demo data (10-farmer co-op + solo exporter, PIN: 1234)...");
+    await seedDatabase();
+    console.log("[Seed] Demo data seeded successfully.");
+  }
 
-let seeded: ReturnType<typeof seed> | null = null;
-if (process.env.SEED !== "false") seeded = seed();
-if (config.payaza.mode === "mock") app.get("/dev/seed-ids", (_req, res) => res.json(seeded ?? {})); // dev only
-app.listen(config.port, () => console.log(`[stawi] api on :${config.port}`));
+  const app = createApp();
+
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log("==================================================");
+    console.log(` Stawi Backend API running on port ${PORT}`);
+    console.log(` Environment:   ${process.env.NODE_ENV || "development"}`);
+    console.log(` PAYAZA_MODE:   ${process.env.PAYAZA_MODE || "mock"}`);
+    console.log(` AT_ENV:        ${process.env.AT_ENV || "sandbox"}`);
+    console.log(` USSD Secret:   ${process.env.AT_CALLBACK_SECRET ? "configured" : "none"}`);
+    console.log("==================================================");
+  });
+}
+
+main().catch((err) => {
+  console.error("Failed to start Stawi backend:", err);
+  process.exit(1);
+});

@@ -1,59 +1,163 @@
-/**
- * USSD adapter (Africa's Talking). Thin: identifies the caller by phone, then calls the SAME services the web API uses.
- * Response protocol: "CON ..." keeps the session open, "END ..." closes it. See docs/skills/africas-talking/SKILL.md.
- */
-import { Router } from "express";
-import { config } from "../config.js";
-import { accountByPhone, db } from "../store.js";
-import { verifyPin } from "../services/pin.js";
-import { withdraw } from "../services/pipeline.js";
+import { Request, Response } from "express";
+import { pipeline } from "../services/pipeline";
+import { store } from "../store";
 
-export const ussd = Router();
-const kes = (c: number) => `KES ${(c / 100).toLocaleString("en-KE", { minimumFractionDigits: 2 })}`;
-
-export function handleUssd(phone: string, text: string, sessionId: string): string {
-  const acc = accountByPhone(phone);
-  if (!acc) return "END You are not registered on Stawi. Ask your co-op treasurer for an invite.";
-  if (acc.channel_capability !== "webapp+ussd") return "END Phone access is off. Turn it on in the Stawi app under Profile.";
-
-  const p = text === "" ? [] : text.split("*");
-  if (p.length === 0) return "CON Welcome to Stawi\n1. My balance\n2. Transaction status\n3. Withdraw";
-
-  if (p[0] === "1") return `END Your Stawi balance: ${kes(acc.balance_kes_cents)}\nIncoming: ${kes(acc.incoming_kes_cents)}`;
-
-  if (p[0] === "2") {
-    const recent = db.payouts.filter((x) => x.account_id === acc.id).slice(-3).reverse();
-    if (!recent.length) return "END No transactions yet.";
-    return "END Recent:\n" + recent.map((r) => `${r.kind === "credit" ? "Received" : "Withdrawn"} ${kes(r.amount_kes_cents)} - ${r.status}`).join("\n");
+export async function handleUssdCallback(req: Request, res: Response): Promise<void> {
+  // 1. Secret Validation (check query param `s` or header `x-ussd-secret`)
+  const expectedSecret = process.env.AT_CALLBACK_SECRET;
+  if (expectedSecret) {
+    const querySecret = req.query.s as string | undefined;
+    const headerSecret = req.headers["x-ussd-secret"] as string | undefined;
+    if (querySecret !== expectedSecret && headerSecret !== expectedSecret) {
+      res.status(401).send("Unauthorized: Invalid callback secret");
+      return;
+    }
   }
 
-  if (p[0] === "3") {
-    const dests = acc.payout_destinations.filter((d) => d.is_verified);
-    if (!dests.length) return "END No approved payout account. Add one in the Stawi app.";
-    if (p.length === 1) return "CON Withdraw to:\n" + dests.map((d, i) => `${i + 1}. ${d.type === "mpesa" ? "M-Pesa" : "Bank"} ${mask(d.details)}`).join("\n");
-    const dest = dests[Number(p[1]) - 1];
-    if (!dest) return "END Invalid choice.";
-    if (p.length === 2) return `CON Balance ${kes(acc.balance_kes_cents)}\nEnter amount (KES):`;
-    const amount = Math.round(Number(p[2]) * 100);
-    if (!Number.isFinite(amount) || amount <= 0) return "END Invalid amount.";
-    if (p.length === 3) return "CON Enter your Stawi PIN:";
-    const r = verifyPin(acc, p[3]);
-    if (!r.ok) return r.reason === "locked" ? "END Too many attempts. Try again in 15 minutes." : `END Wrong PIN. ${r.attemptsLeft ?? 0} attempts left.`;
-    // Idempotent per session so gateway retries can't double-pay
-    void withdraw(acc.id, dest.id, amount, `ussd_${sessionId}`).catch((e) => console.warn("[ussd:withdraw]", e.message));
-    return `END Withdrawal of ${kes(amount)} to ${dest.type === "mpesa" ? "M-Pesa" : "bank"} initiated. You will get an SMS.`;
+  // AT USSD POST fields can be in req.body (urlencoded or json)
+  const sessionId = (req.body.sessionId || req.query.sessionId || "") as string;
+  const phoneNumber = (req.body.phoneNumber || req.query.phoneNumber || "") as string;
+  const text = (req.body.text !== undefined ? req.body.text : (req.query.text || "")) as string;
+
+  res.setHeader("Content-Type", "text/plain");
+
+  const segments = text ? text.split("*") : [];
+  const level = segments.length;
+
+  // Root Menu
+  if (level === 0 || text === "") {
+    res.status(200).send("CON Welcome to Stawi\n1. My balance\n2. Transaction status\n3. Withdraw");
+    return;
   }
-  return "END Invalid choice.";
+
+  const rootChoice = segments[0];
+
+  // Option 1: My balance
+  if (rootChoice === "1") {
+    const account = store.getAccountByPhone(phoneNumber);
+    if (!account) {
+      res.status(200).send("END Stawi account not found for this phone number.");
+      return;
+    }
+
+    const formatted = (account.balance_kes_cents / 100).toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+    res.status(200).send(`END Your Stawi balance: KES ${formatted}`);
+    return;
+  }
+
+  // Option 2: Transaction status
+  if (rootChoice === "2") {
+    const account = store.getAccountByPhone(phoneNumber);
+    if (!account) {
+      res.status(200).send("END Stawi account not found for this phone number.");
+      return;
+    }
+
+    const payouts = store.getPayoutsByAccount(account.id, 3);
+    if (payouts.length === 0) {
+      res.status(200).send("END No recent transactions found.");
+      return;
+    }
+
+    const lines = payouts.map((p) => {
+      const amt = (p.amount_kes_cents / 100).toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+      });
+      return `${p.kind.toUpperCase()}: KES ${amt} (${p.status})`;
+    });
+
+    res.status(200).send(`END Recent:\n${lines.join("\n")}`);
+    return;
+  }
+
+  // Option 3: Withdraw
+  if (rootChoice === "3") {
+    // 3 -> Choose destination
+    if (level === 1) {
+      res.status(200).send("CON Withdraw to:\n1. M-Pesa (registered number)\n2. Bank account (registered)");
+      return;
+    }
+
+    const destChoice = segments[1];
+    if (destChoice !== "1" && destChoice !== "2") {
+      res.status(200).send("END Invalid destination choice.");
+      return;
+    }
+
+    // 3*1 or 3*2 -> Enter amount
+    if (level === 2) {
+      res.status(200).send("CON Enter amount (KES):");
+      return;
+    }
+
+    const rawAmount = segments[2];
+    const amountNum = parseFloat(rawAmount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      res.status(200).send("END Invalid amount entered.");
+      return;
+    }
+
+    // 3*1*amt or 3*2*amt -> Enter PIN
+    if (level === 3) {
+      res.status(200).send("CON Enter your Stawi PIN:");
+      return;
+    }
+
+    // 3*1*amt*pin -> Process withdrawal
+    if (level === 4) {
+      const pin = segments[3];
+      const account = store.getAccountByPhone(phoneNumber);
+      if (!account) {
+        res.status(200).send("END Stawi account not found for this phone number.");
+        return;
+      }
+
+      const targetType = destChoice === "1" ? "mpesa" : "bank";
+      const destination = account.payout_destinations.find(
+        (d) => d.type === targetType && d.is_verified
+      );
+
+      if (!destination) {
+        res.status(200).send(`END No verified ${targetType.toUpperCase()} destination linked to your account.`);
+        return;
+      }
+
+      const amountCents = Math.round(amountNum * 100);
+
+      // Perform withdrawal with sessionId as idempotency_key
+      const result = await pipeline.withdraw(
+        account.id,
+        destination.id,
+        amountCents,
+        pin,
+        sessionId
+      );
+
+      if (!result.success) {
+        if (result.error === "locked") {
+          res.status(200).send("END Account locked due to repeated PIN failures. Try again in 15 minutes.");
+          return;
+        }
+        if (result.error === "wrong") {
+          res.status(200).send(`END Incorrect PIN. Attempts remaining: ${result.attemptsLeft ?? 0}`);
+          return;
+        }
+        res.status(200).send(`END Withdrawal failed: ${result.error}`);
+        return;
+      }
+
+      const formatted = (amountCents / 100).toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+
+      res.status(200).send(`END Withdrawal of KES ${formatted} to ${destination.details} initiated.`);
+      return;
+    }
+  }
+
+  res.status(200).send("END Invalid selection. Please dial again.");
 }
-
-const mask = (s: string) => s.length > 4 ? `***${s.slice(-4)}` : s;
-
-ussd.post("/callback", (req, res) => {
-  // Reject anything not from Africa's Talking (shared secret in the registered callback URL; also allowlist AT IPs in production)
-  if (config.at.callbackSecret && req.query.s !== config.at.callbackSecret) return res.status(401).end();
-  const { sessionId = "", phoneNumber = "", text = "" } = req.body ?? {};
-  let out: string;
-  try { out = handleUssd(phoneNumber, text, sessionId); }
-  catch (e) { console.error("[ussd]", e); out = "END Something went wrong. Please try again."; }
-  res.set("Content-Type", "text/plain").status(200).send(out); // always 200
-});

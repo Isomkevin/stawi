@@ -1,94 +1,418 @@
-/**
- * The money pipeline. Direct and Co-op share every step except the split:
- *   collection -> conversion -> (Direct: credit exporter | Co-op: await treasurer approval -> credit each farmer)
- * Credits land in the account's Stawi balance; the user withdraws to an approved destination (see withdraw()).
- */
-import type { Invoice, Payout, SplitLine } from "../types.js";
-import { config } from "../config.js";
-import { db, uid, now } from "../store.js";
-import { convertToKes, disburse } from "./payaza.js";
-import { feeCents, splitByShares, toKesCents } from "./money.js";
-import { sendSms } from "./notify.js";
+import { store } from "../store";
+import { Invoice, Payout, SplitLine, Transaction } from "../types";
+import { feeCents, splitByShares, toKesCents } from "./money";
+import { notify } from "./notify";
+import { payaza } from "./payaza";
+import { verifyAccountPin } from "./pin";
 
-const fmt = (cents: number) => `KES ${(cents / 100).toLocaleString("en-KE", { minimumFractionDigits: 2 })}`;
-
-export async function onPaymentConfirmed(invoiceId: string, payazaRef: string) {
-  const inv = db.invoices.get(invoiceId);
-  if (!inv) throw new Error("invoice not found");
-  // Idempotent: a paid invoice is never processed twice, whatever reference a retry carries
-  if (inv.status !== "pending") return inv;
-  if (db.transactions.some((t) => t.type === "collection" && t.payaza_reference === payazaRef)) return inv;
-
-  db.transactions.push({ id: uid("tx"), invoice_id: inv.id, type: "collection", status: "completed",
-    amount: inv.amount, currency: inv.currency, payaza_reference: payazaRef, fx_rate: null, fee_kes_cents: null, created_at: now() });
-  inv.status = "converting";
-
-  const conv = await convertToKes(inv.amount, inv.currency);
-  const gross = toKesCents(inv.amount, conv.fxRate);
-  const fee = feeCents(gross, config.feeRate);
-  inv.fx_rate = conv.fxRate; inv.fee_kes_cents = fee; inv.kes_total_cents = gross - fee;
-  db.transactions.push({ id: uid("tx"), invoice_id: inv.id, type: "conversion", status: "completed",
-    amount: inv.amount, currency: inv.currency, payaza_reference: conv.reference, fx_rate: conv.fxRate, fee_kes_cents: fee, created_at: now() });
-
-  if (inv.type === "direct") { await creditDirect(inv); }
-  else { inv.status = "settling"; /* waits for treasurer approve-split */ notifyIncoming(inv); }
-  return inv;
-}
-
-async function creditDirect(inv: Invoice) {
-  const acc = db.accounts.get(inv.account_id!)!;
-  credit(inv, acc.id, inv.kes_total_cents!);
-  inv.status = "completed";
-}
-
-export function previewSplit(inv: Invoice): SplitLine[] {
-  const members = db.members.filter((m) => m.coop_id === inv.coop_id).map((m) => ({ account_id: m.account_id, share: m.contribution_share }));
-  const gross = inv.fx_rate ? toKesCents(inv.amount, inv.fx_rate) : 0;
-  return splitByShares(inv.kes_total_cents ?? 0, members, gross, inv.fee_kes_cents ?? 0);
-}
-
-export function approveSplit(invoiceId: string) {
-  const inv = db.invoices.get(invoiceId);
-  if (!inv || inv.type !== "coop") throw new Error("not a co-op invoice");
-  if (inv.status !== "settling" || inv.split_approved) throw new Error("invoice not awaiting split approval");
-  for (const line of previewSplit(inv)) credit(inv, line.account_id, line.net_kes_cents);
-  inv.split_approved = true; inv.status = "completed";
-  return inv;
-}
-
-function credit(inv: Invoice, accountId: string, cents: number) {
-  const acc = db.accounts.get(accountId)!;
-  acc.balance_kes_cents += cents;
-  const tx = { id: uid("tx"), invoice_id: inv.id, type: "payout" as const, status: "completed" as const,
-    amount: cents / 100, currency: "KES", payaza_reference: null, fx_rate: inv.fx_rate, fee_kes_cents: null, created_at: now() };
-  db.transactions.push(tx);
-  db.payouts.push({ id: uid("po"), invoice_id: inv.id, transaction_id: tx.id, account_id: accountId, kind: "credit",
-    amount_kes_cents: cents, destination_id: null, status: "confirmed", created_at: now() });
-  void sendSms(acc.phone_number, `Stawi: ${fmt(cents)} has landed in your Stawi account. Dial or open the app to withdraw.`);
-}
-
-function notifyIncoming(_inv: Invoice) { /* TODO: notify treasurer that a split awaits approval */ }
-
-/** Withdraw from Stawi balance to an approved (verified) destination. Idempotent on idempotencyKey. */
-export async function withdraw(accountId: string, destinationId: string, amountCents: number, idempotencyKey: string) {
-  const existing = db.payouts.find((p) => p.idempotency_key === idempotencyKey);
-  if (existing) return existing;
-  const acc = db.accounts.get(accountId);
-  if (!acc) throw new Error("account not found");
-  const dest = acc.payout_destinations.find((d) => d.id === destinationId && d.is_verified);
-  if (!dest) throw new Error("destination not approved");
-  if (amountCents <= 0 || amountCents > acc.balance_kes_cents) throw new Error("insufficient balance");
-
-  acc.balance_kes_cents -= amountCents; // reserve first; refund on failure
-  const po: Payout = { id: uid("po"), invoice_id: "", transaction_id: "", account_id: accountId, kind: "withdrawal",
-    amount_kes_cents: amountCents, destination_id: destinationId, status: "pending", idempotency_key: idempotencyKey, created_at: now() };
-  db.payouts.push(po);
-  try {
-    await disburse({ amountKesCents: amountCents, destinationType: dest.type, destination: dest.details, reference: idempotencyKey });
-    po.status = "sent";
-    void sendSms(acc.phone_number, `Stawi: ${fmt(amountCents)} sent to your ${dest.type === "mpesa" ? "M-Pesa" : "bank account"}.`);
-  } catch (e) {
-    acc.balance_kes_cents += amountCents; po.status = "failed"; throw e;
+export class PipelineService {
+  /**
+   * Resolves the FX rate for a given currency pair.
+   */
+  public getFxRate(currency: string): number {
+    switch (currency.toUpperCase()) {
+      case "USD":
+        return 129.0;
+      case "EUR":
+        return 142.0;
+      case "GBP":
+        return 168.0;
+      case "KES":
+        return 1.0;
+      default:
+        return 129.0;
+    }
   }
-  return po;
+
+  /**
+   * Processes collection from buyer:
+   * 1. Records collection transaction
+   * 2. Executes conversion (FX applied, transparent fee calculated)
+   * 3. For Direct invoices: immediate settlement + credit to exporter
+   * 4. For Co-op invoices: moves to settling state and populates incoming_kes_cents for farmers
+   */
+  public async processPayment(
+    invoiceId: string,
+    payazaRef?: string,
+    paidAmount?: number,
+    paidCurrency?: string
+  ): Promise<{ invoice: Invoice; transactions: Transaction[]; payouts: Payout[] }> {
+    const invoice = store.getInvoice(invoiceId);
+    if (!invoice) {
+      throw new Error(`Invoice ${invoiceId} not found`);
+    }
+
+    if (invoice.status === "completed") {
+      return {
+        invoice,
+        transactions: store.getTransactions(invoiceId),
+        payouts: store.getAllAccounts().flatMap((a) =>
+          store.getPayoutsByAccount(a.id).filter((p) => p.invoice_id === invoiceId)
+        ),
+      };
+    }
+
+    const effectiveAmount = paidAmount || invoice.amount;
+    const effectiveCurrency = paidCurrency || invoice.currency;
+    const effectivePayazaRef = payazaRef || `PZ-COL-${Date.now()}`;
+
+    // 1. Collection Transaction
+    const colTx: Transaction = {
+      id: `tx_col_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      invoice_id: invoice.id,
+      type: "collection",
+      status: "completed",
+      amount: effectiveAmount,
+      currency: effectiveCurrency,
+      payaza_reference: effectivePayazaRef,
+      fx_rate: null,
+      fee_kes_cents: null,
+      created_at: new Date().toISOString(),
+    };
+    store.addTransaction(colTx);
+
+    // 2. Conversion
+    const fxRate = this.getFxRate(effectiveCurrency);
+    const grossKesCents = toKesCents(effectiveAmount, effectiveCurrency, fxRate);
+    const platformFeeCents = feeCents(grossKesCents, 0.8);
+    const netKesCents = grossKesCents - platformFeeCents;
+
+    invoice.fx_rate = fxRate;
+    invoice.fee_kes_cents = platformFeeCents;
+    invoice.kes_total_cents = netKesCents;
+    invoice.payaza_checkout_reference = effectivePayazaRef;
+
+    const convTx: Transaction = {
+      id: `tx_conv_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      invoice_id: invoice.id,
+      type: "conversion",
+      status: "completed",
+      amount: effectiveAmount,
+      currency: effectiveCurrency,
+      payaza_reference: `PZ-CONV-${Date.now()}`,
+      fx_rate: fxRate,
+      fee_kes_cents: platformFeeCents,
+      created_at: new Date().toISOString(),
+    };
+    store.addTransaction(convTx);
+
+    const generatedPayouts: Payout[] = [];
+
+    if (invoice.type === "direct") {
+      // Stawi Direct Flow: Immediate settlement & credit to exporter
+      invoice.status = "completed";
+      store.saveInvoice(invoice);
+
+      const settleTx: Transaction = {
+        id: `tx_settle_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        invoice_id: invoice.id,
+        type: "settlement",
+        status: "completed",
+        amount: netKesCents / 100,
+        currency: "KES",
+        payaza_reference: `PZ-SETTLE-${Date.now()}`,
+        fx_rate: null,
+        fee_kes_cents: platformFeeCents,
+        created_at: new Date().toISOString(),
+      };
+      store.addTransaction(settleTx);
+
+      if (invoice.account_id) {
+        const exporter = store.getAccount(invoice.account_id);
+        if (exporter) {
+          exporter.balance_kes_cents += netKesCents;
+          store.saveAccount(exporter);
+
+          const payout: Payout = {
+            id: `payout_direct_${Date.now()}`,
+            invoice_id: invoice.id,
+            transaction_id: settleTx.id,
+            account_id: exporter.id,
+            kind: "credit",
+            amount_kes_cents: netKesCents,
+            destination_id: null,
+            status: "confirmed",
+            created_at: new Date().toISOString(),
+          };
+          store.addPayout(payout);
+          generatedPayouts.push(payout);
+
+          // Best-effort SMS alert
+          notify.notifyPayoutLanded(exporter.phone_number, netKesCents, "Stawi account").catch(() => {});
+        }
+      }
+    } else {
+      // Stawi Co-op Flow: Awaiting treasurer split approval
+      invoice.status = "settling";
+      invoice.split_approved = false;
+      store.saveInvoice(invoice);
+
+      // Pre-calculate preview and mark incoming_kes_cents on members
+      if (invoice.coop_id) {
+        const members = store.getCoopMembers(invoice.coop_id);
+        const splitLines = splitByShares(grossKesCents, platformFeeCents, members);
+        for (const line of splitLines) {
+          const acc = store.getAccount(line.account_id);
+          if (acc) {
+            acc.incoming_kes_cents += line.net_kes_cents;
+            store.saveAccount(acc);
+          }
+        }
+      }
+    }
+
+    return {
+      invoice,
+      transactions: store.getTransactions(invoiceId),
+      payouts: generatedPayouts,
+    };
+  }
+
+  /**
+   * Computes split preview for a Co-op invoice.
+   */
+  public getSplitPreview(invoiceId: string): SplitLine[] | null {
+    const invoice = store.getInvoice(invoiceId);
+    if (!invoice || invoice.type !== "coop" || !invoice.coop_id) {
+      return null;
+    }
+
+    const members = store.getCoopMembers(invoice.coop_id);
+    if (members.length === 0) return [];
+
+    const fxRate = invoice.fx_rate || this.getFxRate(invoice.currency);
+    const grossKesCents = toKesCents(invoice.amount, invoice.currency, fxRate);
+    const platformFeeCents = invoice.fee_kes_cents !== null ? invoice.fee_kes_cents : feeCents(grossKesCents, 0.8);
+
+    return splitByShares(grossKesCents, platformFeeCents, members);
+  }
+
+  /**
+   * Approves Co-op split with treasurer PIN and pays out to each farmer:
+   * - Enforces treasurer identity and PIN authentication
+   * - Rejects double-approval
+   * - Allocates exact shares using largest-remainder method
+   * - Credits farmer balances and creates credit Payout rows
+   */
+  public async approveCoopSplit(
+    invoiceId: string,
+    treasurerId: string,
+    pin: string
+  ): Promise<{ success: boolean; invoice?: Invoice; payouts?: Payout[]; error?: string; attemptsLeft?: number; lockedUntil?: string }> {
+    const invoice = store.getInvoice(invoiceId);
+    if (!invoice) {
+      return { success: false, error: "Invoice not found" };
+    }
+
+    if (invoice.type !== "coop" || !invoice.coop_id) {
+      return { success: false, error: "Only co-op invoices can be split" };
+    }
+
+    if (invoice.split_approved || invoice.status === "completed") {
+      return { success: false, error: "Split already approved for this invoice" };
+    }
+
+    const coop = store.getCoop(invoice.coop_id);
+    if (!coop) {
+      return { success: false, error: "Co-op not found" };
+    }
+
+    if (coop.treasurer_account_id !== treasurerId) {
+      return { success: false, error: "Only the designated co-op treasurer can approve splits" };
+    }
+
+    const treasurer = store.getAccount(treasurerId);
+    if (!treasurer) {
+      return { success: false, error: "Treasurer account not found" };
+    }
+
+    // Verify PIN with lockout protection
+    const pinCheck = await verifyAccountPin(treasurer, pin);
+    store.saveAccount(treasurer); // Save updated failed attempts / lockout state
+
+    if (!pinCheck.valid) {
+      return {
+        success: false,
+        error: pinCheck.error,
+        attemptsLeft: pinCheck.attemptsLeft,
+        lockedUntil: pinCheck.lockedUntil,
+      };
+    }
+
+    const members = store.getCoopMembers(coop.id);
+    if (members.length === 0) {
+      return { success: false, error: "Co-op has no members to receive payout" };
+    }
+
+    const fxRate = invoice.fx_rate || this.getFxRate(invoice.currency);
+    const grossKesCents = toKesCents(invoice.amount, invoice.currency, fxRate);
+    const platformFeeCents = invoice.fee_kes_cents !== null ? invoice.fee_kes_cents : feeCents(grossKesCents, 0.8);
+    const netKesCents = grossKesCents - platformFeeCents;
+
+    invoice.fx_rate = fxRate;
+    invoice.fee_kes_cents = platformFeeCents;
+    invoice.kes_total_cents = netKesCents;
+    invoice.split_approved = true;
+    invoice.status = "completed";
+    store.saveInvoice(invoice);
+
+    const settleTx: Transaction = {
+      id: `tx_settle_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      invoice_id: invoice.id,
+      type: "settlement",
+      status: "completed",
+      amount: netKesCents / 100,
+      currency: "KES",
+      payaza_reference: `PZ-SETTLE-${Date.now()}`,
+      fx_rate: null,
+      fee_kes_cents: platformFeeCents,
+      created_at: new Date().toISOString(),
+    };
+    store.addTransaction(settleTx);
+
+    // Exact allocation by shares
+    const splitLines = splitByShares(grossKesCents, platformFeeCents, members);
+    const createdPayouts: Payout[] = [];
+
+    for (const line of splitLines) {
+      const farmer = store.getAccount(line.account_id);
+      if (farmer) {
+        farmer.incoming_kes_cents = Math.max(0, farmer.incoming_kes_cents - line.net_kes_cents);
+        farmer.balance_kes_cents += line.net_kes_cents;
+        store.saveAccount(farmer);
+
+        const payout: Payout = {
+          id: `payout_split_${invoice.id}_${farmer.id}`,
+          invoice_id: invoice.id,
+          transaction_id: settleTx.id,
+          account_id: farmer.id,
+          kind: "credit",
+          amount_kes_cents: line.net_kes_cents,
+          destination_id: null,
+          status: "confirmed",
+          created_at: new Date().toISOString(),
+        };
+        store.addPayout(payout);
+        createdPayouts.push(payout);
+
+        notify.notifyPayoutLanded(farmer.phone_number, line.net_kes_cents, "Stawi account").catch(() => {});
+      }
+    }
+
+    return {
+      success: true,
+      invoice,
+      payouts: createdPayouts,
+    };
+  }
+
+  /**
+   * Withdraws funds from an Account balance to a verified M-Pesa / Bank destination:
+   * - Enforces PIN check & lockout
+   * - Ensures idempotency
+   * - Prevents overdraw
+   * - Calls Payaza payout endpoint
+   * - Emits SMS notification
+   */
+  public async withdraw(
+    accountId: string,
+    destinationId: string,
+    amountKesCents: number,
+    pin: string,
+    idempotencyKey?: string
+  ): Promise<{ success: boolean; payout?: Payout; error?: string; attemptsLeft?: number; lockedUntil?: string }> {
+    // 1. Idempotency Check
+    if (idempotencyKey) {
+      const existing = store.getPayoutByIdempotency(idempotencyKey);
+      if (existing) {
+        return { success: true, payout: existing };
+      }
+    }
+
+    const account = store.getAccount(accountId);
+    if (!account) {
+      return { success: false, error: "Account not found" };
+    }
+
+    // 2. Validate Amount
+    if (!Number.isInteger(amountKesCents) || amountKesCents <= 0) {
+      return { success: false, error: "Invalid withdrawal amount: must be positive integer cents" };
+    }
+
+    // 3. Verify PIN
+    const pinCheck = await verifyAccountPin(account, pin);
+    store.saveAccount(account);
+
+    if (!pinCheck.valid) {
+      return {
+        success: false,
+        error: pinCheck.error,
+        attemptsLeft: pinCheck.attemptsLeft,
+        lockedUntil: pinCheck.lockedUntil,
+      };
+    }
+
+    // 4. Validate Destination
+    const destination = account.payout_destinations.find((d) => d.id === destinationId);
+    if (!destination) {
+      return { success: false, error: "Destination not found on account" };
+    }
+    if (!destination.is_verified) {
+      return { success: false, error: "Cannot withdraw to unverified destination" };
+    }
+
+    // 5. Check Balance (Prevent overdraw)
+    if (account.balance_kes_cents < amountKesCents) {
+      return {
+        success: false,
+        error: `Insufficient balance. Available: KES ${(account.balance_kes_cents / 100).toFixed(2)}`,
+      };
+    }
+
+    // 6. Deduct balance
+    account.balance_kes_cents -= amountKesCents;
+    store.saveAccount(account);
+
+    // 7. Execute Payaza Payout
+    const payoutTxRef = `WTH-${accountId.slice(-4)}-${Date.now()}`;
+    const payazaResult = await payaza.initiatePayout({
+      payout_amount: amountKesCents / 100,
+      currency: "KES",
+      transaction_type: destination.type === "mpesa" ? "mobile_money" : "kepss",
+      beneficiaries: [
+        {
+          credit_amount: amountKesCents / 100,
+          account_number: destination.details,
+          account_name: destination.account_name,
+          bank_code: destination.type === "mpesa" ? "SAFKEN" : "01",
+          narration: "Stawi withdrawal",
+          transaction_reference: payoutTxRef,
+        },
+      ],
+    });
+
+    // 8. Record Payout
+    const payout: Payout = {
+      id: `payout_wth_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      invoice_id: "withdrawal",
+      account_id: account.id,
+      kind: "withdrawal",
+      amount_kes_cents: amountKesCents,
+      destination_id: destination.id,
+      status: payazaResult.success ? "confirmed" : "pending",
+      created_at: new Date().toISOString(),
+      idempotency_key: idempotencyKey,
+    };
+    store.addPayout(payout);
+
+    // 9. Send SMS
+    notify.notifyPayoutLanded(account.phone_number, amountKesCents, destination.details).catch(() => {});
+
+    return {
+      success: true,
+      payout,
+    };
+  }
 }
+
+export const pipeline = new PipelineService();

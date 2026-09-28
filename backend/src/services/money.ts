@@ -1,41 +1,117 @@
-import type { SplitLine } from "../types.js";
+import { SplitLine } from "../types";
 
-/** Convert a buyer-currency amount to KES cents at the given rate. */
-export function toKesCents(amount: number, fxRate: number): number {
+/**
+ * Converts a foreign or local currency amount into integer KES cents.
+ * Rule: Money is always integer KES cents. Never floats.
+ */
+export function toKesCents(amount: number, currency: string, fxRate: number): number {
+  if (currency.toUpperCase() === "KES") {
+    return Math.round(amount * 100);
+  }
   return Math.round(amount * fxRate * 100);
 }
 
-export function feeCents(grossKesCents: number, rate: number): number {
-  return Math.round(grossKesCents * rate);
+/**
+ * Calculates Stawi's transparent platform fee in integer KES cents.
+ * Default is 0.8% (0.008).
+ */
+export function feeCents(grossKesCents: number, feePercent: number = 0.8): number {
+  return Math.round(grossKesCents * (feePercent / 100));
 }
 
 /**
- * Split `netCents` across members by share (percent). Largest-remainder method so the
- * lines sum EXACTLY to netCents. Shares must sum to 100 (tolerance 0.001).
+ * Largest-remainder method (Hare-Niemeyer / Hamilton) to allocate an integer amount
+ * across fractional shares so that the allocated amounts sum EXACTLY to totalMinor.
+ */
+export function allocate<T extends { share: number }>(
+  totalMinor: number,
+  items: T[]
+): (T & { amt: number })[] {
+  if (items.length === 0) return [];
+  if (totalMinor === 0) {
+    return items.map((item) => ({ ...item, amt: 0 }));
+  }
+
+  const totalShare = items.reduce((acc, curr) => acc + curr.share, 0);
+  if (totalShare <= 0) {
+    throw new Error("Total share must be greater than zero");
+  }
+
+  const rows = items.map((item, index) => {
+    const normalizedShare = item.share / totalShare;
+    const exact = totalMinor * normalizedShare;
+    const amt = Math.floor(exact);
+    return {
+      item,
+      index,
+      exact,
+      amt,
+      remainder: exact - amt,
+    };
+  });
+
+  const allocatedSum = rows.reduce((sum, r) => sum + r.amt, 0);
+  let remainderToDistribute = totalMinor - allocatedSum;
+
+  // Sort descending by remainder, breaking ties deterministically by index
+  const sorted = [...rows].sort((a, b) => {
+    if (b.remainder !== a.remainder) {
+      return b.remainder - a.remainder;
+    }
+    return a.index - b.index;
+  });
+
+  for (let i = 0; i < remainderToDistribute; i++) {
+    sorted[i % sorted.length].amt += 1;
+  }
+
+  // Restore original order
+  rows.sort((a, b) => a.index - b.index);
+
+  return rows.map((r) => ({
+    ...r.item,
+    amt: r.amt,
+  }));
+}
+
+/**
+ * Splits gross and net KES cents among co-op members using largest-remainder.
+ * Guarantees that:
+ * 1. sum(line.gross_kes_cents) === grossKesCents
+ * 2. sum(line.net_kes_cents) === netKesCents
+ * 3. line.fee_kes_cents === line.gross_kes_cents - line.net_kes_cents
+ * 4. sum(line.fee_kes_cents) === grossKesCents - netKesCents
  */
 export function splitByShares(
-  netCents: number,
-  members: { account_id: string; share: number }[],
-  grossCents = netCents,
-  totalFeeCents = 0,
+  grossKesCents: number,
+  feeKesCents: number,
+  members: { account_id: string; contribution_share: number }[]
 ): SplitLine[] {
-  const total = members.reduce((s, m) => s + m.share, 0);
-  if (Math.abs(total - 100) > 0.001) throw new Error(`Shares sum to ${total}, expected 100`);
+  if (members.length === 0) return [];
 
-  const alloc = (amount: number) => {
-    const raw = members.map((m) => (amount * m.share) / 100);
-    const floors = raw.map(Math.floor);
-    let remainder = amount - floors.reduce((a, b) => a + b, 0);
-    const order = raw.map((r, i) => ({ i, frac: r - floors[i] })).sort((a, b) => b.frac - a.frac);
-    for (const { i } of order) { if (remainder <= 0) break; floors[i] += 1; remainder -= 1; }
-    return floors;
-  };
+  const netKesCents = grossKesCents - feeKesCents;
 
-  const gross = alloc(grossCents);
-  const fees = alloc(totalFeeCents);
-  const net = alloc(netCents);
-  return members.map((m, i) => ({
-    account_id: m.account_id, share: m.share,
-    gross_kes_cents: gross[i], fee_kes_cents: fees[i], net_kes_cents: net[i],
-  }));
+  const grossAllocations = allocate(
+    grossKesCents,
+    members.map((m) => ({ account_id: m.account_id, share: m.contribution_share }))
+  );
+
+  const netAllocations = allocate(
+    netKesCents,
+    members.map((m) => ({ account_id: m.account_id, share: m.contribution_share }))
+  );
+
+  return members.map((m, idx) => {
+    const gross = grossAllocations[idx].amt;
+    const net = netAllocations[idx].amt;
+    const fee = gross - net;
+
+    return {
+      account_id: m.account_id,
+      share: m.contribution_share,
+      gross_kes_cents: gross,
+      fee_kes_cents: fee,
+      net_kes_cents: net,
+    };
+  });
 }

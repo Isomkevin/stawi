@@ -1,17 +1,25 @@
-FROM node:20-alpine AS build
+FROM node:22-alpine AS builder
+
 WORKDIR /app
-COPY package*.json ./
+
+COPY package*.json tsconfig.json ./
 RUN npm ci
-COPY tsconfig.json ./
+
 COPY src ./src
 RUN npm run build
 
-FROM node:20-alpine
+FROM node:22-alpine AS runner
+
 WORKDIR /app
+
 ENV NODE_ENV=production
+ENV PORT=4100
+
 COPY package*.json ./
-RUN npm ci --omit=dev
-COPY --from=build /app/dist ./dist
-EXPOSE 4000
-HEALTHCHECK --interval=30s --timeout=3s CMD wget -qO- http://localhost:${PORT:-4000}/health || exit 1
+RUN npm ci --only=production
+
+COPY --from=builder /app/dist ./dist
+
+EXPOSE 4100
+
 CMD ["node", "dist/index.js"]

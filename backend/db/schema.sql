@@ -1,33 +1,99 @@
--- Postgres schema mirroring packages/shared types. Money in integer KES cents.
-CREATE TABLE accounts (
-  id text PRIMARY KEY, full_name text NOT NULL, phone_number text UNIQUE NOT NULL, id_number text NOT NULL,
-  coop_id text, channel_capability text NOT NULL DEFAULT 'webapp',
-  pin_hash text, pin_failed_attempts int NOT NULL DEFAULT 0, pin_locked_until timestamptz,
-  balance_kes_cents bigint NOT NULL DEFAULT 0, incoming_kes_cents bigint NOT NULL DEFAULT 0
+-- Stawi Database Schema (PostgreSQL)
+-- Single source of truth for accounts, co-ops, invoices, transactions, and payouts.
+
+CREATE TABLE IF NOT EXISTS coops (
+  id VARCHAR(64) PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  treasurer_account_id VARCHAR(64) NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
-CREATE TABLE payout_destinations (
-  id text PRIMARY KEY, account_id text REFERENCES accounts(id), type text NOT NULL, details text NOT NULL,
-  account_name text NOT NULL, is_verified boolean NOT NULL DEFAULT false
+
+CREATE TABLE IF NOT EXISTS accounts (
+  id VARCHAR(64) PRIMARY KEY,
+  full_name VARCHAR(255) NOT NULL,
+  phone_number VARCHAR(32) NOT NULL UNIQUE,
+  id_number VARCHAR(64) NOT NULL,
+  coop_id VARCHAR(64) REFERENCES coops(id) ON DELETE SET NULL,
+  channel_capability VARCHAR(32) NOT NULL DEFAULT 'webapp',
+  balance_kes_cents BIGINT NOT NULL DEFAULT 0 CHECK (balance_kes_cents >= 0),
+  incoming_kes_cents BIGINT NOT NULL DEFAULT 0 CHECK (incoming_kes_cents >= 0),
+  pin_hash VARCHAR(255),
+  pin_failed_attempts INT NOT NULL DEFAULT 0,
+  pin_locked_until TIMESTAMP WITH TIME ZONE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
-CREATE TABLE coops (id text PRIMARY KEY, name text NOT NULL, treasurer_account_id text REFERENCES accounts(id));
-CREATE TABLE coop_members (
-  coop_id text REFERENCES coops(id), account_id text REFERENCES accounts(id),
-  contribution_share numeric(6,3) NOT NULL, kilos numeric, PRIMARY KEY (coop_id, account_id)
+
+CREATE TABLE IF NOT EXISTS payout_destinations (
+  id VARCHAR(64) PRIMARY KEY,
+  account_id VARCHAR(64) NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  type VARCHAR(32) NOT NULL CHECK (type IN ('mpesa', 'bank')),
+  details VARCHAR(255) NOT NULL,
+  account_name VARCHAR(255) NOT NULL,
+  is_verified BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
-CREATE TABLE invoices (
-  id text PRIMARY KEY, type text NOT NULL, account_id text, coop_id text,
-  buyer_name text, buyer_email text, buyer_phone text, amount numeric NOT NULL, currency char(3) NOT NULL,
-  description text, reference text, status text NOT NULL DEFAULT 'pending', split_approved boolean NOT NULL DEFAULT false,
-  fx_rate numeric, fee_kes_cents bigint, kes_total_cents bigint, payaza_checkout_reference text,
-  created_at timestamptz NOT NULL DEFAULT now(), due_at timestamptz
+
+CREATE TABLE IF NOT EXISTS coop_members (
+  coop_id VARCHAR(64) NOT NULL REFERENCES coops(id) ON DELETE CASCADE,
+  account_id VARCHAR(64) NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  contribution_share NUMERIC(5, 2) NOT NULL CHECK (contribution_share >= 0 AND contribution_share <= 100),
+  kilos NUMERIC(10, 2),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (coop_id, account_id)
 );
-CREATE TABLE transactions (  -- append-only
-  id text PRIMARY KEY, invoice_id text REFERENCES invoices(id), type text NOT NULL, status text NOT NULL,
-  amount numeric NOT NULL, currency char(3) NOT NULL, payaza_reference text UNIQUE, fx_rate numeric, fee_kes_cents bigint,
-  created_at timestamptz NOT NULL DEFAULT now()
+
+CREATE TABLE IF NOT EXISTS invoices (
+  id VARCHAR(64) PRIMARY KEY,
+  type VARCHAR(32) NOT NULL CHECK (type IN ('direct', 'coop')),
+  account_id VARCHAR(64) REFERENCES accounts(id) ON DELETE SET NULL,
+  coop_id VARCHAR(64) REFERENCES coops(id) ON DELETE SET NULL,
+  buyer_name VARCHAR(255) NOT NULL,
+  buyer_email VARCHAR(255) NOT NULL,
+  buyer_phone VARCHAR(32),
+  amount NUMERIC(14, 2) NOT NULL CHECK (amount > 0),
+  currency VARCHAR(8) NOT NULL,
+  description TEXT,
+  reference VARCHAR(64) NOT NULL UNIQUE,
+  status VARCHAR(32) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'paid', 'converting', 'settling', 'completed', 'failed')),
+  split_approved BOOLEAN NOT NULL DEFAULT FALSE,
+  fx_rate NUMERIC(10, 4),
+  fee_kes_cents BIGINT,
+  kes_total_cents BIGINT,
+  payaza_checkout_reference VARCHAR(128),
+  due_at TIMESTAMP WITH TIME ZONE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
-CREATE TABLE payouts (
-  id text PRIMARY KEY, invoice_id text, transaction_id text, account_id text REFERENCES accounts(id),
-  kind text NOT NULL, amount_kes_cents bigint NOT NULL, destination_id text, status text NOT NULL,
-  idempotency_key text UNIQUE, created_at timestamptz NOT NULL DEFAULT now()
+
+CREATE TABLE IF NOT EXISTS transactions (
+  id VARCHAR(64) PRIMARY KEY,
+  invoice_id VARCHAR(64) NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+  type VARCHAR(32) NOT NULL CHECK (type IN ('collection', 'conversion', 'settlement', 'payout')),
+  status VARCHAR(32) NOT NULL CHECK (status IN ('pending', 'completed', 'failed')),
+  amount NUMERIC(14, 2) NOT NULL,
+  currency VARCHAR(8) NOT NULL,
+  payaza_reference VARCHAR(128),
+  fx_rate NUMERIC(10, 4),
+  fee_kes_cents BIGINT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS payouts (
+  id VARCHAR(64) PRIMARY KEY,
+  invoice_id VARCHAR(64) NOT NULL,
+  transaction_id VARCHAR(64),
+  account_id VARCHAR(64) NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  kind VARCHAR(32) NOT NULL CHECK (kind IN ('credit', 'withdrawal')),
+  amount_kes_cents BIGINT NOT NULL CHECK (amount_kes_cents > 0),
+  destination_id VARCHAR(64) REFERENCES payout_destinations(id) ON DELETE SET NULL,
+  status VARCHAR(32) NOT NULL CHECK (status IN ('pending', 'sent', 'confirmed', 'failed')),
+  idempotency_key VARCHAR(128) UNIQUE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Indexes for performance
+CREATE INDEX IF NOT EXISTS idx_accounts_phone ON accounts(phone_number);
+CREATE INDEX IF NOT EXISTS idx_invoices_coop ON invoices(coop_id);
+CREATE INDEX IF NOT EXISTS idx_invoices_account ON invoices(account_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_invoice ON transactions(invoice_id);
+CREATE INDEX IF NOT EXISTS idx_payouts_account ON payouts(account_id);
+CREATE INDEX IF NOT EXISTS idx_payouts_idempotency ON payouts(idempotency_key);

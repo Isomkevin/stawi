@@ -3,11 +3,13 @@
 Scope: this file governs `backend/` and `docs/`. **Never edit the Lovable frontend (repo root `src/` etc.)** — it is generated and edited in Lovable; GitHub sync is two-way and overlapping edits conflict.
 
 Read first: `docs/README.md`, `docs/00-BUILD-SPEC.md`, `docs/SCAFFOLD.md`, then the skill for your task:
+
 - `docs/skills/stawi-domain/SKILL.md` — data model + API contract
 - `docs/skills/payaza/SKILL.md` — checkout, conversion, settlement, sub-accounts
 - `docs/skills/africas-talking/SKILL.md` — USSD + SMS (sandbox and live)
 
 Rules
+
 1. Stawi is two products on one rail: **Direct** (one exporter) and **Co-op** (split to many farmers). Same pipeline; Co-op adds the split step.
 2. One account, two channels. Web and USSD read/write through the same services. Never duplicate account state.
 3. Only `backend/src/services/payaza.ts` talks to Payaza; only backend code talks to Africa's Talking. The frontend never does.
