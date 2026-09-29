@@ -359,6 +359,34 @@ apiRouter.patch("/coops/:id/members/:accountId", async (req: Request, res: Respo
   res.status(200).json(updated);
 });
 
+apiRouter.delete("/coops/:id/members/:accountId", async (req: Request, res: Response) => {
+  const coop = await store.getCoop(getParam(req.params.id));
+  if (!coop) {
+    res.status(404).json({ error: "Co-op not found" });
+    return;
+  }
+  const removed = await store.removeCoopMember(coop.id, getParam(req.params.accountId));
+  if (!removed) {
+    res.status(404).json({ error: "Member not found" });
+    return;
+  }
+  res.status(204).send();
+});
+
+apiRouter.delete("/coops/:id/members/:accountId", async (req: Request, res: Response) => {
+  const coop = await store.getCoop(getParam(req.params.id));
+  if (!coop) {
+    res.status(404).json({ error: "Co-op not found" });
+    return;
+  }
+  const removed = await store.removeCoopMember(coop.id, getParam(req.params.accountId));
+  if (!removed) {
+    res.status(404).json({ error: "Member not found" });
+    return;
+  }
+  res.status(204).send();
+});
+
 apiRouter.get("/coops/:id/shipments", async (req: Request, res: Response) => {
   const coop = await store.getCoop(getParam(req.params.id));
   if (!coop) {
@@ -380,6 +408,40 @@ apiRouter.patch("/shipments/:id", async (req: Request, res: Response) => {
     return;
   }
   res.status(200).json(result.shipment);
+});
+
+apiRouter.delete("/shipments/:id", async (req: Request, res: Response) => {
+  const shipment = await store.getShipment(getParam(req.params.id));
+  if (!shipment) {
+    res.status(404).json({ error: "Shipment not found" });
+    return;
+  }
+  if (shipment.invoice_id) {
+    const invoice = await store.getInvoice(shipment.invoice_id);
+    if (invoice && invoice.status !== "pending") {
+      res.status(409).json({ error: "Shipments with a paid invoice can't be deleted" });
+      return;
+    }
+  }
+  await store.deleteShipment(shipment.id);
+  res.status(204).send();
+});
+
+apiRouter.delete("/shipments/:id", async (req: Request, res: Response) => {
+  const shipment = await store.getShipment(getParam(req.params.id));
+  if (!shipment) {
+    res.status(404).json({ error: "Shipment not found" });
+    return;
+  }
+  if (shipment.invoice_id) {
+    const invoice = await store.getInvoice(shipment.invoice_id);
+    if (invoice && invoice.status !== "pending") {
+      res.status(409).json({ error: "Shipments with a paid invoice can't be deleted" });
+      return;
+    }
+  }
+  await store.deleteShipment(shipment.id);
+  res.status(204).send();
 });
 
 apiRouter.get("/coops/:id/payouts", async (req: Request, res: Response) => {
@@ -534,6 +596,20 @@ apiRouter.get("/invoices/:id", async (req: Request, res: Response) => {
     transactions,
     split_preview,
   });
+});
+
+apiRouter.delete("/invoices/:id", async (req: Request, res: Response) => {
+  const invoice = await store.getInvoice(getParam(req.params.id));
+  if (!invoice) {
+    res.status(404).json({ error: "Invoice not found" });
+    return;
+  }
+  if (invoice.status !== "pending") {
+    res.status(409).json({ error: "Only unpaid invoices can be deleted" });
+    return;
+  }
+  await store.deleteInvoice(invoice.id);
+  res.status(204).send();
 });
 
 apiRouter.post("/invoices/:id/checkout-session", async (req: Request, res: Response) => {

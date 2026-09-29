@@ -162,7 +162,7 @@ type Shipment = { id: string; reference: string; coop_id: string; buyer_name: st
 
 Endpoints (client methods mirror these 1:1):
 ```
-POST /auth/otp                         { phone_number } -> { sent: true }  (texts a 6-digit code; mock mode also returns dev_code)
+POST /auth/otp                         { phone_number } -> { sent: true, dev_code? }  (texts a 6-digit code; mock mode and OTP_DEV_CODES=true also return dev_code outside production)
 POST /auth/verify                      { phone_number, code } -> { token, account_id, role, account }
 POST /auth/logout                      clears the session cookie
 Authorization: Bearer <token> is required on every route except health, account creation, OTP, buyer invoice view, checkout, Payaza webhooks, and USSD, whenever the API is in production or PAYAZA_MODE is sandbox/live.
@@ -180,6 +180,9 @@ POST /dev/simulate-payment/{invoiceId}  -> { success, invoice, transactions, pay
 GET  /coops/{id}                        GET /coops/{id}/payouts -> Payout[] (members' payouts for this co-op's invoices, newest first)
 GET  /coops/{id}/shipments              -> Shipment[]
 PATCH /shipments/{id}                   { action: "advance" } -> Shipment
+DELETE /shipments/{id}                  -> 204  409 if the linked invoice is no longer pending
+DELETE /invoices/{id}                   -> 204  409 unless the invoice is still pending
+DELETE /coops/{id}/members/{accountId}  -> 204
 PATCH /coops/{id}/members/{accountId}   { contribution_share } -> CoopMember
 POST /name-enquiry                      { type, details } -> { account_name }  404 if unknown
 POST /accounts/{id}/destinations        { type, details, account_name, bank_code? } -> PayoutDestination  409 duplicate

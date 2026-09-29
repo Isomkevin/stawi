@@ -80,6 +80,19 @@ export class InMemoryStore {
     return this.coopMembers.get(coopId) || [];
   }
 
+  public async removeCoopMember(coopId: string, accountId: string): Promise<boolean> {
+    const members = this.coopMembers.get(coopId) || [];
+    const next = members.filter((member) => member.account_id !== accountId);
+    if (next.length === members.length) return false;
+    this.coopMembers.set(coopId, next);
+    const account = this.accounts.get(accountId);
+    if (account?.coop_id === coopId) {
+      account.coop_id = null;
+      this.accounts.set(accountId, account);
+    }
+    return true;
+  }
+
   public async addCoopMember(member: CoopMember): Promise<void> {
     const members = this.coopMembers.get(member.coop_id) || [];
     const existingIndex = members.findIndex((m) => m.account_id === member.account_id);
@@ -99,6 +112,16 @@ export class InMemoryStore {
 
   public async getInvoice(id: string): Promise<Invoice | undefined> {
     return this.invoices.get(id);
+  }
+
+  public async deleteInvoice(id: string): Promise<boolean> {
+    if (!this.invoices.has(id)) return false;
+    this.invoices.delete(id);
+    this.transactions.delete(id);
+    for (const shipment of this.shipments.values()) {
+      if (shipment.invoice_id === id) shipment.invoice_id = null;
+    }
+    return true;
   }
 
   public async getInvoices(filters?: { coop_id?: string; account_id?: string }): Promise<Invoice[]> {
@@ -237,6 +260,10 @@ export class InMemoryStore {
     const shipment = this.shipments.get(id);
     if (!shipment) return undefined;
     return { ...shipment, farmers: shipment.farmers.map((farmer) => ({ ...farmer })) };
+  }
+
+  public async deleteShipment(id: string): Promise<boolean> {
+    return this.shipments.delete(id);
   }
 
   public async listShipments(coopId: string): Promise<Shipment[]> {

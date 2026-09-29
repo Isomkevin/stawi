@@ -187,6 +187,13 @@ export class PostgresStore extends InMemoryStore {
     }));
   }
 
+  public async removeCoopMember(coopId: string, accountId: string): Promise<boolean> {
+    const removed = await this.q("DELETE FROM coop_members WHERE coop_id = $1 AND account_id = $2", [coopId, accountId]);
+    if ((removed.rowCount ?? 0) === 0) return false;
+    await this.q("UPDATE accounts SET coop_id = NULL WHERE id = $1 AND coop_id = $2", [accountId, coopId]);
+    return true;
+  }
+
   public async addCoopMember(member: CoopMember): Promise<void> {
     await this.q(
       `INSERT INTO coop_members (coop_id, account_id, contribution_share, kilos)
@@ -221,6 +228,11 @@ export class PostgresStore extends InMemoryStore {
       created_at: iso(row.created_at) || new Date().toISOString(),
       due_at: iso(row.due_at),
     };
+  }
+
+  public async deleteInvoice(id: string): Promise<boolean> {
+    const removed = await this.q("DELETE FROM invoices WHERE id = $1", [id]);
+    return (removed.rowCount ?? 0) > 0;
   }
 
   public async saveInvoice(invoice: Invoice): Promise<Invoice> {
@@ -553,6 +565,11 @@ export class PostgresStore extends InMemoryStore {
       );
     }
     return shipment;
+  }
+
+  public async deleteShipment(id: string): Promise<boolean> {
+    const removed = await this.q("DELETE FROM shipments WHERE id = $1", [id]);
+    return (removed.rowCount ?? 0) > 0;
   }
 
   public async getShipment(id: string): Promise<Shipment | undefined> {

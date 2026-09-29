@@ -59,12 +59,20 @@ export async function requestOtp(
   await store.saveOtp(phone, hashCode(phone, code), expires);
 
   const sms = await notify.sendSms(account.phone_number, `Stawi login code: ${code}. It expires in 5 minutes.`);
-  const mock = payaza.getMode() === "mock" && process.env.NODE_ENV !== "production";
-  if (!mock && (sms.dryRun || !sms.success)) {
+  const showCode = devCodesEnabled();
+  if (!showCode && (sms.dryRun || !sms.success)) {
     await store.deleteOtp(phone);
     return { error: "Could not send the login code", status: 502 };
   }
-  return mock ? { sent: true, dev_code: code } : { sent: true };
+  return showCode ? { sent: true, dev_code: code } : { sent: true };
+}
+
+/** Login screen can show the code. Never in production. Mock does this by default; OTP_DEV_CODES=true forces it. */
+export function devCodesEnabled(): boolean {
+  if (process.env.NODE_ENV === "production") return false;
+  if (process.env.OTP_DEV_CODES === "false") return false;
+  if (process.env.OTP_DEV_CODES === "true") return true;
+  return payaza.getMode() === "mock";
 }
 
 export async function verifyOtp(
@@ -167,7 +175,7 @@ export async function enforceAuth(req: Request, res: Response, next: NextFunctio
     }
 
     const shipmentMatch = req.path.match(/^\/shipments\/([^/]+)$/);
-    if (shipmentMatch && req.method === "PATCH") {
+    if (shipmentMatch && (req.method === "PATCH" || req.method === "DELETE")) {
       const shipment = await store.getShipment(decodeURIComponent(shipmentMatch[1]));
       if (!shipment) {
         res.status(404).json({ error: "Shipment not found" });
@@ -210,6 +218,25 @@ export async function enforceAuth(req: Request, res: Response, next: NextFunctio
           res.status(403).json({ error: "Only the co-op treasurer can view these invoices" });
           return;
         }
+      }
+    }
+
+    if (req.method === "DELETE" && /^\/invoices\/[^/]+$/.test(req.path)) {
+      const invoiceId = decodeURIComponent(req.path.split("/")[2] || "");
+      const invoice = await store.getInvoice(invoiceId);
+      if (!invoice) {
+        res.status(404).json({ error: "Invoice not found" });
+        return;
+      }
+      if (invoice.type === "coop" || invoice.coop_id) {
+        const coop = invoice.coop_id ? await store.getCoop(invoice.coop_id) : undefined;
+        if (!coop || coop.treasurer_account_id !== req.account.id) {
+          res.status(403).json({ error: "Only the co-op treasurer can delete this invoice" });
+          return;
+        }
+      } else if (invoice.account_id !== req.account.id) {
+        res.status(403).json({ error: "You can only delete your own invoice" });
+        return;
       }
     }
 

@@ -184,17 +184,17 @@ export const api = {
   // POST /auth/logout → 204
   logout: (): Promise<void> => (isMock ? Promise.resolve() : request<void>("/auth/logout", { method: "POST" })),
 
-  // DELETE /invoices/{id} → 204 — TODO(backend): add to contract (only unpaid invoices)
+  // DELETE /invoices/{id} → 204 (only pending invoices; 409 otherwise)
   deleteInvoice: (invoiceId: string): Promise<void> =>
     isMock ? mockApi.deleteInvoice(invoiceId) : request<void>(`/invoices/${invoiceId}`, { method: "DELETE" }),
 
-  // DELETE /coops/{id}/members/{accountId} → 204 — TODO(backend): add to contract
+  // DELETE /coops/{id}/members/{accountId} → 204
   removeCoopMember: (coopId: string, accountId: string): Promise<void> =>
     isMock
       ? mockApi.removeCoopMember(coopId, accountId)
       : request<void>(`/coops/${coopId}/members/${accountId}`, { method: "DELETE" }),
 
-  // DELETE /shipments/{id} → 204 — TODO(backend): add to contract
+  // DELETE /shipments/{id} → 204
   deleteShipment: (shipmentId: string): Promise<void> =>
     isMock ? shipmentsApi.remove(shipmentId) : request<void>(`/shipments/${shipmentId}`, { method: "DELETE" }),
 

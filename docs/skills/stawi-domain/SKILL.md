@@ -155,11 +155,15 @@ Shipment {
 
 `PATCH /shipments/{id}` with `{ action: "advance" }` moves one stage forward. Advancing into `in_transit` sets `shipped_at`. Advancing from `delivered` to `completed` requires the linked invoice to be `completed`. A second advance on a completed shipment is rejected.
 
+`DELETE /shipments/{id}` removes the shipment. It is refused when the linked invoice is no longer `pending`. Deleting a pending invoice clears `invoice_id` on any shipment that pointed at it.
+
+`DELETE /coops/{id}/members/{accountId}` removes that farmer from the roster. Money already in their balance stays. Their `coop_id` is cleared. Shares are not rebalanced.
+
 ## Auth
 
 Sessions are required when `NODE_ENV` is `production`, or `PAYAZA_MODE` is `sandbox` or `live`, unless `AUTH_REQUIRED=false`. `AUTH_REQUIRED=true` forces it on. Mock local dev is open.
 
-`POST /auth/otp` with `{ phone_number }` always answers `{ sent: true }` when the phone is unknown, so the endpoint does not reveal who has an account. A known phone gets a 6-digit SMS, valid 5 minutes, 5 attempts. In mock mode outside production the response also includes `dev_code`.
+`POST /auth/otp` with `{ phone_number }` always answers `{ sent: true }` when the phone is unknown, so the endpoint does not reveal who has an account. A known phone gets a 6-digit SMS, valid 5 minutes, 5 attempts. Outside production, mock mode and `OTP_DEV_CODES=true` also return `dev_code` so the sign-in screen can show the test code. Production never returns it.
 
 `POST /auth/verify` with `{ phone_number, code }` returns `{ token, account_id, role, account }`. `role` is `treasurer` if the account is a co-op's `treasurer_account_id`, otherwise `farmer` when `coop_id` is set, otherwise `exporter`. The token is also set as an HttpOnly `stawi_session` cookie (7 days). Send `Authorization: Bearer <token>` or the cookie.
 
@@ -194,9 +198,11 @@ GET  /coops/{id}
 GET  /coops/{id}/members
 POST /coops/{id}/members                { account_id, contribution_share, kilos? }
 PATCH /coops/{id}/members/{accountId}   { contribution_share }
+DELETE /coops/{id}/members/{accountId}  -> 204. 404 if they are not a member.
 GET  /coops/{id}/payouts                -> Payout[] for this co-op's invoices, newest first
 GET  /coops/{id}/shipments              -> Shipment[] for this co-op, latest ship date first
 PATCH /shipments/{id}                   { action: "advance" } -> Shipment
+DELETE /shipments/{id}                  -> 204. 409 if the linked invoice is no longer pending.
 GET  /coops/{id}/metrics                -> { invoices, total_collected_kes_cents, fee_taken_kes_cents, total_split_kes_cents, avg_payout_time }
 
 POST /name-enquiry                      { type, details } -> { account_name } or 404
@@ -207,6 +213,7 @@ POST /invoices                          { type, account_id | coop_id, buyer_name
 GET  /invoices/{id}                     -> { invoice, transactions, split_preview: SplitLine[] | null }
 POST /invoices/{id}/checkout-session    -> { reference, checkoutUrl | null, public_key, transaction_reference, link_id | null }
 POST /invoices/{id}/approve-split       { treasurer_id, pin }
+DELETE /invoices/{id}                   -> 204 when status is pending. 409 otherwise.
 
 POST /webhooks/payaza                   Payaza collection and payout notifications. HMAC when a secret is configured.
 POST /ussd/callback                     Africa's Talking. See skills/africas-talking/SKILL.md.
