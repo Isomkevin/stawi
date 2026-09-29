@@ -54,6 +54,27 @@ export const shipmentsApi = {
     s.updated_at = new Date().toISOString();
     return { ...s };
   },
+  addFarmer: async (id: string, accountId: string, kilos: number): Promise<Shipment> => {
+    await wait();
+    const s = shipments.find((x) => x.id === id);
+    if (!s) throw new Error("Shipment not found");
+    if (!Number.isInteger(kilos) || kilos <= 0) throw new Error("Kilos must be a whole number greater than zero");
+    if (s.status === "completed") throw new Error("Farmers are locked once the split is approved");
+    const others = s.farmers.filter((x) => x.account_id !== accountId);
+    if (others.reduce((a, x) => a + x.kilos, 0) + kilos > s.quantity_kg) throw new Error("Farmer kilos would exceed the shipment quantity");
+    s.farmers = [...others, { account_id: accountId, kilos }];
+    s.updated_at = new Date().toISOString();
+    return { ...s, farmers: [...s.farmers] };
+  },
+  removeFarmer: async (id: string, accountId: string): Promise<Shipment> => {
+    await wait();
+    const s = shipments.find((x) => x.id === id);
+    if (!s) throw new Error("Shipment not found");
+    if (s.status === "completed") throw new Error("Farmers are locked once the split is approved");
+    s.farmers = s.farmers.filter((x) => x.account_id !== accountId);
+    s.updated_at = new Date().toISOString();
+    return { ...s, farmers: [...s.farmers] };
+  },
   remove: async (id: string): Promise<void> => {
     await wait();
     const i = shipments.findIndex((x) => x.id === id);
