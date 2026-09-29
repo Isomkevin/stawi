@@ -60,7 +60,7 @@ function Overview() {
       <PageHeader title="Overview" description="Everything moving through your co-op this season." action={<NewInvoiceSheet type="coop" coopId={coopId} />} />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {m ? (
+        {m && live ? (
           <>
             <KpiCard index={0} label="Collected" value={formatKesCompact(live.total_collected_kes_cents)} spark={spark} accent />
             <KpiCard index={1} label="Paid to farmers" value={formatKesCompact(live.total_split_kes_cents)} spark={spark} />
