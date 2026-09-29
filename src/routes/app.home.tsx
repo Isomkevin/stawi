@@ -16,9 +16,15 @@ export const Route = createFileRoute("/app/home")({
   head: () => ({
     meta: [
       { title: "Home — Stawi" },
-      { name: "description", content: "Your Stawi balance and the latest payments on the way to you." },
+      {
+        name: "description",
+        content: "Your Stawi balance and the latest payments on the way to you.",
+      },
       { property: "og:title", content: "Home — Stawi" },
-      { property: "og:description", content: "Your Stawi balance and the latest payments on the way to you." },
+      {
+        property: "og:description",
+        content: "Your Stawi balance and the latest payments on the way to you.",
+      },
     ],
   }),
   component: HomeTab,
@@ -45,9 +51,15 @@ function HomeTab() {
         animate={{ opacity: 1, y: 0 }}
         className="motif grain relative overflow-hidden rounded-3xl border border-border bg-card p-6 shadow-lift"
       >
-        <p className="text-xs tracking-wide text-muted-foreground uppercase">{t("home.available")}</p>
+        <p className="text-xs tracking-wide text-muted-foreground uppercase">
+          {t("home.available")}
+        </p>
         {balance.data ? (
-          <MoneyText cents={balance.data.balance_kes_cents} countUp className="text-display mt-2 block text-4xl text-lime" />
+          <MoneyText
+            cents={balance.data.balance_kes_cents}
+            countUp
+            className="text-display mt-2 block text-4xl text-lime"
+          />
         ) : (
           <Skeleton className="mt-3 h-10 w-48" />
         )}
@@ -59,12 +71,8 @@ function HomeTab() {
         </p>
         {(balance.data?.demo_balance_kes_cents ?? 0) > 0 && (
           <p className="mt-1 text-sm text-amber">
-            Sample {formatKesCents(balance.data?.demo_balance_kes_cents ?? 0)} · not included when you withdraw
-          </p>
-        )}
-        {(balance.data?.demo_balance_kes_cents ?? 0) > 0 && (
-          <p className="mt-1 text-sm text-amber">
-            Sample {formatKesCents(balance.data?.demo_balance_kes_cents ?? 0)} · not included when you withdraw
+            Sample {formatKesCents(balance.data?.demo_balance_kes_cents ?? 0)} · not included when
+            you withdraw
           </p>
         )}
         <Link
@@ -92,11 +100,20 @@ function HomeTab() {
             steps={[
               { label: "Buyer paid the co-op", state: "done" },
               { label: "Converted to KES", state: "done" },
-              { label: "Your share calculated", detail: formatKesCents(latest.amount_kes_cents), state: "done" },
+              {
+                label: "Your share calculated",
+                detail: formatKesCents(latest.amount_kes_cents),
+                state: "done",
+              },
               {
                 label: "In your Stawi balance",
                 at: formatDateTime(latest.created_at),
-                state: latest.status === "confirmed" ? "done" : latest.status === "failed" ? "failed" : "active",
+                state:
+                  latest.status === "confirmed"
+                    ? "done"
+                    : latest.status === "failed"
+                      ? "failed"
+                      : "active",
               },
             ]}
           />
@@ -108,7 +125,11 @@ function HomeTab() {
         {txns.isLoading ? (
           <Skeleton className="h-16 w-full rounded-2xl" />
         ) : incoming.length === 0 ? (
-          <EmptyState icon={Inbox} title={t("home.noIncoming")} description="When a buyer pays your co-op, your share appears here." />
+          <EmptyState
+            icon={Inbox}
+            title={t("home.noIncoming")}
+            description="When a buyer pays your co-op, your share appears here."
+          />
         ) : (
           <div className="space-y-2">
             {incoming.map((p) => (
