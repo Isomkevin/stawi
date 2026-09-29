@@ -164,11 +164,6 @@ function UnpaidView({
             <StatusChip status={invoice.status} />
           </div>
         </div>
-        {invoice.is_demo && (
-          <p className="mt-4 rounded-xl border border-amber/40 bg-amber/10 p-3 text-sm text-amber">
-            Sample invoice. A live Payaza checkout is not started from this record.
-          </p>
-        )}
 
         <dl className="mt-6 space-y-3 border-t border-border pt-4 text-sm">
           <Row
@@ -418,7 +413,7 @@ function Shell({
   children,
 }: {
   payeeName: string;
-  invoice: { buyer_name: string; reference: string };
+  invoice: { buyer_name: string; reference: string; is_demo?: boolean | undefined };
   children: React.ReactNode;
 }) {
   return (
@@ -445,9 +440,15 @@ function Shell({
             {payeeName}
             <BadgeCheck className="size-5 text-lime" strokeWidth={2} aria-label="Verified seller" />
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             Invoice to {invoice.buyer_name} · ref {invoice.reference}
+            <DemoBadge demo={invoice.is_demo} />
           </p>
+          {invoice.is_demo && (
+            <p className="mt-3 rounded-xl border border-amber/40 bg-amber/10 p-3 text-sm text-amber">
+              Sample invoice. A live Payaza checkout is not started from this record.
+            </p>
+          )}
         </div>
 
         {children}
