@@ -59,23 +59,4 @@ export const shipmentsApi = {
     const i = shipments.findIndex((x) => x.id === id);
     if (i >= 0) shipments.splice(i, 1);
   },
-  setFarmer: async (id: string, accountId: string, kilos: number): Promise<Shipment> => {
-    await wait();
-    const s = shipments.find((x) => x.id === id);
-    if (!s) throw new Error("Shipment not found");
-    const others = s.farmers.filter((f) => f.account_id !== accountId);
-    const used = others.reduce((a, f) => a + f.kilos, 0);
-    if (used + kilos > s.quantity_kg) throw new Error("Farmer kilos would exceed the shipment quantity");
-    s.farmers = [...others, { account_id: accountId, kilos }];
-    s.updated_at = new Date().toISOString();
-    return { ...s, farmers: [...s.farmers] };
-  },
-  removeFarmer: async (id: string, accountId: string): Promise<Shipment> => {
-    await wait();
-    const s = shipments.find((x) => x.id === id);
-    if (!s) throw new Error("Shipment not found");
-    s.farmers = s.farmers.filter((f) => f.account_id !== accountId);
-    s.updated_at = new Date().toISOString();
-    return { ...s, farmers: [...s.farmers] };
-  },
 };
