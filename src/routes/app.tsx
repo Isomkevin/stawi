@@ -1,6 +1,7 @@
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
 import { ArrowUpRight, Home, ListOrdered, Leaf, UserRound } from "lucide-react";
 import { RoleGate } from "@/components/stawi/RoleGate";
+import { AccountSwitcher } from "@/components/stawi/AccountSwitcher";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
@@ -38,14 +39,17 @@ function AppLayout() {
               </span>
               <span className="text-display text-lg">Stawi</span>
             </Link>
-            <button
-              type="button"
-              onClick={() => setLang(lang === "en" ? "sw" : "en")}
-              className="min-h-11 rounded-full border border-border px-3 text-xs font-medium hover:border-sage"
-              aria-label="Switch language"
-            >
-              {lang === "en" ? "Kiswahili" : "English"}
-            </button>
+            <div className="flex items-center gap-2">
+              <AccountSwitcher />
+              <button
+                type="button"
+                onClick={() => setLang(lang === "en" ? "sw" : "en")}
+                className="min-h-11 rounded-full border border-border px-3 text-xs font-medium hover:border-sage"
+                aria-label="Switch language"
+              >
+                {lang === "en" ? "Kiswahili" : "English"}
+              </button>
+            </div>
           </div>
         </header>
         <main className="mx-auto max-w-lg px-4 pt-5 pb-28">

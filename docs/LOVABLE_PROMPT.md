@@ -117,7 +117,7 @@ Left sidebar, top bar with co-op name, quick "New invoice" button, notification 
 
 **Payouts**: full history with per-farmer filter, export CSV.
 
-**Settings**: co-op profile, fee display, approval rules (require treasurer PIN), notification settings.
+**Settings**: co-op profile, fee display, approval rules (require treasurer PIN), notification settings. Include a **Demo data** switch bound to the signed-in account (`GET` and `PATCH /accounts/{id}/settings`). Show ON or OFF from `demo_data_visible`. Under the switch, show the `effect` string from that response. Saving sends `{ demo_data_enabled: true | false }`. Do not describe this as mock versus live API mode. `VITE_API_MODE` stays a deploy setting. When the switch is on, label every record with `is_demo: true` as **Demo**. Show `demo_balance_kes_cents` as "Sample balance" and never add it to the amount a withdrawal can send. `balance_kes_cents` stays the live amount. On overview metrics, when `demo` is present, show the `live` and `demo` buckets separately; the top-level totals include both only while the switch is on. Put the same switch on the farmer profile and the direct exporter's account area. The value is stored on the account, so it follows that person across devices.
 
 ### 4.6 Direct dashboard (`/direct`)
 A lighter sibling of the co-op dashboard for a solo exporter: KPI row (Collected, Paid to you, Fees, Avg time to payout), quick-invoice card on top ("Amount, currency, buyer email → Create link"), invoice list, invoice detail with timeline. Same visual language, no split panel. Show a subtle prompt "Are you part of a co-op? Switch to Stawi Co-op".
@@ -132,7 +132,7 @@ A realistic phone frame (feature-phone style, dark bezel, monochrome green-on-da
 Every screen needs loading (skeletons), empty (illustrated, with a next action), error (friendly, retry) and success states. Optimistic UI where safe; never optimistic for money movement. All amounts derive from API responses; never compute payouts client-side except for the *preview* split, clearly labelled "Preview" until approved. Form validation with zod and helpful inline messages. Toasts for confirmations. Keyboard accessible dialogs.
 
 ## 7. Auth and roles (frontend behaviour)
-Roles: `farmer`, `exporter`, `treasurer`, `buyer` (no login). After login route by role. Route guards. In mock mode a role switcher in a floating dev menu lets reviewers jump between farmer, treasurer, exporter and buyer views instantly. Persist the session token in memory plus httpOnly cookie expectation in live mode; do not store PINs anywhere.
+Roles: `farmer`, `exporter`, `treasurer`, `buyer` (no login). A phone number can be mapped to more than one of farmer, exporter, and co-op (`treasurer`) at the same time. `POST /auth/verify` returns `roles` (every dashboard this phone can open) and `role` (the default: treasurer, then farmer, then exporter). One role still routes straight to that home. Several roles show a chooser, and an account switcher stays on the farmer, co-op, and exporter screens so one mapping does not hide another. Route guards allow any role in `roles`. In mock mode a role switcher in a floating dev menu lets reviewers jump between farmer, treasurer, exporter and buyer views instantly. Persist the session token in memory plus httpOnly cookie expectation in live mode; do not store PINs anywhere.
 
 ## 8. API contract (implement client + mock against exactly this)
 
@@ -141,38 +141,49 @@ Roles: `farmer`, `exporter`, `treasurer`, `buyer` (no login). After login route 
 ```ts
 type PayoutDestination = { id: string; type: "mpesa" | "bank"; details: string; account_name: string; is_verified: boolean; bank_code?: string };
 type Account = { id: string; full_name: string; phone_number: string; id_number: string; payout_destinations: PayoutDestination[];
-  coop_id: string | null; channel_capability: "webapp" | "webapp+ussd"; balance_kes_cents: number; incoming_kes_cents: number }; // pin_hash is never returned
+  coop_id: string | null; channel_capability: "webapp" | "webapp+ussd"; balance_kes_cents: number; incoming_kes_cents: number;
+  demo_balance_kes_cents?: number; demo_incoming_kes_cents?: number; is_demo?: boolean;
+  demo_data_enabled?: boolean | null; demo_data_visible?: boolean }; // pin_hash is never returned. Missing is_demo means live.
 type Coop = { id: string; name: string; treasurer_account_id: string };
 type CoopMember = { coop_id: string; account_id: string; full_name?: string; contribution_share: number; kilos?: number };
 type Invoice = { id: string; type: "direct" | "coop"; account_id: string | null; coop_id: string | null;
   buyer_name: string; buyer_email: string; buyer_phone?: string; amount: number; currency: string; description: string; reference: string;
   status: "pending" | "paid" | "converting" | "settling" | "completed" | "failed"; split_approved: boolean;
   fx_rate: number | null; fee_kes_cents: number | null; kes_total_cents: number | null; // kes_total = net after fee
-  payaza_checkout_reference: string | null; payaza_link_id?: string | null; created_at: string; due_at: string | null };
+  payaza_checkout_reference: string | null; payaza_link_id?: string | null; is_demo?: boolean; created_at: string; due_at: string | null };
 type Transaction = { id: string; invoice_id: string; type: "collection" | "conversion" | "settlement" | "payout";
-  status: "pending" | "completed" | "failed"; amount: number; currency: string; fx_rate: number | null; fee_kes_cents: number | null; created_at: string };
+  status: "pending" | "completed" | "failed"; amount: number; currency: string; fx_rate: number | null; fee_kes_cents: number | null; is_demo?: boolean; created_at: string };
 type Payout = { id: string; invoice_id: string; account_id: string; kind: "credit" | "withdrawal"; // credit = split landed in Stawi balance
-  amount_kes_cents: number; destination_id: string | null; status: "pending" | "sent" | "confirmed" | "failed"; created_at: string; payaza_reference?: string | null };
+  amount_kes_cents: number; destination_id: string | null; status: "pending" | "sent" | "confirmed" | "failed"; created_at: string; payaza_reference?: string | null; is_demo?: boolean };
 type SplitLine = { account_id: string; share: number; gross_kes_cents: number; fee_kes_cents: number; net_kes_cents: number };
 type Shipment = { id: string; reference: string; coop_id: string; buyer_name: string; product: string; quantity_kg: number;
   destination: string; value: number; currency: string; ship_date: string; shipped_at: string | null;
   status: "draft" | "preparing" | "ready" | "in_transit" | "delivered" | "completed";
-  invoice_id: string | null; farmers: { account_id: string; kilos: number }[]; updated_at: string };
+  invoice_id: string | null; farmers: { account_id: string; kilos: number }[]; updated_at: string; is_demo?: boolean };
 ```
 
 Endpoints (client methods mirror these 1:1):
 ```
 POST /auth/otp                         { phone_number } -> { sent: true, dev_code? }  (texts a 6-digit code; mock mode and OTP_DEV_CODES=true also return dev_code outside production)
-POST /auth/verify                      { phone_number, code } -> { token, account_id, role, account }  (a server MASTER_LOGIN_CODE, when set, also signs in any existing account; the login page does not change)
+POST /auth/verify                      { phone_number, code } -> { token, account_id, role, roles, account_types, account }
+                                        roles: ("farmer" | "exporter" | "treasurer")[]
+                                        account_types: ("farmer" | "exporter" | "coop")[]  (coop is the treasurer / co-op dashboard)
+                                        role: default among roles, treasurer then farmer then exporter, for older clients
+                                        A phone may have more than one. One role routes as before. Several roles: chooser, then the account switcher.
+                                        (a server MASTER_LOGIN_CODE, when set, also signs in any existing account; the login page does not change)
 POST /auth/logout                      clears the session cookie
 Authorization: Bearer <token> is required on every route except health, account creation, name enquiry, OTP, buyer invoice view, checkout, Payaza webhooks, and USSD, whenever the API is in production or PAYAZA_MODE is sandbox/live.
 POST /accounts                          body: { full_name, phone_number, id_number, pin(4 digits), destination:{type,details,account_name}, ussd:boolean, coop_id? }
-                                        -> 201 Account plus { token, role } and a stawi_session cookie. Pass token into signIn. A missing token falls back to a demo token and live account reads return 401.
-GET  /accounts/{id}                     GET /accounts/{id}/balance -> { balance_kes_cents, incoming_kes_cents }
-GET  /accounts/{id}/transactions?limit  -> Payout[] (credits and withdrawals, newest first)
+                                        -> 201 Account plus { token, role, roles, account_types } and a stawi_session cookie. Pass token into signIn. A missing token falls back to a demo token and live account reads return 401. When roles has more than one entry, keep them on the session and show the account switcher.
+GET  /accounts/{id}                     GET /accounts/{id}/balance -> { balance_kes_cents, incoming_kes_cents, demo_balance_kes_cents?, demo_incoming_kes_cents? }
+                                        Omit demo_* balance fields when Demo Data is off. Never add demo_balance_kes_cents into a withdrawal.
+GET  /accounts/{id}/settings            -> { demo_data_enabled: boolean | null, demo_data_visible: boolean, demo_data_default: boolean, effect: string }
+PATCH /accounts/{id}/settings           { demo_data_enabled: true | false | null }  null follows DEMO_DATA_ENABLED. Owner only.
+GET  /accounts/{id}/transactions?limit  -> Payout[] (credits and withdrawals, newest first; sample rows hidden when Demo Data is off)
 POST /accounts/{id}/withdraw            { destination_id, amount_kes_cents, pin, idempotency_key }  403 { error:"wrong"|"locked", attemptsLeft? }
 POST /coops                             POST /coops/{id}/members { account_id, contribution_share, kilos? }
-GET  /coops/{id}/members                GET /coops/{id}/metrics -> { invoices, total_collected_kes_cents, fee_taken_kes_cents, total_split_kes_cents }
+GET  /coops/{id}/members                GET /coops/{id}/metrics -> { invoices, total_collected_kes_cents, fee_taken_kes_cents, total_split_kes_cents, live, demo? }
+                                        `live` is live invoices only. `demo` is included only while Demo Data is on. Top-level totals match what the viewer can see.
 GET  /invoices?coop_id=&account_id=     POST /invoices { type, account_id|coop_id, buyer_name, buyer_email, amount, currency, description, reference? }
 GET  /invoices/{id}                     -> { invoice, transactions, split_preview: SplitLine[] | null }
 POST /invoices/{id}/checkout-session    -> { reference, checkoutUrl|null, public_key, transaction_reference, link_id|null }  (open the Payaza widget client-side with public_key and transaction_reference)

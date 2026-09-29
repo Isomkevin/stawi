@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 import { Pool, PoolClient, QueryResult, QueryResultRow } from "pg";
 import { InMemoryStore } from "../store";
-import { Account, Coop, CoopMember, Invoice, Payout, PayoutDestination, Shipment, ShipmentFarmer, ShipmentStatus, Transaction } from "../types";
+import { ACCOUNT_TYPES, Account, AccountType, Coop, CoopMember, Invoice, Payout, PayoutDestination, Shipment, ShipmentFarmer, ShipmentStatus, Transaction } from "../types";
 
 const txClient = new AsyncLocalStorage<PoolClient>();
 
@@ -78,6 +78,10 @@ export class PostgresStore extends InMemoryStore {
       channel_capability: row.channel_capability,
       balance_kes_cents: num(row.balance_kes_cents),
       incoming_kes_cents: num(row.incoming_kes_cents),
+      demo_balance_kes_cents: num(row.demo_balance_kes_cents),
+      demo_incoming_kes_cents: num(row.demo_incoming_kes_cents),
+      is_demo: row.is_demo === true,
+      demo_data_enabled: row.demo_data_enabled === null || row.demo_data_enabled === undefined ? null : row.demo_data_enabled === true,
       pin_hash: row.pin_hash,
       pin_failed_attempts: num(row.pin_failed_attempts),
       pin_locked_until: iso(row.pin_locked_until),
@@ -89,8 +93,9 @@ export class PostgresStore extends InMemoryStore {
     await this.q(
       `INSERT INTO accounts (
          id, full_name, phone_number, phone_normalized, id_number, coop_id, channel_capability,
-         balance_kes_cents, incoming_kes_cents, pin_hash, pin_failed_attempts, pin_locked_until
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+         balance_kes_cents, incoming_kes_cents, demo_balance_kes_cents, demo_incoming_kes_cents,
+         is_demo, demo_data_enabled, pin_hash, pin_failed_attempts, pin_locked_until
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
        ON CONFLICT (id) DO UPDATE SET
          full_name = EXCLUDED.full_name,
          phone_number = EXCLUDED.phone_number,
@@ -100,6 +105,10 @@ export class PostgresStore extends InMemoryStore {
          channel_capability = EXCLUDED.channel_capability,
          balance_kes_cents = EXCLUDED.balance_kes_cents,
          incoming_kes_cents = EXCLUDED.incoming_kes_cents,
+         demo_balance_kes_cents = EXCLUDED.demo_balance_kes_cents,
+         demo_incoming_kes_cents = EXCLUDED.demo_incoming_kes_cents,
+         is_demo = EXCLUDED.is_demo,
+         demo_data_enabled = EXCLUDED.demo_data_enabled,
          pin_hash = EXCLUDED.pin_hash,
          pin_failed_attempts = EXCLUDED.pin_failed_attempts,
          pin_locked_until = EXCLUDED.pin_locked_until`,
@@ -113,6 +122,10 @@ export class PostgresStore extends InMemoryStore {
         account.channel_capability,
         account.balance_kes_cents,
         account.incoming_kes_cents,
+        account.demo_balance_kes_cents ?? 0,
+        account.demo_incoming_kes_cents ?? 0,
+        account.is_demo === true,
+        account.demo_data_enabled ?? null,
         account.pin_hash ?? null,
         account.pin_failed_attempts ?? 0,
         account.pin_locked_until,
@@ -225,6 +238,7 @@ export class PostgresStore extends InMemoryStore {
       kes_total_cents: row.kes_total_cents === null ? null : num(row.kes_total_cents),
       payaza_checkout_reference: row.payaza_checkout_reference,
       payaza_link_id: row.payaza_link_id,
+      is_demo: row.is_demo === true,
       created_at: iso(row.created_at) || new Date().toISOString(),
       due_at: iso(row.due_at),
     };
@@ -240,8 +254,8 @@ export class PostgresStore extends InMemoryStore {
       `INSERT INTO invoices (
          id, type, account_id, coop_id, buyer_name, buyer_email, buyer_phone, amount, currency,
          description, reference, status, split_approved, fx_rate, fee_kes_cents, kes_total_cents,
-         payaza_checkout_reference, payaza_link_id, due_at, created_at
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+         payaza_checkout_reference, payaza_link_id, is_demo, due_at, created_at
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
        ON CONFLICT (id) DO UPDATE SET
          type = EXCLUDED.type,
          account_id = EXCLUDED.account_id,
@@ -260,6 +274,7 @@ export class PostgresStore extends InMemoryStore {
          kes_total_cents = EXCLUDED.kes_total_cents,
          payaza_checkout_reference = EXCLUDED.payaza_checkout_reference,
          payaza_link_id = EXCLUDED.payaza_link_id,
+         is_demo = EXCLUDED.is_demo,
          due_at = EXCLUDED.due_at`,
       [
         invoice.id,
@@ -280,6 +295,7 @@ export class PostgresStore extends InMemoryStore {
         invoice.kes_total_cents,
         invoice.payaza_checkout_reference,
         invoice.payaza_link_id ?? null,
+        invoice.is_demo === true,
         invoice.due_at,
         invoice.created_at,
       ]
@@ -320,6 +336,7 @@ export class PostgresStore extends InMemoryStore {
       payaza_reference: row.payaza_reference,
       fx_rate: row.fx_rate === null ? null : num(row.fx_rate),
       fee_kes_cents: row.fee_kes_cents === null ? null : num(row.fee_kes_cents),
+      is_demo: row.is_demo === true,
       created_at: iso(row.created_at) || new Date().toISOString(),
     };
   }
@@ -327,8 +344,8 @@ export class PostgresStore extends InMemoryStore {
   public async addTransaction(transaction: Transaction): Promise<void> {
     await this.q(
       `INSERT INTO transactions (
-         id, invoice_id, type, status, amount, currency, payaza_reference, fx_rate, fee_kes_cents, created_at
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         id, invoice_id, type, status, amount, currency, payaza_reference, fx_rate, fee_kes_cents, is_demo, created_at
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
        ON CONFLICT (id) DO NOTHING`,
       [
         transaction.id,
@@ -340,6 +357,7 @@ export class PostgresStore extends InMemoryStore {
         transaction.payaza_reference,
         transaction.fx_rate,
         transaction.fee_kes_cents,
+        transaction.is_demo === true,
         transaction.created_at,
       ]
     );
@@ -368,6 +386,8 @@ export class PostgresStore extends InMemoryStore {
       created_at: iso(row.created_at) || new Date().toISOString(),
       idempotency_key: row.idempotency_key ?? undefined,
       payaza_reference: row.payaza_reference,
+      is_demo: row.is_demo === true,
+      demo_portion_kes_cents: num(row.demo_portion_kes_cents),
     };
   }
 
@@ -375,8 +395,8 @@ export class PostgresStore extends InMemoryStore {
     await this.q(
       `INSERT INTO payouts (
          id, invoice_id, transaction_id, account_id, kind, amount_kes_cents, destination_id,
-         status, idempotency_key, payaza_reference, created_at
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+         status, idempotency_key, payaza_reference, is_demo, demo_portion_kes_cents, created_at
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
       [
         payout.id,
         payout.invoice_id,
@@ -388,6 +408,8 @@ export class PostgresStore extends InMemoryStore {
         payout.status,
         payout.idempotency_key ?? null,
         payout.payaza_reference ?? null,
+        payout.is_demo === true,
+        payout.demo_portion_kes_cents ?? 0,
         payout.created_at,
       ]
     );
@@ -501,6 +523,7 @@ export class PostgresStore extends InMemoryStore {
       status: row.status as ShipmentStatus,
       invoice_id: row.invoice_id,
       farmers,
+      is_demo: row.is_demo === true,
       updated_at: iso(row.updated_at) || new Date().toISOString(),
     };
   }
@@ -524,8 +547,8 @@ export class PostgresStore extends InMemoryStore {
     await this.q(
       `INSERT INTO shipments (
          id, reference, coop_id, buyer_name, product, quantity_kg, destination, value, currency,
-         ship_date, shipped_at, status, invoice_id, updated_at
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+         ship_date, shipped_at, status, invoice_id, is_demo, updated_at
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
        ON CONFLICT (id) DO UPDATE SET
          reference = EXCLUDED.reference,
          coop_id = EXCLUDED.coop_id,
@@ -539,6 +562,7 @@ export class PostgresStore extends InMemoryStore {
          shipped_at = EXCLUDED.shipped_at,
          status = EXCLUDED.status,
          invoice_id = EXCLUDED.invoice_id,
+         is_demo = EXCLUDED.is_demo,
          updated_at = EXCLUDED.updated_at`,
       [
         shipment.id,
@@ -554,6 +578,7 @@ export class PostgresStore extends InMemoryStore {
         shipment.shipped_at,
         shipment.status,
         shipment.invoice_id,
+        shipment.is_demo === true,
         shipment.updated_at,
       ]
     );
@@ -586,9 +611,77 @@ export class PostgresStore extends InMemoryStore {
     return result.rows.map((row) => this.mapShipment(row, farmers.get(row.id) || []));
   }
 
+  public async flagDemoInvoice(id: string): Promise<boolean> {
+    const updated = await this.q("UPDATE invoices SET is_demo = true WHERE id = $1 AND is_demo = false", [id]);
+    if ((updated.rowCount ?? 0) === 0) return false;
+    await this.q("UPDATE transactions SET is_demo = true WHERE invoice_id = $1", [id]);
+    await this.q("UPDATE payouts SET is_demo = true WHERE invoice_id = $1", [id]);
+    await this.q("UPDATE shipments SET is_demo = true WHERE invoice_id = $1", [id]);
+    return true;
+  }
+
+  public async flagSeedWithdrawals(): Promise<void> {
+    await this.q(
+      `UPDATE payouts
+       SET is_demo = true, demo_portion_kes_cents = amount_kes_cents
+       WHERE idempotency_key LIKE 'seed-wth-%' OR payaza_reference LIKE 'PZ-WTH-%'`
+    );
+  }
+
+  public async flagDemoAccount(id: string): Promise<void> {
+    await this.q("UPDATE accounts SET is_demo = true WHERE id = $1", [id]);
+  }
+
+  public async flagDemoShipment(id: string): Promise<void> {
+    await this.q("UPDATE shipments SET is_demo = true WHERE id = $1", [id]);
+  }
+
+  public async getExplicitAccountTypes(phone: string): Promise<AccountType[] | null> {
+    const key = this.normalizePhone(phone);
+    const head = await this.q("SELECT phone_normalized FROM phone_mappings WHERE phone_normalized = $1", [key]);
+    if (head.rows.length === 0) return null;
+    const types = await this.q("SELECT account_type FROM phone_account_types WHERE phone_normalized = $1", [key]);
+    const found = types.rows.map((row) => row.account_type as AccountType);
+    return ACCOUNT_TYPES.filter((type) => found.includes(type));
+  }
+
+  public async saveExplicitAccountTypes(phone: string, types: AccountType[]): Promise<AccountType[]> {
+    const key = this.normalizePhone(phone);
+    const unique = ACCOUNT_TYPES.filter((type) => types.includes(type));
+    await this.q(
+      "INSERT INTO phone_mappings (phone_normalized) VALUES ($1) ON CONFLICT (phone_normalized) DO NOTHING",
+      [key]
+    );
+    await this.q("DELETE FROM phone_account_types WHERE phone_normalized = $1", [key]);
+    for (const type of unique) {
+      await this.q(
+        "INSERT INTO phone_account_types (phone_normalized, account_type) VALUES ($1,$2) ON CONFLICT DO NOTHING",
+        [key, type]
+      );
+    }
+    return unique;
+  }
+
+  public async listExplicitAccountTypes(): Promise<Array<{ phone_number: string; account_types: AccountType[] }>> {
+    const phones = await this.q("SELECT phone_normalized FROM phone_mappings ORDER BY phone_normalized");
+    const types = await this.q("SELECT phone_normalized, account_type FROM phone_account_types");
+    const grouped = new Map<string, AccountType[]>();
+    for (const row of phones.rows) grouped.set(String(row.phone_normalized), []);
+    for (const row of types.rows) {
+      const phone = String(row.phone_normalized);
+      const list = grouped.get(phone) ?? [];
+      list.push(row.account_type as AccountType);
+      grouped.set(phone, list);
+    }
+    return Array.from(grouped.entries()).map(([phone_number, account_types]) => ({
+      phone_number,
+      account_types: ACCOUNT_TYPES.filter((type) => account_types.includes(type)),
+    }));
+  }
+
   public async reset(): Promise<void> {
     await this.q(
-      `TRUNCATE webhook_events, otp_codes, sessions, payouts, transactions, shipment_farmers, shipments, invoices, coop_members, payout_destinations, accounts, coops RESTART IDENTITY CASCADE`
+      `TRUNCATE webhook_events, otp_codes, sessions, payouts, transactions, shipment_farmers, shipments, invoices, coop_members, payout_destinations, phone_account_types, phone_mappings, accounts, coops RESTART IDENTITY CASCADE`
     );
   }
 }

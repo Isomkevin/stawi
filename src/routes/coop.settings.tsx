@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { DemoDataControl } from "@/components/stawi/DemoDataControl";
 import { PageHeader } from "@/features/shared/DashboardShell";
 import { accountOptions, coopOptions } from "@/lib/queries";
 import { useAccountId, useCoopId } from "@/lib/session";
@@ -23,12 +24,14 @@ export const Route = createFileRoute("/coop/settings")({
 });
 
 function Settings() {
+  const accountId = useAccountId();
   const coop = useQuery(coopOptions(useCoopId()));
-  const me = useQuery(accountOptions(useAccountId()));
+  const me = useQuery(accountOptions(accountId));
   return (
     <div className="max-w-2xl">
       <PageHeader title="Settings" />
       <div className="space-y-6">
+        <DemoDataControl accountId={accountId} />
         <section className="space-y-4 rounded-2xl border border-border bg-card p-5">
           <h2 className="font-medium">Co-op</h2>
           <div className="space-y-1.5"><Label>Name</Label><Input defaultValue={coop.data?.name ?? ""} key={coop.data?.name} className="h-11" /></div>

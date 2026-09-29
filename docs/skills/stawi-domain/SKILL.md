@@ -27,7 +27,9 @@ All KES amounts are integer cents (`*_kes_cents`). Never floats.
 
 A member's `contribution_share` is a percentage. Shares for one co-op are expected to sum to 100. The splitter normalizes by the total share it is given, and still sums exactly.
 
-`balance_kes_cents` is spendable. It increases when a credit payout is confirmed and decreases when a withdrawal is sent. `incoming_kes_cents` is a co-op member's share of invoices that are `settling` and not yet approved. Approval moves that amount from incoming into balance.
+`balance_kes_cents` is the live spendable balance. It increases when a live credit payout is confirmed and decreases when a withdrawal is sent. `incoming_kes_cents` is a co-op member's live share of invoices that are `settling` and not yet approved. Approval moves that amount from incoming into balance.
+
+Sample rows carry `is_demo: true`. Their funds sit in `demo_balance_kes_cents` and `demo_incoming_kes_cents`. Sandbox and live Payaza payouts never spend sample funds. Mock mode may spend them, because mock does not move real money. A new invoice, collection, or withdrawal is live even when Demo Data is on. A sample invoice is not sent to Payaza unless `PAYAZA_MODE=mock`.
 
 Illustrative FX used when a payment is processed (`pipeline.getFxRate`): USD 129, EUR 142, GBP 168. The demo ledger stores its own historical rates (USD 129, EUR 140.5, GBP 168.2). Payaza publishes no FX endpoint, so both tables are Stawi's, not a live quote.
 
@@ -163,13 +165,15 @@ Shipment {
 
 Sessions are required when `NODE_ENV` is `production`, or `PAYAZA_MODE` is `sandbox` or `live`, unless `AUTH_REQUIRED=false`. `AUTH_REQUIRED=true` forces it on. Mock local dev is open.
 
-`POST /auth/otp` with `{ phone_number }` always answers `{ sent: true }` when the phone is unknown, so the endpoint does not reveal who has an account. A known phone gets a 6-digit SMS, valid 5 minutes, 5 attempts. Outside production, mock mode and `OTP_DEV_CODES=true` also return `dev_code` so the sign-in screen can show the test code. `MASTER_LOGIN_CODE`, when set and not in production, signs in any existing phone with that one code. Production never returns `dev_code` and never accepts the master code.
+`POST /auth/otp` with `{ phone_number }` always answers `{ sent: true }` when the phone is unknown, so the endpoint does not reveal who has an account. A known phone gets a 6-digit SMS, valid 5 minutes, 5 attempts. Outside production, mock mode and `OTP_DEV_CODES=true` also return `dev_code` so the sign-in screen can show the test code. `MASTER_LOGIN_CODE`, when set, signs in any existing phone with that one code, including in production. Empty means the shortcut is off. Production never returns `dev_code`.
 
-`POST /auth/verify` with `{ phone_number, code }` returns `{ token, account_id, role, account }`. `role` is `treasurer` if the account is a co-op's `treasurer_account_id`, otherwise `farmer` when `coop_id` is set, otherwise `exporter`. The token is also set as an HttpOnly `stawi_session` cookie (7 days). Send `Authorization: Bearer <token>` or the cookie.
+`POST /auth/verify` with `{ phone_number, code }` returns `{ token, account_id, role, roles, account_types, account }`. `account_types` is `farmer`, `exporter`, and/or `coop`. A phone may hold more than one. `roles` is the same set in dashboard names: `coop` is `treasurer`. `role` is the default among those (`treasurer`, then `farmer`, then `exporter`) so older clients still land somewhere. When no admin mapping has been saved, the set is the historical single role: treasurer of a co-op, otherwise farmer when `coop_id` is set, otherwise exporter. The token is also set as an HttpOnly `stawi_session` cookie (7 days). Send `Authorization: Bearer <token>` or the cookie.
+
+`GET /admin/phones` is a small admin page for those mappings. It stays hidden until `ADMIN_SECRET` is set. Search, add a Kenyan number, and add or remove Farmer, Exporter, and Co-op independently. The primary key on `(phone, account_type)` rejects a duplicate. Numbers are stored as `+254` plus 9 digits.
 
 `POST /auth/logout` clears the cookie.
 
-When auth is on, these stay public: `GET /health`, `POST /accounts`, `POST /name-enquiry`, `POST /auth/otp`, `POST /auth/verify`, `GET /invoices/{id}`, `POST /invoices/{id}/checkout-session`, `POST /webhooks/payaza`, `POST /ussd/callback`, and `/dev/*`.
+When auth is on, these stay public: `GET /health`, `POST /accounts`, `POST /name-enquiry`, `POST /auth/otp`, `POST /auth/verify`, `GET /invoices/{id}`, `POST /invoices/{id}/checkout-session`, `POST /webhooks/payaza`, `POST /ussd/callback`, `/dev/*`, and `/admin/*`. The admin page uses `ADMIN_SECRET`, not a user session.
 
 Everyone else must be signed in. You can read and write your own account. A treasurer can read member accounts in their co-op, but cannot withdraw for them. Co-op routes and co-op invoices require the treasurer. A direct invoice must name the caller's own account.
 
@@ -181,15 +185,20 @@ Errors are JSON `{ error: string }` with 400, 401, 403, 404, or 409.
 GET  /health
 
 POST /auth/otp                          { phone_number } -> { sent: true, dev_code? }
-POST /auth/verify                       { phone_number, code } -> { token, account_id, role, account }
+POST /auth/verify                       { phone_number, code } -> { token, account_id, role, roles, account_types, account }
 POST /auth/logout
 
 POST /accounts                          { full_name, phone_number, id_number, pin, destination?: { type, details, account_name }, ussd?, coop_id? }
                                         -> 201 public Account plus { token, role } and a stawi_session cookie.
                                         Signup uses that token on the next request. No pin fields.
 GET  /accounts/{id}
-GET  /accounts/{id}/balance             -> { balance_kes_cents, incoming_kes_cents }
-GET  /accounts/{id}/transactions?limit  -> Payout[]
+GET  /accounts/{id}/balance             -> { balance_kes_cents, incoming_kes_cents, demo_balance_kes_cents?, demo_incoming_kes_cents? }
+                                        Demo balance fields are omitted when Demo Data is off for the viewer.
+GET  /accounts/{id}/settings            -> { demo_data_enabled, demo_data_visible, demo_data_default, effect }
+PATCH /accounts/{id}/settings           { demo_data_enabled: true | false | null }
+                                        null clears the override and follows DEMO_DATA_ENABLED.
+                                        The owner is the only writer. This does not change PAYAZA_MODE.
+GET  /accounts/{id}/transactions?limit  -> Payout[]  (sample payouts omitted when Demo Data is off)
 POST /accounts/{id}/destinations        { type, details, account_name, bank_code? } -> 201 PayoutDestination, 409 if duplicate
 DELETE /accounts/{id}/destinations/{destId} -> 204, 400 if it is the last destination
 POST /accounts/{id}/withdraw            { destination_id, amount_kes_cents, pin, idempotency_key? }
@@ -204,7 +213,9 @@ GET  /coops/{id}/payouts                -> Payout[] for this co-op's invoices, n
 GET  /coops/{id}/shipments              -> Shipment[] for this co-op, latest ship date first
 PATCH /shipments/{id}                   { action: "advance" } -> Shipment
 DELETE /shipments/{id}                  -> 204. 409 if the linked invoice is no longer pending.
-GET  /coops/{id}/metrics                -> { invoices, total_collected_kes_cents, fee_taken_kes_cents, total_split_kes_cents, avg_payout_time }
+GET  /coops/{id}/metrics                -> { invoices, total_collected_kes_cents, fee_taken_kes_cents, total_split_kes_cents, avg_payout_time, live, demo? }
+                                        Top-level totals include sample invoices when Demo Data is on, and live invoices only when it is off.
+                                        `live` is always live-only. `demo` is present only when Demo Data is on.
 
 POST /name-enquiry                      { type, details } -> { account_name }
                                         Public, because signup calls it before a session exists.
@@ -236,4 +247,6 @@ Web and USSD both read `balance_kes_cents` and the same payout list. USSD only c
 
 ## Where the demo data lives
 
-Startup seeding, phones, PIN `1234`, and the canonical invoice ids are documented in `docs/SCAFFOLD.md` under Demo seed. `backend/src/data/catalog.ts` is the dataset. `backend/src/data/seed.ts` writes it. The Lovable mock (`src/lib/mock.ts`) is a smaller Kiambu story and is not this API.
+Startup seeding, phones, PIN `1234`, and the canonical invoice ids are documented in `docs/SCAFFOLD.md` under Demo seed. `backend/src/data/catalog.ts` is the dataset. `backend/src/data/seed.ts` writes it and marks every seeded row `is_demo: true`, with the ledger balance in `demo_balance_kes_cents`. The Lovable mock (`src/lib/mock.ts`) is a smaller Kiambu story and is not this API.
+
+Demo Data is a per-account visibility switch (`PATCH /accounts/{id}/settings`), not an application mode. `DEMO_DATA_ENABLED=true|false` is the default when the account has no saved value. Outside production the default is on. Production defaults to off. Turning the switch off hides sample invoices, shipments, payouts, and sample balances. It does not delete them, and it does not block live checkout, collection, split approval, or withdrawal. `PAYAZA_MODE` still decides whether money movement is simulated. `VITE_API_MODE` still decides whether the Lovable app uses its built-in mock or this API.

@@ -3,6 +3,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { LifeBuoy, LogOut } from "lucide-react";
+import { DemoDataControl } from "@/components/stawi/DemoDataControl";
 import { PinPad } from "@/components/stawi/PinPad";
 import { DestinationManager } from "@/features/farmer/DestinationManager";
 import { Button } from "@/components/ui/button";
@@ -73,6 +74,8 @@ function ProfileTab() {
           <p className="text-sm text-muted-foreground tabular">{a?.phone_number}</p>
         </div>
       </div>
+
+      <DemoDataControl accountId={accountId} />
 
       <Card title={t("profile.details")}>
         <p className="text-sm"><span className="text-muted-foreground">ID number: </span><span className="tabular">{a?.id_number}</span></p>

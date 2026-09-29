@@ -1,4 +1,5 @@
 import { ArrowDownLeft, ArrowUpRight } from "lucide-react";
+import { DemoBadge } from "@/components/stawi/DemoDataControl";
 import { StatusChip } from "@/components/stawi/StatusChip";
 import { formatKesCents, formatTime } from "@/lib/format";
 import type { Payout } from "@/lib/types";
@@ -25,7 +26,10 @@ export function PayoutRow({ payout, onClick }: { payout: Payout; onClick?: () =>
         {credit ? <ArrowDownLeft className="size-5" /> : <ArrowUpRight className="size-5" />}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium">{payoutTitle(payout)}</span>
+        <span className="flex items-center gap-2 truncate text-sm font-medium">
+          {payoutTitle(payout)}
+          <DemoBadge demo={payout.is_demo} />
+        </span>
         <span className="text-xs text-muted-foreground tabular">{formatTime(payout.created_at)}</span>
       </span>
       <span className="flex flex-col items-end gap-1">

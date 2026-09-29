@@ -3,6 +3,7 @@ import { useState } from "react";
 import { motion } from "motion/react";
 import { ArrowLeft, ArrowRight, Leaf, Phone, ShieldCheck } from "lucide-react";
 import { homeForRole, useSession } from "@/lib/session";
+import type { AppRole } from "@/lib/api";
 import type { Role } from "@/lib/types";
 import { api, ApiError, isMock } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -52,6 +53,13 @@ function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [devCode, setDevCode] = useState<string | null>(null);
+  const [choices, setChoices] = useState<AppRole[]>([]);
+  const [pending, setPending] = useState<{
+    accountId: string;
+    coopId: string | null;
+    token: string;
+    roles: AppRole[];
+  } | null>(null);
   const { signIn } = useSession();
   const navigate = useNavigate();
 
@@ -98,8 +106,22 @@ function LoginPage() {
     setBusy(true);
     try {
       const r = await api.verifyOtp(normalized(), code);
-      signIn(r.role, { accountId: r.account_id, coopId: r.account.coop_id, token: r.token });
-      void navigate({ to: homeForRole[r.role] });
+      const granted = (Array.isArray(r.roles) ? r.roles : [r.role]).filter(
+        (role): role is AppRole => role === "farmer" || role === "exporter" || role === "treasurer",
+      );
+      if (Array.isArray(r.roles) && r.roles.length === 0) {
+        setError("This number isn't mapped to an account type yet.");
+        return;
+      }
+      if (granted.length <= 1) {
+        const role = granted[0] ?? r.role;
+        signIn(role, { accountId: r.account_id, coopId: r.account.coop_id, token: r.token, roles: [role] });
+        void navigate({ to: homeForRole[role] });
+        return;
+      }
+      setChoices(granted);
+      setPending({ accountId: r.account_id, coopId: r.account.coop_id, token: r.token, roles: granted });
+      setStep("role");
     } catch {
       setError("That code isn't right or has expired.");
     } finally {
@@ -108,9 +130,12 @@ function LoginPage() {
   };
 
   const choose = (role: Exclude<Role, "buyer">) => {
-    signIn(role);
+    if (pending) signIn(role, pending);
+    else signIn(role);
     void navigate({ to: homeForRole[role] });
   };
+
+  const cards = isMock ? roleCards : roleCards.filter((card) => choices.includes(card.role));
 
   return (
     <div className="motif grain relative flex min-h-screen flex-col items-center justify-center bg-background px-4 py-12 text-foreground">
@@ -219,10 +244,12 @@ function LoginPage() {
             <div className="mt-5">
               <h1 className="text-display text-2xl">Who's signing in?</h1>
               <p className="mt-2 text-sm text-muted-foreground">
-                This demo account holds all three views. Pick where to land.
+                {pending
+                  ? "This number is mapped to more than one account. Choose where to continue. You can switch later."
+                  : "This demo account holds all three views. Pick where to land."}
               </p>
               <div className="mt-5 space-y-3">
-                {roleCards.map((card) => (
+                {cards.map((card) => (
                   <button
                     key={card.role}
                     type="button"

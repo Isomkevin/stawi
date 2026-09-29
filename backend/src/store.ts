@@ -1,5 +1,8 @@
+import { normalizePhone as normalizeKenyanPhone } from "./services/phone";
 import {
+  ACCOUNT_TYPES,
   Account,
+  AccountType,
   Coop,
   CoopMember,
   Invoice,
@@ -23,19 +26,32 @@ export class InMemoryStore {
   private otps = new Map<string, { codeHash: string; expiresAt: string; attempts: number }>();
   private sessions = new Map<string, { accountId: string; expiresAt: string }>();
   private shipments = new Map<string, Shipment>();
+  /** Present key means an admin saved this phone. The set may be empty. */
+  private explicitTypes = new Map<string, Set<AccountType>>();
 
   public normalizePhone(phone: string): string {
-    const cleaned = phone.replace(/[^\d+]/g, "");
-    if (cleaned.startsWith("0")) {
-      return `+254${cleaned.substring(1)}`;
-    }
-    if (cleaned.startsWith("254")) {
-      return `+${cleaned}`;
-    }
-    if (!cleaned.startsWith("+")) {
-      return `+${cleaned}`;
-    }
-    return cleaned;
+    return normalizeKenyanPhone(phone);
+  }
+
+  public async getExplicitAccountTypes(phone: string): Promise<AccountType[] | null> {
+    const set = this.explicitTypes.get(this.normalizePhone(phone));
+    if (!set) return null;
+    return ACCOUNT_TYPES.filter((type) => set.has(type));
+  }
+
+  public async saveExplicitAccountTypes(phone: string, types: AccountType[]): Promise<AccountType[]> {
+    const unique = ACCOUNT_TYPES.filter((type) => types.includes(type));
+    this.explicitTypes.set(this.normalizePhone(phone), new Set(unique));
+    return unique;
+  }
+
+  public async listExplicitAccountTypes(): Promise<Array<{ phone_number: string; account_types: AccountType[] }>> {
+    return Array.from(this.explicitTypes.entries())
+      .map(([phone_number, set]) => ({
+        phone_number,
+        account_types: ACCOUNT_TYPES.filter((type) => set.has(type)),
+      }))
+      .sort((a, b) => a.phone_number.localeCompare(b.phone_number));
   }
 
   // Account
@@ -282,6 +298,42 @@ export class InMemoryStore {
     this.processedWebhookRefs.add(reference);
   }
 
+  /** Marks a legacy seeded invoice and the rows that belong to it. Returns false when it was already sample data or missing. */
+  public async flagDemoInvoice(id: string): Promise<boolean> {
+    const invoice = this.invoices.get(id);
+    if (!invoice || invoice.is_demo) return false;
+    invoice.is_demo = true;
+    for (const tx of this.transactions.get(id) || []) tx.is_demo = true;
+    for (const payout of this.payouts.values()) {
+      if (payout.invoice_id !== id) continue;
+      payout.is_demo = true;
+    }
+    for (const shipment of this.shipments.values()) {
+      if (shipment.invoice_id === id) shipment.is_demo = true;
+    }
+    return true;
+  }
+
+  public async flagSeedWithdrawals(): Promise<void> {
+    for (const payout of this.payouts.values()) {
+      const seeded =
+        payout.idempotency_key?.startsWith("seed-wth-") || payout.payaza_reference?.startsWith("PZ-WTH-");
+      if (!seeded) continue;
+      payout.is_demo = true;
+      payout.demo_portion_kes_cents = payout.amount_kes_cents;
+    }
+  }
+
+  public async flagDemoAccount(id: string): Promise<void> {
+    const account = this.accounts.get(id);
+    if (account) account.is_demo = true;
+  }
+
+  public async flagDemoShipment(id: string): Promise<void> {
+    const shipment = this.shipments.get(id);
+    if (shipment) shipment.is_demo = true;
+  }
+
   // Reset store (for testing)
   public async reset(): Promise<void> {
     this.accounts.clear();
@@ -298,6 +350,7 @@ export class InMemoryStore {
     this.otps.clear();
     this.sessions.clear();
     this.shipments.clear();
+    this.explicitTypes.clear();
   }
 }
 

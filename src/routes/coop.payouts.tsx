@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Download, Wallet } from "lucide-react";
+import { DemoBadge } from "@/components/stawi/DemoDataControl";
 import { EmptyState } from "@/components/stawi/EmptyState";
 import { StatusChip } from "@/components/stawi/StatusChip";
 import { Button } from "@/components/ui/button";
@@ -59,7 +60,12 @@ function Payouts() {
             <tbody>
               {payouts.data.map((p) => (
                 <tr key={p.id} className="border-b border-border last:border-0">
-                  <td className="px-4 py-3">{accountName(p.account_id)}</td>
+                  <td className="px-4 py-3">
+                    <span className="inline-flex items-center gap-2">
+                      {accountName(p.account_id)}
+                      <DemoBadge demo={p.is_demo} />
+                    </span>
+                  </td>
                   <td className="hidden px-4 py-3 text-muted-foreground tabular sm:table-cell">{p.invoice_id.toUpperCase()}</td>
                   <td className="px-4 py-3 text-right tabular">{formatKesCents(p.amount_kes_cents)}</td>
                   <td className="px-4 py-3"><StatusChip status={p.status} /></td>

@@ -1,7 +1,8 @@
 import { createApp } from "./app";
 import { connectPostgres } from "./db/postgres";
 import { CANONICAL } from "./data/catalog";
-import { seedDatabase, seedShipments } from "./data/seed";
+import { seedDatabase, seedShipments, tagLegacyDemoLedger } from "./data/seed";
+import { demoDataDefault } from "./services/demoData";
 import { authRequired } from "./services/auth";
 import { setStore, store } from "./store";
 
@@ -48,6 +49,8 @@ async function main() {
     }
   }
 
+  await tagLegacyDemoLedger();
+
   const app = createApp();
 
   app.listen(PORT, "0.0.0.0", () => {
@@ -55,6 +58,7 @@ async function main() {
     console.log(` Stawi Backend API running on port ${PORT}`);
     console.log(` Environment:   ${process.env.NODE_ENV || "development"}`);
     console.log(` PAYAZA_MODE:   ${mode}`);
+    console.log(` Demo data:     ${demoDataDefault() ? "visible unless an account turns it off" : "hidden unless an account turns it on"}`);
     console.log(` AT_ENV:        ${process.env.AT_ENV || "sandbox"}`);
     console.log(` Database:      ${process.env.DATABASE_URL ? "postgres" : "memory"}`);
     console.log(` Auth:          ${authRequired() ? "required" : "open (mock/dev only)"}`);

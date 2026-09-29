@@ -7,10 +7,13 @@ import { hashPin } from "../services/pin";
 import { pipeline } from "../services/pipeline";
 import { advanceShipment } from "../services/shipments";
 import { store } from "../store";
-import { Account, CoopMember, Invoice, PublicAccount, UNRESOLVED_ACCOUNT_NAME } from "../types";
+import { Account, CoopMetrics, CoopMetricsBucket, CoopMember, DemoDataSettings, Invoice, PublicAccount, UNRESOLVED_ACCOUNT_NAME } from "../types";
+import { DEMO_DATA_EFFECT, demoDataDefault, demoDataVisible, includeInView, isDemo, parseDemoDataEnabled } from "../services/demoData";
 import { handleUssdCallback } from "../ussd/handler";
+import { registerAdmin } from "./admin";
 
 export const apiRouter = Router();
+registerAdmin(apiRouter);
 
 apiRouter.use(enforceAuth);
 
@@ -19,9 +22,79 @@ function getParam(param: string | string[] | undefined): string {
   return param || "";
 }
 
-function toPublicAccount(account: Account): PublicAccount {
-  const { pin_hash, pin_failed_attempts, pin_locked_until, ...rest } = account;
-  return rest;
+function toPublicAccount(account: Account, viewer?: Account): PublicAccount {
+  const visible = demoDataVisible(viewer ?? account);
+  const {
+    pin_hash,
+    pin_failed_attempts,
+    pin_locked_until,
+    demo_balance_kes_cents,
+    demo_incoming_kes_cents,
+    ...rest
+  } = account;
+  const base: PublicAccount = {
+    ...rest,
+    is_demo: account.is_demo === true,
+    demo_data_enabled: account.demo_data_enabled ?? null,
+    demo_data_visible: demoDataVisible(account),
+  };
+  if (!visible) return base;
+  return {
+    ...base,
+    demo_balance_kes_cents: demo_balance_kes_cents ?? 0,
+    demo_incoming_kes_cents: demo_incoming_kes_cents ?? 0,
+  };
+}
+
+function seesDemo(req: Request): boolean {
+  return demoDataVisible(req.account);
+}
+
+function demoSettings(account: Account): DemoDataSettings {
+  return {
+    demo_data_enabled: account.demo_data_enabled ?? null,
+    demo_data_visible: demoDataVisible(account),
+    demo_data_default: demoDataDefault(),
+    effect: DEMO_DATA_EFFECT,
+  };
+}
+
+function metricsBucket(invoices: Invoice[]): CoopMetricsBucket {
+  let total_collected_kes_cents = 0;
+  let fee_taken_kes_cents = 0;
+  let total_split_kes_cents = 0;
+  for (const inv of invoices) {
+    if (inv.status === "completed" || inv.status === "settling") {
+      total_collected_kes_cents += (inv.kes_total_cents || 0) + (inv.fee_kes_cents || 0);
+      fee_taken_kes_cents += inv.fee_kes_cents || 0;
+      if (inv.split_approved) total_split_kes_cents += inv.kes_total_cents || 0;
+    }
+  }
+  return {
+    invoices: invoices.length,
+    total_collected_kes_cents,
+    fee_taken_kes_cents,
+    total_split_kes_cents,
+  };
+}
+
+function presentMetrics(invoices: Invoice[], visible: boolean): CoopMetrics {
+  const live = metricsBucket(invoices.filter((invoice) => !isDemo(invoice)));
+  const demo = metricsBucket(invoices.filter((invoice) => isDemo(invoice)));
+  const shown = visible
+    ? {
+        invoices: live.invoices + demo.invoices,
+        total_collected_kes_cents: live.total_collected_kes_cents + demo.total_collected_kes_cents,
+        fee_taken_kes_cents: live.fee_taken_kes_cents + demo.fee_taken_kes_cents,
+        total_split_kes_cents: live.total_split_kes_cents + demo.total_split_kes_cents,
+      }
+    : live;
+  return {
+    ...shown,
+    avg_payout_time: "Same day (< 2 hrs)",
+    live,
+    ...(visible ? { demo } : {}),
+  };
 }
 
 // -------------------------------------------------------------
@@ -62,6 +135,8 @@ apiRouter.post("/auth/verify", async (req: Request, res: Response) => {
     token: result.token,
     account_id: result.account.id,
     role: result.role,
+    roles: result.roles,
+    account_types: result.account_types,
     account: toPublicAccount(result.account),
   });
 });
@@ -125,6 +200,10 @@ apiRouter.post("/accounts", async (req: Request, res: Response) => {
       channel_capability: ussd ? "webapp+ussd" : "webapp",
       balance_kes_cents: 0,
       incoming_kes_cents: 0,
+      demo_balance_kes_cents: 0,
+      demo_incoming_kes_cents: 0,
+      is_demo: false,
+      demo_data_enabled: null,
       pin_hash,
       pin_failed_attempts: 0,
       pin_locked_until: null,
@@ -133,7 +212,13 @@ apiRouter.post("/accounts", async (req: Request, res: Response) => {
     await store.saveAccount(newAccount);
     const session = await issueSession(newAccount);
     res.setHeader("Set-Cookie", sessionCookie(session.token));
-    res.status(201).json({ ...toPublicAccount(newAccount), token: session.token, role: session.role });
+    res.status(201).json({
+      ...toPublicAccount(newAccount),
+      token: session.token,
+      role: session.role,
+      roles: session.roles,
+      account_types: session.account_types,
+    });
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
@@ -154,10 +239,46 @@ apiRouter.get("/accounts/:id/balance", async (req: Request, res: Response) => {
     res.status(404).json({ error: "Account not found" });
     return;
   }
+  const visible = demoDataVisible(req.account ?? account);
   res.status(200).json({
     balance_kes_cents: account.balance_kes_cents,
     incoming_kes_cents: account.incoming_kes_cents,
+    ...(visible
+      ? {
+          demo_balance_kes_cents: account.demo_balance_kes_cents ?? 0,
+          demo_incoming_kes_cents: account.demo_incoming_kes_cents ?? 0,
+        }
+      : {}),
   });
+});
+
+apiRouter.get("/accounts/:id/settings", async (req: Request, res: Response) => {
+  const account = await store.getAccount(getParam(req.params.id));
+  if (!account) {
+    res.status(404).json({ error: "Account not found" });
+    return;
+  }
+  res.status(200).json(demoSettings(account));
+});
+
+apiRouter.patch("/accounts/:id/settings", async (req: Request, res: Response) => {
+  const account = await store.getAccount(getParam(req.params.id));
+  if (!account) {
+    res.status(404).json({ error: "Account not found" });
+    return;
+  }
+  if (!Object.prototype.hasOwnProperty.call(req.body ?? {}, "demo_data_enabled")) {
+    res.status(400).json({ error: "Missing demo_data_enabled" });
+    return;
+  }
+  const next = parseDemoDataEnabled(req.body.demo_data_enabled);
+  if (next === undefined) {
+    res.status(400).json({ error: "demo_data_enabled must be true, false, or null" });
+    return;
+  }
+  account.demo_data_enabled = next;
+  await store.saveAccount(account);
+  res.status(200).json(demoSettings(account));
 });
 
 apiRouter.get("/accounts/:id/transactions", async (req: Request, res: Response) => {
@@ -167,8 +288,9 @@ apiRouter.get("/accounts/:id/transactions", async (req: Request, res: Response) 
     return;
   }
   const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : undefined;
-  const payouts = await store.getPayoutsByAccount(account.id, limit);
-  res.status(200).json(payouts);
+  const visible = seesDemo(req);
+  const payouts = (await store.getPayoutsByAccount(account.id)).filter((payout) => includeInView(payout, visible));
+  res.status(200).json(limit && limit > 0 ? payouts.slice(0, limit) : payouts);
 });
 
 apiRouter.post("/accounts/:id/destinations", async (req: Request, res: Response) => {
@@ -307,7 +429,17 @@ apiRouter.get("/coops/:id/members", async (req: Request, res: Response) => {
     return;
   }
   const members = await store.getCoopMembers(getParam(req.params.id));
-  res.status(200).json(members);
+  if (seesDemo(req)) {
+    res.status(200).json(members);
+    return;
+  }
+  const visible = [];
+  for (const member of members) {
+    const account = await store.getAccount(member.account_id);
+    if (account?.is_demo) continue;
+    visible.push(member);
+  }
+  res.status(200).json(visible);
 });
 
 apiRouter.post("/coops/:id/members", async (req: Request, res: Response) => {
@@ -397,7 +529,8 @@ apiRouter.get("/coops/:id/shipments", async (req: Request, res: Response) => {
     res.status(404).json({ error: "Co-op not found" });
     return;
   }
-  const shipments = await store.listShipments(coop.id);
+  const visible = seesDemo(req);
+  const shipments = (await store.listShipments(coop.id)).filter((shipment) => includeInView(shipment, visible));
   res.status(200).json(shipments);
 });
 
@@ -454,13 +587,14 @@ apiRouter.get("/coops/:id/payouts", async (req: Request, res: Response) => {
     res.status(404).json({ error: "Co-op not found" });
     return;
   }
-  const invoices = await store.getInvoices({ coop_id: coop.id });
+  const visible = seesDemo(req);
+  const invoices = (await store.getInvoices({ coop_id: coop.id })).filter((invoice) => includeInView(invoice, visible));
   const invoiceIds = new Set(invoices.map((i) => i.id));
   const members = await store.getCoopMembers(coop.id);
   const groups = await Promise.all(members.map((m) => store.getPayoutsByAccount(m.account_id)));
   const payouts = groups
     .flat()
-    .filter((p) => invoiceIds.has(p.invoice_id))
+    .filter((p) => invoiceIds.has(p.invoice_id) && includeInView(p, visible))
     .sort((a, b) => b.created_at.localeCompare(a.created_at));
   res.status(200).json(payouts);
 });
@@ -499,28 +633,7 @@ apiRouter.get("/coops/:id/metrics", async (req: Request, res: Response) => {
   }
 
   const invoices = await store.getInvoices({ coop_id: coop.id });
-  let total_collected_kes_cents = 0;
-  let fee_taken_kes_cents = 0;
-  let total_split_kes_cents = 0;
-
-  for (const inv of invoices) {
-    if (inv.status === "completed" || inv.status === "settling") {
-      const gross = (inv.kes_total_cents || 0) + (inv.fee_kes_cents || 0);
-      total_collected_kes_cents += gross;
-      fee_taken_kes_cents += inv.fee_kes_cents || 0;
-      if (inv.split_approved) {
-        total_split_kes_cents += inv.kes_total_cents || 0;
-      }
-    }
-  }
-
-  res.status(200).json({
-    invoices: invoices.length,
-    total_collected_kes_cents,
-    fee_taken_kes_cents,
-    total_split_kes_cents,
-    avg_payout_time: "Same day (< 2 hrs)",
-  });
+  res.status(200).json(presentMetrics(invoices, seesDemo(req)));
 });
 
 // -------------------------------------------------------------
@@ -529,7 +642,8 @@ apiRouter.get("/coops/:id/metrics", async (req: Request, res: Response) => {
 apiRouter.get("/invoices", async (req: Request, res: Response) => {
   const coop_id = req.query.coop_id as string | undefined;
   const account_id = req.query.account_id as string | undefined;
-  const invoices = await store.getInvoices({ coop_id, account_id });
+  const visible = seesDemo(req);
+  const invoices = (await store.getInvoices({ coop_id, account_id })).filter((invoice) => includeInView(invoice, visible));
   res.status(200).json(invoices);
 });
 
@@ -584,6 +698,7 @@ apiRouter.post("/invoices", async (req: Request, res: Response) => {
     fee_kes_cents: null,
     kes_total_cents: null,
     payaza_checkout_reference: null,
+    is_demo: false,
     created_at: new Date().toISOString(),
     due_at: due_at || null,
   };
@@ -595,6 +710,10 @@ apiRouter.post("/invoices", async (req: Request, res: Response) => {
 apiRouter.get("/invoices/:id", async (req: Request, res: Response) => {
   const invoice = await store.getInvoice(getParam(req.params.id));
   if (!invoice) {
+    res.status(404).json({ error: "Invoice not found" });
+    return;
+  }
+  if (req.account && !seesDemo(req) && isDemo(invoice)) {
     res.status(404).json({ error: "Invoice not found" });
     return;
   }
@@ -628,6 +747,12 @@ apiRouter.post("/invoices/:id/checkout-session", async (req: Request, res: Respo
     const invoice = await store.getInvoice(getParam(req.params.id));
     if (!invoice) {
       res.status(404).json({ error: "Invoice not found" });
+      return;
+    }
+    if (isDemo(invoice) && payaza.getMode() !== "mock") {
+      res.status(409).json({
+        error: "Sample invoices are not sent to Payaza. Create a new invoice for a live payment.",
+      });
       return;
     }
 

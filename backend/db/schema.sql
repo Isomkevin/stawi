@@ -18,6 +18,10 @@ CREATE TABLE IF NOT EXISTS accounts (
   channel_capability VARCHAR(32) NOT NULL DEFAULT 'webapp',
   balance_kes_cents BIGINT NOT NULL DEFAULT 0 CHECK (balance_kes_cents >= 0),
   incoming_kes_cents BIGINT NOT NULL DEFAULT 0 CHECK (incoming_kes_cents >= 0),
+  demo_balance_kes_cents BIGINT NOT NULL DEFAULT 0 CHECK (demo_balance_kes_cents >= 0),
+  demo_incoming_kes_cents BIGINT NOT NULL DEFAULT 0 CHECK (demo_incoming_kes_cents >= 0),
+  is_demo BOOLEAN NOT NULL DEFAULT FALSE,
+  demo_data_enabled BOOLEAN,
   pin_hash VARCHAR(255),
   pin_failed_attempts INT NOT NULL DEFAULT 0,
   pin_locked_until TIMESTAMP WITH TIME ZONE,
@@ -63,6 +67,7 @@ CREATE TABLE IF NOT EXISTS invoices (
   kes_total_cents BIGINT,
   payaza_checkout_reference VARCHAR(128),
   payaza_link_id VARCHAR(128),
+  is_demo BOOLEAN NOT NULL DEFAULT FALSE,
   due_at TIMESTAMP WITH TIME ZONE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -77,6 +82,7 @@ CREATE TABLE IF NOT EXISTS transactions (
   payaza_reference VARCHAR(128),
   fx_rate NUMERIC(10, 4),
   fee_kes_cents BIGINT,
+  is_demo BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -91,6 +97,8 @@ CREATE TABLE IF NOT EXISTS payouts (
   status VARCHAR(32) NOT NULL CHECK (status IN ('pending', 'sent', 'confirmed', 'failed')),
   idempotency_key VARCHAR(128) UNIQUE,
   payaza_reference VARCHAR(128),
+  is_demo BOOLEAN NOT NULL DEFAULT FALSE,
+  demo_portion_kes_cents BIGINT NOT NULL DEFAULT 0,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -128,6 +136,7 @@ CREATE TABLE IF NOT EXISTS shipments (
   shipped_at TIMESTAMP WITH TIME ZONE,
   status VARCHAR(32) NOT NULL CHECK (status IN ('draft', 'preparing', 'ready', 'in_transit', 'delivered', 'completed')),
   invoice_id VARCHAR(64) REFERENCES invoices(id) ON DELETE SET NULL,
+  is_demo BOOLEAN NOT NULL DEFAULT FALSE,
   updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -153,3 +162,30 @@ CREATE INDEX IF NOT EXISTS idx_shipment_farmers_account ON shipment_farmers(acco
 
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS phone_normalized VARCHAR(32);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_phone_norm ON accounts(phone_normalized);
+
+-- A phone may be mapped to farmer, exporter, and co-op at the same time.
+-- A row in phone_mappings means an admin saved this number (even with zero types).
+-- Without that row, access is still derived from the account so existing users keep working.
+CREATE TABLE IF NOT EXISTS phone_mappings (
+  phone_normalized VARCHAR(32) PRIMARY KEY,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS phone_account_types (
+  phone_normalized VARCHAR(32) NOT NULL REFERENCES phone_mappings(phone_normalized) ON DELETE CASCADE,
+  account_type VARCHAR(16) NOT NULL CHECK (account_type IN ('farmer', 'exporter', 'coop')),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (phone_normalized, account_type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_phone_account_types_type ON phone_account_types(account_type);
+
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS demo_balance_kes_cents BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS demo_incoming_kes_cents BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS is_demo BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS demo_data_enabled BOOLEAN;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS is_demo BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS is_demo BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE payouts ADD COLUMN IF NOT EXISTS is_demo BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE payouts ADD COLUMN IF NOT EXISTS demo_portion_kes_cents BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE shipments ADD COLUMN IF NOT EXISTS is_demo BOOLEAN NOT NULL DEFAULT FALSE;

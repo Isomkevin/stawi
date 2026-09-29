@@ -21,6 +21,19 @@ export type Account = {
   channel_capability: "webapp" | "webapp+ussd";
   balance_kes_cents: number;
   incoming_kes_cents: number;
+  /** Sample funds. Never sent through Payaza sandbox or live payouts. */
+  demo_balance_kes_cents?: number;
+  /** Sample share of co-op invoices still waiting for split approval. */
+  demo_incoming_kes_cents?: number;
+  /** Seeded sample account. Live signups are false. */
+  is_demo?: boolean;
+  /**
+   * Saved Demo Data switch. Null follows DEMO_DATA_ENABLED, or the non-production default.
+   * This does not change PAYAZA_MODE.
+   */
+  demo_data_enabled?: boolean | null;
+  /** Effective switch for this account, including the env default. Response-only. */
+  demo_data_visible?: boolean;
   pin_hash?: string | null;
   pin_failed_attempts?: number;
   pin_locked_until?: string | null;
@@ -65,6 +78,8 @@ export type Invoice = {
   payaza_checkout_reference: string | null;
   /** Payaza payment-link id, saved so webhooks can be correlated back to this invoice. */
   payaza_link_id?: string | null;
+  /** Sample invoice. New invoices created through the API are false. */
+  is_demo?: boolean;
   created_at: string;
   due_at: string | null;
 };
@@ -82,6 +97,8 @@ export type Transaction = {
   payaza_reference: string | null;
   fx_rate: number | null;
   fee_kes_cents: number | null;
+  /** Copied from the invoice. Sample activity stays sample. */
+  is_demo?: boolean;
   created_at: string;
 };
 
@@ -101,6 +118,10 @@ export type Payout = {
   idempotency_key?: string;
   /** Beneficiary transaction_reference sent to Payaza, used to apply payout webhooks. */
   payaza_reference?: string | null;
+  /** Entirely sample money. Mixed mock withdrawals stay live so a real payout is not hidden. */
+  is_demo?: boolean;
+  /** Cents of this withdrawal that came from demo_balance_kes_cents. Used to restore the right balance. */
+  demo_portion_kes_cents?: number;
 };
 
 export type SplitLine = {
@@ -111,12 +132,40 @@ export type SplitLine = {
   net_kes_cents: number;
 };
 
-export type CoopMetrics = {
+export type CoopMetricsBucket = {
   invoices: number;
   total_collected_kes_cents: number;
   fee_taken_kes_cents: number;
   total_split_kes_cents: number;
+};
+
+export type CoopMetrics = CoopMetricsBucket & {
   avg_payout_time?: string;
+  /** Live invoices only. Top-level totals include sample rows when Demo Data is on, for existing clients. */
+  live: CoopMetricsBucket;
+  /** Present when the viewer has Demo Data on. */
+  demo?: CoopMetricsBucket;
+};
+
+export type DemoDataSettings = {
+  demo_data_enabled: boolean | null;
+  demo_data_visible: boolean;
+  demo_data_default: boolean;
+  effect: string;
+};
+
+/** Dashboard access for one phone. A phone may hold more than one at the same time. */
+export const ACCOUNT_TYPES = ["farmer", "exporter", "coop"] as const;
+export type AccountType = (typeof ACCOUNT_TYPES)[number];
+
+export type PhoneMapping = {
+  phone_number: string;
+  account_id: string | null;
+  full_name: string | null;
+  account_types: AccountType[];
+  /** True once an admin has saved this phone. Otherwise types are derived from the account. */
+  explicit: boolean;
+  multiple: boolean;
 };
 
 export const SHIPMENT_STATUSES = ["draft", "preparing", "ready", "in_transit", "delivered", "completed"] as const;
@@ -144,4 +193,5 @@ export type Shipment = {
   invoice_id: string | null;
   farmers: ShipmentFarmer[];
   updated_at: string;
+  is_demo?: boolean;
 };

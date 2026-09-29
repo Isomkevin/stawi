@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight } from "lucide-react";
+import { DemoDataControl } from "@/components/stawi/DemoDataControl";
 import { KpiCard } from "@/components/stawi/KpiCard";
 import { Skeleton } from "@/components/ui/skeleton";
 import { InvoiceTable } from "@/features/shared/InvoiceTable";
@@ -28,12 +29,17 @@ function DirectOverview() {
   const balance = useQuery(balanceOptions(accountId));
   const invoices = useQuery(invoicesOptions({ account_id: accountId }));
   const list = invoices.data ?? [];
-  const received = list.reduce((s, i) => s + (i.kes_total_cents ?? 0), 0);
-  const open = list.filter((i) => i.status === "pending").length;
+  const liveList = list.filter((i) => !i.is_demo);
+  const sampleReceived = list.filter((i) => i.is_demo).reduce((s, i) => s + (i.kes_total_cents ?? 0), 0);
+  const received = liveList.reduce((s, i) => s + (i.kes_total_cents ?? 0), 0);
+  const open = liveList.filter((i) => i.status === "pending").length;
 
   return (
     <div>
       <PageHeader title="Karibu, Wanjiru" description="Here's where your money stands." />
+      <div className="mb-6">
+        <DemoDataControl accountId={accountId} />
+      </div>
       <div className="grid gap-4 sm:grid-cols-3">
         {balance.data ? (
           <>
@@ -45,6 +51,11 @@ function DirectOverview() {
           [0, 1, 2].map((i) => <Skeleton key={i} className="h-28 rounded-2xl" />)
         )}
       </div>
+      {balance.data && ((balance.data.demo_balance_kes_cents ?? 0) > 0 || sampleReceived > 0) && (
+        <p className="mt-3 text-sm text-muted-foreground">
+          Sample {formatKesCompact(balance.data.demo_balance_kes_cents ?? sampleReceived)} is labelled Demo and stays out of live payouts.
+        </p>
+      )}
 
       <section className="motif mt-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border bg-card p-6">
         <div>

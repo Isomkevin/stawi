@@ -4,6 +4,12 @@ import { api } from "./api";
 export const accountOptions = (accountId: string) =>
   queryOptions({ queryKey: ["account", accountId], queryFn: () => api.getAccount(accountId) });
 
+export const demoSettingsOptions = (accountId: string) =>
+  queryOptions({
+    queryKey: ["account", accountId, "demo-settings"],
+    queryFn: () => api.getDemoSettings(accountId),
+  });
+
 export const balanceOptions = (accountId: string) =>
   queryOptions({
     queryKey: ["account", accountId, "balance"],

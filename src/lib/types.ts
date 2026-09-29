@@ -20,6 +20,12 @@ export type Account = {
   channel_capability: "webapp" | "webapp+ussd";
   balance_kes_cents: number;
   incoming_kes_cents: number;
+  demo_balance_kes_cents?: number;
+  demo_incoming_kes_cents?: number;
+  is_demo?: boolean;
+  /** Saved override. Null follows the server default. */
+  demo_data_enabled?: boolean | null;
+  demo_data_visible?: boolean;
 }; // pin_hash is never returned
 
 export type Coop = {
@@ -62,6 +68,7 @@ export type Invoice = {
   fee_kes_cents: number | null;
   kes_total_cents: number | null; // net after fee
   payaza_checkout_reference: string | null;
+  is_demo?: boolean;
   created_at: string;
   due_at: string | null;
 };
@@ -75,6 +82,7 @@ export type Transaction = {
   currency: string;
   fx_rate: number | null;
   fee_kes_cents: number | null;
+  is_demo?: boolean;
   created_at: string;
 };
 
@@ -87,6 +95,7 @@ export type Payout = {
   destination_id: string | null;
   status: "pending" | "sent" | "confirmed" | "failed";
   created_at: string;
+  is_demo?: boolean;
 };
 
 export type SplitLine = {
@@ -100,13 +109,29 @@ export type SplitLine = {
 export type Balance = {
   balance_kes_cents: number;
   incoming_kes_cents: number;
+  demo_balance_kes_cents?: number;
+  demo_incoming_kes_cents?: number;
 };
 
-export type CoopMetrics = {
+export type CoopMetricsBucket = {
   invoices: number;
   total_collected_kes_cents: number;
   fee_taken_kes_cents: number;
   total_split_kes_cents: number;
+};
+
+export type CoopMetrics = CoopMetricsBucket & {
+  /** Live invoices only. Prefer this for headline totals. */
+  live?: CoopMetricsBucket;
+  /** Present while Demo Data is on. */
+  demo?: CoopMetricsBucket;
+};
+
+export type DemoDataSettings = {
+  demo_data_enabled: boolean | null;
+  demo_data_visible: boolean;
+  demo_data_default: boolean;
+  effect: string;
 };
 
 export type InvoiceDetail = {
@@ -175,7 +200,11 @@ export type Shipment = {
   invoice_id: string | null;
   farmers: ShipmentFarmer[];
   updated_at: string;
+  is_demo?: boolean;
 };
+
+export const ACCOUNT_TYPES = ["farmer", "exporter", "coop"] as const;
+export type AccountType = (typeof ACCOUNT_TYPES)[number];
 
 export type Role = "farmer" | "exporter" | "treasurer" | "buyer";
 

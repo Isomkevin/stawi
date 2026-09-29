@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { demoDataVisible, includeInView } from "../services/demoData";
 import { pipeline } from "../services/pipeline";
 import { store } from "../store";
 
@@ -53,7 +54,12 @@ async function renderUssdMenu(res: Response, sessionId: string, phoneNumber: str
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
-    res.status(200).send(`END Your Stawi balance: KES ${formatted}`);
+    const sampleCents = account.demo_balance_kes_cents ?? 0;
+    const sample =
+      demoDataVisible(account) && sampleCents > 0
+        ? `\nSample: KES ${(sampleCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        : "";
+    res.status(200).send(`END Your Stawi balance: KES ${formatted}${sample}`);
     return;
   }
 
@@ -65,7 +71,10 @@ async function renderUssdMenu(res: Response, sessionId: string, phoneNumber: str
       return;
     }
 
-    const payouts = await store.getPayoutsByAccount(account.id, 3);
+    const visible = demoDataVisible(account);
+    const payouts = (await store.getPayoutsByAccount(account.id))
+      .filter((payout) => includeInView(payout, visible))
+      .slice(0, 3);
     if (payouts.length === 0) {
       res.status(200).send("END No recent transactions found.");
       return;
@@ -77,7 +86,8 @@ async function renderUssdMenu(res: Response, sessionId: string, phoneNumber: str
       });
       const invoice = p.invoice_id !== "withdrawal" ? await store.getInvoice(p.invoice_id) : undefined;
       const ref = invoice?.reference || (p.kind === "withdrawal" ? "Withdrawal" : p.invoice_id);
-      return `${ref} - ${p.status} - KES ${amt}`;
+      const label = p.is_demo ? `Demo ${ref}` : ref;
+      return `${label} - ${p.status} - KES ${amt}`;
     }));
 
     res.status(200).send(`END Recent:\n${lines.join("\n")}`);

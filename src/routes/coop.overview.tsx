@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { AlertTriangle, ArrowRight, CheckCircle2 } from "lucide-react";
+import { DemoBadge } from "@/components/stawi/DemoDataControl";
 import { KpiCard } from "@/components/stawi/KpiCard";
 import { StatusChip } from "@/components/stawi/StatusChip";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -36,7 +37,11 @@ function Overview() {
   const shipments = useQuery(coopShipmentsOptions(coopId));
 
   const settled = (invoices.data ?? []).filter((i) => i.kes_total_cents).sort((a, b) => +new Date(a.created_at) - +new Date(b.created_at));
-  const area = settled.map((i) => ({ d: formatDate(i.created_at), kes: (i.kes_total_cents ?? 0) / 100 }));
+  const area = settled.map((i) => ({
+    d: formatDate(i.created_at),
+    live: i.is_demo ? 0 : (i.kes_total_cents ?? 0) / 100,
+    sample: i.is_demo ? (i.kes_total_cents ?? 0) / 100 : 0,
+  }));
   const perFarmer = (members.data ?? []).map((m) => ({
     name: (m.full_name ?? accountName(m.account_id)).split(" ")[0],
     kes: (payouts.data ?? []).filter((p) => p.account_id === m.account_id && p.status !== "failed").reduce((s, p) => s + p.amount_kes_cents, 0) / 100,
@@ -45,8 +50,10 @@ function Overview() {
   const failed = (payouts.data ?? []).filter((p) => p.status === "failed");
   const missingDest = (members.data ?? []).length === 0;
   const m = metrics.data;
-  const bankSpread = m ? Math.round(m.total_collected_kes_cents * 0.045) : 0;
-  const spark = area.map((a) => a.kes);
+  const live = m?.live ?? m;
+  const sample = m?.demo;
+  const bankSpread = live ? Math.round(live.total_collected_kes_cents * 0.045) : 0;
+  const spark = area.map((a) => a.live);
 
   return (
     <div>
@@ -55,15 +62,20 @@ function Overview() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {m ? (
           <>
-            <KpiCard index={0} label="Collected" value={formatKesCompact(m.total_collected_kes_cents)} spark={spark} accent />
-            <KpiCard index={1} label="Paid to farmers" value={formatKesCompact(m.total_split_kes_cents)} spark={spark} />
-            <KpiCard index={2} label="Invoices" value={String(m.invoices)} hint={`${needsApproval.length} waiting for you`} />
-            <KpiCard index={3} label="Stawi fees" value={formatKesCompact(m.fee_taken_kes_cents)} hint="0.8% flat" />
+            <KpiCard index={0} label="Collected" value={formatKesCompact(live.total_collected_kes_cents)} spark={spark} accent />
+            <KpiCard index={1} label="Paid to farmers" value={formatKesCompact(live.total_split_kes_cents)} spark={spark} />
+            <KpiCard index={2} label="Invoices" value={String(live.invoices)} hint={`${needsApproval.filter((i) => !i.is_demo).length} waiting for you`} />
+            <KpiCard index={3} label="Stawi fees" value={formatKesCompact(live.fee_taken_kes_cents)} hint="0.8% flat · live" />
           </>
         ) : (
           [0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-32 rounded-2xl" />)
         )}
       </div>
+      {sample && sample.invoices > 0 && (
+        <p className="mt-3 text-sm text-muted-foreground">
+          Sample {formatKesCompact(sample.total_collected_kes_cents)} across {sample.invoices} demo invoice{sample.invoices === 1 ? "" : "s"}. Live totals above leave that out.
+        </p>
+      )}
 
       <Link to="/coop/shipments" className="mt-6 block rounded-2xl border border-border bg-card p-5 hover:border-lime/50">
         <div className="mb-3 flex items-center justify-between">
@@ -96,7 +108,8 @@ function Overview() {
                 <XAxis dataKey="d" stroke="var(--muted-foreground)" fontSize={12} tickLine={false} axisLine={false} />
                 <YAxis stroke="var(--muted-foreground)" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v: number) => `${Math.round(v / 1000)}k`} />
                 <Tooltip contentStyle={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 12 }} />
-                <Area type="monotone" dataKey="kes" stroke="var(--lime)" strokeWidth={2} fill="url(#coll)" />
+                <Area type="monotone" dataKey="live" name="Live" stroke="var(--lime)" strokeWidth={2} fill="url(#coll)" />
+                <Area type="monotone" dataKey="sample" name="Demo" stroke="var(--amber)" strokeWidth={2} fill="transparent" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -161,7 +174,10 @@ function Overview() {
           <ul className="space-y-3 text-sm">
             {(invoices.data ?? []).slice().sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at)).slice(0, 5).map((i) => (
               <li key={i.id} className="flex items-center justify-between gap-3">
-                <Link to="/coop/invoices/$id" params={{ id: i.id }} className="hover:text-lime">{i.buyer_name}</Link>
+                <Link to="/coop/invoices/$id" params={{ id: i.id }} className="inline-flex items-center gap-2 hover:text-lime">
+                  {i.buyer_name}
+                  <DemoBadge demo={i.is_demo} />
+                </Link>
                 <span className="text-muted-foreground">{relativeTime(i.created_at)}</span>
                 <StatusChip status={i.status} />
               </li>
@@ -173,9 +189,9 @@ function Overview() {
           <h2 className="font-medium">What you saved</h2>
           <p className="mt-1 text-xs text-muted-foreground">Stawi 0.8% vs a typical 4.5% bank wire + FX spread</p>
           <div className="mt-4 space-y-2 text-sm">
-            <div className="flex justify-between"><span>Stawi fees</span><span className="tabular">{m ? formatKesCents(m.fee_taken_kes_cents) : "…"}</span></div>
-            <div className="flex justify-between text-muted-foreground"><span>Bank would cost</span><span className="tabular">{m ? formatKesCents(bankSpread) : "…"}</span></div>
-            <div className="flex justify-between border-t border-border pt-2 text-lime"><span>Kept by farmers</span><span className="text-display tabular">{m ? formatKesCents(bankSpread - m.fee_taken_kes_cents) : "…"}</span></div>
+            <div className="flex justify-between"><span>Stawi fees</span><span className="tabular">{live ? formatKesCents(live.fee_taken_kes_cents) : "…"}</span></div>
+            <div className="flex justify-between text-muted-foreground"><span>Bank would cost</span><span className="tabular">{live ? formatKesCents(bankSpread) : "…"}</span></div>
+            <div className="flex justify-between border-t border-border pt-2 text-lime"><span>Kept by farmers</span><span className="text-display tabular">{live ? formatKesCents(bankSpread - live.fee_taken_kes_cents) : "…"}</span></div>
           </div>
         </section>
       </div>

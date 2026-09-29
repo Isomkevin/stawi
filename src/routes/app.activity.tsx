@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ListOrdered, Search } from "lucide-react";
+import { DemoBadge } from "@/components/stawi/DemoDataControl";
 import { EmptyState } from "@/components/stawi/EmptyState";
 import { StatusChip } from "@/components/stawi/StatusChip";
 import { Timeline } from "@/components/stawi/Timeline";
@@ -105,7 +106,8 @@ function ActivityTab() {
                 <DrawerTitle className="text-display text-xl">{payoutTitle(selected)}</DrawerTitle>
               </DrawerHeader>
               <p className="text-display text-3xl text-lime tabular">{formatKesCents(selected.amount_kes_cents)}</p>
-              <div className="mt-2">
+              <div className="mt-2 flex items-center gap-2">
+                <DemoBadge demo={selected.is_demo} />
                 <StatusChip status={selected.status} />
               </div>
               <dl className="mt-5 space-y-2 text-sm">

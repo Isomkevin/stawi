@@ -5,26 +5,33 @@ import type { Role } from "./types";
 
 type Session = {
   role: Role | null;
+  roles: Array<Exclude<Role, "buyer">>;
   accountId: string | null;
   coopId: string | null;
 };
 
-type SignInOptions = { accountId?: string; coopId?: string | null; token?: string };
+type SignInOptions = {
+  accountId?: string;
+  coopId?: string | null;
+  token?: string;
+  roles?: Array<Exclude<Role, "buyer">>;
+};
 
 type SessionContextValue = Session & {
   ready: boolean;
   signIn: (role: Role, opts?: SignInOptions) => void;
+  switchRole: (role: Exclude<Role, "buyer">) => void;
   signOut: () => void;
 };
 
 const roleDefaults: Record<Exclude<Role, "buyer">, Session> = {
-  farmer: { role: "farmer", accountId: FARMER_ID, coopId: COOP_ID },
-  treasurer: { role: "treasurer", accountId: TREASURER_ID, coopId: COOP_ID },
-  exporter: { role: "exporter", accountId: EXPORTER_ID, coopId: null },
+  farmer: { role: "farmer", roles: ["farmer"], accountId: FARMER_ID, coopId: COOP_ID },
+  treasurer: { role: "treasurer", roles: ["treasurer"], accountId: TREASURER_ID, coopId: COOP_ID },
+  exporter: { role: "exporter", roles: ["exporter"], accountId: EXPORTER_ID, coopId: null },
 };
 
 const STORE_KEY = "stawi.session";
-const empty: Session = { role: null, accountId: null, coopId: null };
+const empty: Session = { role: null, roles: [], accountId: null, coopId: null };
 
 // Kept on globalThis so a hot reload of this file doesn't create a second, empty context.
 const g = globalThis as { __stawiSessionCtx?: ReturnType<typeof createContext<SessionContextValue | null>> };
@@ -40,9 +47,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     try {
       const raw = sessionStorage.getItem(STORE_KEY);
       if (raw) {
-        const saved = JSON.parse(raw) as Session & { token: string };
+        const saved = JSON.parse(raw) as Session & { token: string; roles?: Session["roles"] };
         setSessionToken(saved.token);
-        setSession({ role: saved.role, accountId: saved.accountId, coopId: saved.coopId });
+        const roles =
+          saved.roles?.filter((role) => role === "farmer" || role === "exporter" || role === "treasurer") ??
+          (saved.role && saved.role !== "buyer" ? [saved.role] : []);
+        setSession({ role: saved.role, roles, accountId: saved.accountId, coopId: saved.coopId });
       }
     } catch {
       /* ignore */
@@ -56,8 +66,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       ready,
       signIn: (role, opts = {}) => {
         const base = role === "buyer" ? empty : roleDefaults[role];
+        const roles =
+          opts.roles ??
+          (role === "buyer" ? [] : [role]);
         const next: Session = {
           role,
+          roles,
           accountId: opts.accountId ?? base.accountId,
           coopId: opts.coopId !== undefined ? opts.coopId : base.coopId,
         };
@@ -65,6 +79,22 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         setSessionToken(token);
         if (!isMock) sessionStorage.setItem(STORE_KEY, JSON.stringify({ ...next, token }));
         setSession(next);
+      },
+      switchRole: (role) => {
+        setSession((current) => {
+          if (!current.roles.includes(role)) return current;
+          const next = { ...current, role };
+          if (!isMock) {
+            try {
+              const raw = sessionStorage.getItem(STORE_KEY);
+              const saved = raw ? (JSON.parse(raw) as { token?: string }) : {};
+              sessionStorage.setItem(STORE_KEY, JSON.stringify({ ...next, token: saved.token }));
+            } catch {
+              /* ignore */
+            }
+          }
+          return next;
+        });
       },
       signOut: () => {
         void api.logout().catch(() => undefined);

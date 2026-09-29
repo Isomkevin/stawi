@@ -55,7 +55,9 @@ describe("rich demo seed", () => {
     expect(farmer?.full_name).toBe("Wanjiku Mwangi");
     expect(farmer?.phone_number).toBe("+254712000001");
     expect(farmer?.payout_destinations[0]?.is_verified).toBe(true);
-    expect(farmer?.balance_kes_cents).toBeGreaterThanOrEqual(100_000);
+    expect(farmer?.is_demo).toBe(true);
+    expect(farmer?.balance_kes_cents).toBe(0);
+    expect(farmer?.demo_balance_kes_cents).toBeGreaterThanOrEqual(100_000);
 
     const kiambu = await store.getCoopMembers("coop_kiambu");
     expect(kiambu).toHaveLength(10);
@@ -100,14 +102,17 @@ describe("rich demo seed", () => {
         if (payout.kind === "withdrawal" && (payout.status === "confirmed" || payout.status === "sent")) {
           withdrawn += payout.amount_kes_cents;
         }
+        expect(payout.is_demo).toBe(true);
         if (payout.kind === "withdrawal" && payout.status === "failed") {
           failedWithdrawal = true;
           const dest = account.payout_destinations.find((item) => item.id === payout.destination_id);
           expect(dest?.is_verified).toBe(false);
         }
       }
-      expect(account.balance_kes_cents).toBe(credits - withdrawn);
-      expect(account.balance_kes_cents).toBeGreaterThanOrEqual(0);
+      expect(account.is_demo).toBe(true);
+      expect(account.balance_kes_cents).toBe(0);
+      expect(account.demo_balance_kes_cents).toBe(credits - withdrawn);
+      expect(account.demo_balance_kes_cents).toBeGreaterThanOrEqual(0);
     }
     expect(payoutCount).toBeGreaterThanOrEqual(400);
     expect(failedWithdrawal).toBe(true);
@@ -136,8 +141,10 @@ describe("rich demo seed", () => {
       }
     }
     for (const account of accounts) {
-      expect(account.incoming_kes_cents).toBe(expectedIncoming.get(account.id) ?? 0);
+      expect(account.incoming_kes_cents).toBe(0);
+      expect(account.demo_incoming_kes_cents).toBe(expectedIncoming.get(account.id) ?? 0);
     }
+    expect(invoices.every((invoice) => invoice.is_demo === true)).toBe(true);
 
     for (const coop of coops) {
       const shipments = await store.listShipments(coop.id);
@@ -147,6 +154,7 @@ describe("rich demo seed", () => {
       const preparing = shipments.find((shipment) => shipment.status === "preparing" && shipment.invoice_id === null);
       expect(preparing?.farmers.length).toBeGreaterThan(0);
       for (const shipment of shipments) {
+        expect(shipment.is_demo).toBe(true);
         const kilos = shipment.farmers.reduce((sum, farmer) => sum + farmer.kilos, 0);
         if (shipment.farmers.length > 0) expect(kilos).toBe(shipment.quantity_kg);
       }

@@ -2,8 +2,9 @@ import crypto from "crypto";
 import { NextFunction, Request, Response } from "express";
 import { notify } from "./notify";
 import { payaza } from "./payaza";
+import { sessionAccess, SessionRole } from "./phoneMappings";
 import { store } from "../store";
-import { Account } from "../types";
+import { Account, AccountType } from "../types";
 
 const OTP_TTL_MS = 5 * 60 * 1000;
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -34,7 +35,6 @@ function hashCode(phone: string, code: string): string {
 }
 
 function masterLoginCode(): string {
-  if (process.env.NODE_ENV === "production") return "";
   return (process.env.MASTER_LOGIN_CODE || "").trim();
 }
 
@@ -48,19 +48,15 @@ function codesMatch(entered: string, expected: string): boolean {
 export async function issueSession(account: Account): Promise<{
   token: string;
   account: Account;
-  role: "farmer" | "exporter" | "treasurer";
+  role: SessionRole;
+  roles: SessionRole[];
+  account_types: AccountType[];
 }> {
   const token = crypto.randomBytes(32).toString("hex");
   const expires = new Date(Date.now() + SESSION_TTL_MS).toISOString();
   await store.saveSession(hashToken(token), account.id, expires);
-
-  const coops = await store.getAllCoops();
-  const role = coops.some((c) => c.treasurer_account_id === account.id)
-    ? "treasurer"
-    : account.coop_id
-      ? "farmer"
-      : "exporter";
-  return { token, account, role };
+  const access = await sessionAccess(account);
+  return { token, account, ...access };
 }
 
 export function requestTokens(req: Request): string[] {
@@ -124,7 +120,13 @@ export async function verifyOtp(
   phone: string,
   code: string
 ): Promise<
-  | { token: string; account: Account; role: "farmer" | "exporter" | "treasurer" }
+  | {
+      token: string;
+      account: Account;
+      role: SessionRole;
+      roles: SessionRole[];
+      account_types: AccountType[];
+    }
   | { error: string; status: number }
 > {
   const master = masterLoginCode();
@@ -189,6 +191,7 @@ export function isPublicRoute(method: string, path: string): boolean {
   if (method === "POST" && path === "/webhooks/payaza") return true;
   if (method === "POST" && path === "/ussd/callback") return true;
   if (path.startsWith("/dev/")) return true;
+  if (path.startsWith("/admin")) return true;
   return false;
 }
 

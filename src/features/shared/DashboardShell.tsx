@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import type { LucideIcon } from "lucide-react";
 import { Leaf, LogOut } from "lucide-react";
+import { AccountSwitcher } from "@/components/stawi/AccountSwitcher";
 import { useSession } from "@/lib/session";
 
 export type NavItem = { to: string; label: string; icon: LucideIcon };
@@ -31,6 +32,7 @@ export function DashboardShell({
         <div className="mb-6 rounded-xl border border-border p-3">
           <p className="text-sm font-medium">{title}</p>
           <p className="text-xs text-muted-foreground">{subtitle}</p>
+          <AccountSwitcher className="mt-3 flex items-center gap-2 text-xs text-muted-foreground" />
         </div>
         <nav className="flex flex-1 flex-col gap-1">
           {nav.map((n) => (
@@ -57,7 +59,8 @@ export function DashboardShell({
         </button>
       </aside>
       <div className="min-w-0 flex-1">
-        <nav className="flex gap-1 overflow-x-auto border-b border-border px-3 py-2 md:hidden">
+        <nav className="flex items-center gap-1 overflow-x-auto border-b border-border px-3 py-2 md:hidden">
+          <AccountSwitcher className="mr-2 flex shrink-0 items-center gap-2 text-xs text-muted-foreground" />
           {nav.map((n) => (
             <Link
               key={n.to}

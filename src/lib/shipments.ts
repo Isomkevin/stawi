@@ -1,3 +1,4 @@
+import { mockDemoVisible } from "./mock";
 import type { Shipment, ShipmentFarmer, ShipmentStatus } from "./types";
 
 // Mock shipments for VITE_API_MODE=mock. Live mode reads GET /coops/{id}/shipments
@@ -32,12 +33,16 @@ const shipments: Shipment[] = [
   { id: "shp_108", reference: "KHC-S-108", coop_id: "coop_kiambu", buyer_name: "Nordic Roasters AB", product: "AB grade green coffee", quantity_kg: 1800, destination: "Gothenburg, SE", value: 7400, currency: "EUR", ship_date: d(-3), shipped_at: null, status: "ready", invoice_id: null, farmers: f([[3, 300], [5, 300], [6, 300], [8, 300], [9, 300], [10, 300]]), updated_at: d(-4) },
 ];
 
+for (const shipment of shipments) shipment.is_demo = true;
+
 const wait = (ms = 250) => new Promise((r) => setTimeout(r, ms));
 
 export const shipmentsApi = {
   list: async (coopId: string): Promise<Shipment[]> => {
     await wait();
-    return shipments.filter((s) => s.coop_id === coopId).map((s) => ({ ...s, farmers: [...s.farmers] }));
+    return shipments
+      .filter((s) => s.coop_id === coopId && (mockDemoVisible() || s.is_demo !== true))
+      .map((s) => ({ ...s, farmers: [...s.farmers] }));
   },
   advance: async (id: string): Promise<Shipment> => {
     await wait();

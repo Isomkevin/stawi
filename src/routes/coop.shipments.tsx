@@ -3,6 +3,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, ArrowRight, Check, ChevronRight, Copy, MapPin, Package, Search, Ship, X } from "lucide-react";
 import { toast } from "sonner";
+import { DemoBadge } from "@/components/stawi/DemoDataControl";
 import { StatusChip } from "@/components/stawi/StatusChip";
 import { EmptyState } from "@/components/stawi/EmptyState";
 import { Button } from "@/components/ui/button";
@@ -360,6 +361,7 @@ function ShipmentRow({ s, inv, att, active, compact, onOpen }: { s: Shipment; in
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm font-medium tabular">{s.reference}</span>
+              <DemoBadge demo={s.is_demo} />
               <ShipmentChip status={s.status} />
               {att.length > 0 && (
                 <span className={cn("inline-flex items-center gap-1 text-xs", att[0]!.tone === "danger" ? "text-terracotta" : "text-amber")}>

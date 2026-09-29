@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { AlertTriangle, ArrowLeft, ShieldCheck } from "lucide-react";
 import { CopyLink } from "@/components/stawi/CopyLink";
+import { DemoBadge } from "@/components/stawi/DemoDataControl";
 import { PinPad } from "@/components/stawi/PinPad";
 import { QrCode } from "@/components/stawi/QrCode";
 import { StatusChip } from "@/components/stawi/StatusChip";
@@ -62,7 +63,10 @@ export function InvoiceDetailView({ invoiceId, backTo }: { invoiceId: string; ba
       </Link>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-sm text-muted-foreground tabular">{invoice.reference}</p>
+          <p className="flex items-center gap-2 text-sm text-muted-foreground tabular">
+            {invoice.reference}
+            <DemoBadge demo={invoice.is_demo} />
+          </p>
           <h1 className="text-display text-3xl">{invoice.buyer_name}</h1>
           <p className="mt-1 text-sm text-muted-foreground">{invoice.description}</p>
         </div>

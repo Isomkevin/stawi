@@ -13,6 +13,9 @@ import {
   KIAMBU_FARMERS,
   MPESA_BANK_CODE,
   WANJIRU_EXTRA_INVOICES,
+  demoAccountIds,
+  demoCoopIds,
+  demoInvoiceIds,
 } from "./catalog";
 import { feeCents, splitByShares, toKesCents } from "../services/money";
 import { store } from "../store";
@@ -101,13 +104,29 @@ function makeDestinations(
 
 function makeAccount(
   pinHash: string,
-  fields: Omit<Account, "balance_kes_cents" | "incoming_kes_cents" | "pin_hash" | "pin_failed_attempts" | "pin_locked_until">
+  fields: Omit<
+    Account,
+    | "balance_kes_cents"
+    | "incoming_kes_cents"
+    | "demo_balance_kes_cents"
+    | "demo_incoming_kes_cents"
+    | "is_demo"
+    | "demo_data_enabled"
+    | "demo_data_visible"
+    | "pin_hash"
+    | "pin_failed_attempts"
+    | "pin_locked_until"
+  >
 ): Account {
   assertShort(fields.id, "account");
   return {
     ...fields,
+    is_demo: true,
+    demo_data_enabled: null,
     balance_kes_cents: 0,
+    demo_balance_kes_cents: 0,
     incoming_kes_cents: 0,
+    demo_incoming_kes_cents: 0,
     pin_hash: pinHash,
     pin_failed_attempts: 0,
     pin_locked_until: null,
@@ -148,6 +167,7 @@ function materialize(
     kes_total_cents: net,
     payaza_checkout_reference: bp.checkoutRef,
     payaza_link_id: bp.status === "pending" || bp.status === "paid" ? `link_${bp.reference}` : null,
+    is_demo: true,
     created_at: shiftDays(-bp.createdDaysAgo),
     due_at: shiftDays(bp.dueDaysFromNow),
   };
@@ -163,6 +183,7 @@ async function seedRail(invoice: Invoice, members: CoopMember[]): Promise<void> 
     await store.addTransaction({
       id: `tx_col_${invoice.id}`,
       invoice_id: invoice.id,
+      is_demo: true,
       type: "collection",
       status: "failed",
       amount: invoice.amount,
@@ -178,6 +199,7 @@ async function seedRail(invoice: Invoice, members: CoopMember[]): Promise<void> 
   await store.addTransaction({
     id: `tx_col_${invoice.id}`,
     invoice_id: invoice.id,
+    is_demo: true,
     type: "collection",
     status: "completed",
     amount: invoice.amount,
@@ -198,6 +220,7 @@ async function seedRail(invoice: Invoice, members: CoopMember[]): Promise<void> 
     await store.addTransaction({
       id: `tx_conv_${invoice.id}`,
       invoice_id: invoice.id,
+      is_demo: true,
       type: "conversion",
       status: "pending",
       amount: gross / 100,
@@ -213,6 +236,7 @@ async function seedRail(invoice: Invoice, members: CoopMember[]): Promise<void> 
   await store.addTransaction({
     id: `tx_conv_${invoice.id}`,
     invoice_id: invoice.id,
+    is_demo: true,
     type: "conversion",
     status: "completed",
     amount: gross / 100,
@@ -230,6 +254,7 @@ async function seedRail(invoice: Invoice, members: CoopMember[]): Promise<void> 
   await store.addTransaction({
     id: settleId,
     invoice_id: invoice.id,
+    is_demo: true,
     type: "settlement",
     status: "completed",
     amount: net / 100,
@@ -245,6 +270,7 @@ async function seedRail(invoice: Invoice, members: CoopMember[]): Promise<void> 
     await store.addPayout({
       id: `payout_${invoice.id}_${invoice.account_id}`,
       invoice_id: invoice.id,
+      is_demo: true,
       transaction_id: settleId,
       account_id: invoice.account_id,
       kind: "credit",
@@ -264,6 +290,7 @@ async function seedRail(invoice: Invoice, members: CoopMember[]): Promise<void> 
     await store.addPayout({
       id: payoutId,
       invoice_id: invoice.id,
+      is_demo: true,
       transaction_id: settleId,
       account_id: line.account_id,
       kind: "credit",
@@ -389,8 +416,10 @@ async function applyLedger(): Promise<void> {
     if (!Number.isInteger(balance) || balance < 0) {
       throw new Error(`Ledger balance for ${account.id} is ${balance}`);
     }
-    account.balance_kes_cents = balance;
-    account.incoming_kes_cents = incoming.get(account.id) ?? 0;
+    account.balance_kes_cents = 0;
+    account.demo_balance_kes_cents = balance;
+    account.incoming_kes_cents = 0;
+    account.demo_incoming_kes_cents = incoming.get(account.id) ?? 0;
     await store.saveAccount(account);
   }
 
@@ -408,6 +437,8 @@ async function applyLedger(): Promise<void> {
       created_at: shiftDays(-withdrawal.daysAgo),
       idempotency_key: `seed-wth-${withdrawal.account.id}-${withdrawal.suffix}`,
       payaza_reference: `PZ-WTH-${withdrawal.account.id}-${withdrawal.suffix.toUpperCase()}`,
+      is_demo: true,
+      demo_portion_kes_cents: withdrawal.amount,
     });
   }
 }
@@ -708,6 +739,7 @@ export async function seedShipments(): Promise<void> {
         shipped_at: timing.shipped_at,
         status,
         invoice_id: invoice.id,
+        is_demo: true,
         farmers,
         updated_at: invoice.created_at,
       };
@@ -734,6 +766,7 @@ export async function seedShipments(): Promise<void> {
       shipped_at: null,
       status: "draft",
       invoice_id: null,
+      is_demo: true,
       farmers: [],
       updated_at: now,
     });
@@ -752,8 +785,67 @@ export async function seedShipments(): Promise<void> {
       shipped_at: null,
       status: "preparing",
       invoice_id: null,
+      is_demo: true,
       farmers: assignFarmers(members, preparingId, preparingKg),
       updated_at: now,
     });
+  }
+}
+
+/**
+ * Older databases stored the sample ledger without is_demo, and put sample funds in the live balance.
+ * Tag those catalog rows once. New seeds already set the flags, so this does not move their balances again.
+ */
+export async function tagLegacyDemoLedger(): Promise<void> {
+  let changed = false;
+  for (const id of demoInvoiceIds()) {
+    if (await store.flagDemoInvoice(id)) changed = true;
+  }
+  await store.flagSeedWithdrawals();
+  for (const id of demoAccountIds()) await store.flagDemoAccount(id);
+  for (const coopId of demoCoopIds()) {
+    await store.flagDemoShipment(`shp_${coopId}_draft`);
+    await store.flagDemoShipment(`shp_${coopId}_prep`);
+  }
+  if (changed) await rebalanceDemoAccounts();
+}
+
+async function rebalanceDemoAccounts(): Promise<void> {
+  const invoices = await store.getInvoices();
+  const demoIncoming = new Map<string, number>();
+  const liveIncoming = new Map<string, number>();
+  for (const invoice of invoices) {
+    if (invoice.type !== "coop" || invoice.status !== "settling" || !invoice.coop_id) continue;
+    if (invoice.fx_rate == null || invoice.fee_kes_cents == null) continue;
+    const members = await store.getCoopMembers(invoice.coop_id);
+    const gross = toKesCents(invoice.amount, invoice.currency, invoice.fx_rate);
+    const lines = splitByShares(gross, invoice.fee_kes_cents, members);
+    const target = invoice.is_demo ? demoIncoming : liveIncoming;
+    for (const line of lines) {
+      target.set(line.account_id, (target.get(line.account_id) ?? 0) + line.net_kes_cents);
+    }
+  }
+
+  for (const id of demoAccountIds()) {
+    const account = await store.getAccount(id);
+    if (!account) continue;
+    const payouts = await store.getPayoutsByAccount(account.id);
+    let demoNet = 0;
+    let liveNet = 0;
+    for (const payout of payouts) {
+      const counts =
+        (payout.kind === "credit" && payout.status === "confirmed") ||
+        (payout.kind === "withdrawal" && (payout.status === "confirmed" || payout.status === "sent"));
+      if (!counts) continue;
+      const signed = payout.kind === "credit" ? payout.amount_kes_cents : -payout.amount_kes_cents;
+      if (payout.is_demo) demoNet += signed;
+      else liveNet += signed;
+    }
+    account.is_demo = true;
+    account.demo_balance_kes_cents = Math.max(0, demoNet);
+    account.balance_kes_cents = Math.max(0, liveNet);
+    account.demo_incoming_kes_cents = demoIncoming.get(account.id) ?? 0;
+    account.incoming_kes_cents = liveIncoming.get(account.id) ?? 0;
+    await store.saveAccount(account);
   }
 }

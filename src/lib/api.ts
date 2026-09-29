@@ -9,6 +9,7 @@ import {
   type CoopMember,
   type CoopMetrics,
   type CreateAccountBody,
+  type DemoDataSettings,
   type CreateInvoiceBody,
   type Invoice,
   type InvoiceDetail,
@@ -27,10 +28,14 @@ export function setSessionToken(token: string | null) {
   sessionToken = token;
 }
 
+export type AppRole = "farmer" | "exporter" | "treasurer";
+
 export type VerifyResult = {
   token: string;
   account_id: string;
-  role: "farmer" | "exporter" | "treasurer";
+  role: AppRole;
+  roles: AppRole[];
+  account_types: Array<"farmer" | "exporter" | "coop">;
   account: Account;
 };
 
@@ -57,7 +62,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   // POST /accounts
-  createAccount: (body: CreateAccountBody): Promise<Account & { token?: string; role?: "farmer" | "exporter" | "treasurer" }> =>
+  createAccount: (body: CreateAccountBody): Promise<Account & { token?: string; role?: AppRole; roles?: AppRole[]; account_types?: Array<"farmer" | "exporter" | "coop"> }> =>
     isMock ? mockApi.createAccount(body) : request("/accounts", { method: "POST", body: JSON.stringify(body) }),
 
   // GET /accounts/{id}
@@ -67,6 +72,19 @@ export const api = {
   // GET /accounts/{id}/balance
   getBalance: (accountId: string): Promise<Balance> =>
     isMock ? mockApi.getBalance(accountId) : request(`/accounts/${accountId}/balance`),
+
+  // GET /accounts/{id}/settings
+  getDemoSettings: (accountId: string): Promise<DemoDataSettings> =>
+    isMock ? mockApi.getDemoSettings(accountId) : request(`/accounts/${accountId}/settings`),
+
+  // PATCH /accounts/{id}/settings — does not change Payaza mode or relabel new invoices
+  updateDemoSettings: (accountId: string, demo_data_enabled: boolean | null): Promise<DemoDataSettings> =>
+    isMock
+      ? mockApi.updateDemoSettings(accountId, demo_data_enabled)
+      : request(`/accounts/${accountId}/settings`, {
+          method: "PATCH",
+          body: JSON.stringify({ demo_data_enabled }),
+        }),
 
   // GET /accounts/{id}/transactions?limit
   getAccountTransactions: (accountId: string, limit = 50): Promise<Payout[]> =>
@@ -177,7 +195,7 @@ export const api = {
   requestOtp: (phone: string): Promise<{ sent: boolean; dev_code?: string }> =>
     request("/auth/otp", { method: "POST", body: JSON.stringify({ phone_number: phone }) }),
 
-  // POST /auth/verify → { token, account_id, role, account }
+  // POST /auth/verify → { token, account_id, role, roles, account_types, account }
   verifyOtp: (phone: string, code: string): Promise<VerifyResult> =>
     request("/auth/verify", { method: "POST", body: JSON.stringify({ phone_number: phone, code }) }),
 

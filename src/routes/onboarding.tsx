@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { api } from "@/lib/api";
-import { useSession } from "@/lib/session";
+import { homeForRole, useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 
 const search = z.object({
@@ -69,8 +69,14 @@ function Onboarding() {
         coop_id: invite.coop ? "coop_kiambu" : undefined,
       }),
     onSuccess: (acc) => {
-      signIn("farmer", { accountId: acc.id, coopId: acc.coop_id, token: acc.token });
-      void navigate({ to: "/app/home" });
+      if (acc.roles && acc.roles.length === 0) {
+        setPinErr("This number isn't mapped to an account type yet.");
+        return;
+      }
+      const role = acc.role ?? "farmer";
+      const roles = acc.roles?.length ? acc.roles : [role];
+      signIn(role, { accountId: acc.id, coopId: acc.coop_id, token: acc.token, roles });
+      void navigate({ to: homeForRole[role] });
     },
   });
 

@@ -87,6 +87,11 @@ function WithdrawTab() {
           <section className="space-y-4">
             <h1 className="text-display text-2xl">{t("withdraw.chooseDestination")}</h1>
             <p className="text-sm text-muted-foreground">{t("withdraw.available", { amount: formatKesCents(available) })}</p>
+            {(balance.data?.demo_balance_kes_cents ?? 0) > 0 && (
+              <p className="text-sm text-amber">
+                Sample funds ({formatKesCents(balance.data?.demo_balance_kes_cents ?? 0)}) are not included in this payout.
+              </p>
+            )}
             {account.data?.payout_destinations.map((d) => (
               <button
                 key={d.id}
@@ -111,6 +116,11 @@ function WithdrawTab() {
           <section className="space-y-4">
             <h1 className="text-display text-2xl">{t("withdraw.amount")}</h1>
             <p className="text-sm text-muted-foreground">{t("withdraw.available", { amount: formatKesCents(available) })}</p>
+            {(balance.data?.demo_balance_kes_cents ?? 0) > 0 && (
+              <p className="text-sm text-amber">
+                Sample funds ({formatKesCents(balance.data?.demo_balance_kes_cents ?? 0)}) are not included in this payout.
+              </p>
+            )}
             <div className="relative">
               <span className="absolute top-1/2 left-4 -translate-y-1/2 text-muted-foreground">KES</span>
               <Input

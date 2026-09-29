@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { FileText, Search } from "lucide-react";
+import { DemoBadge } from "@/components/stawi/DemoDataControl";
 import { EmptyState } from "@/components/stawi/EmptyState";
 import { StatusChip } from "@/components/stawi/StatusChip";
 import { ConfirmDelete } from "@/components/stawi/ConfirmDelete";
@@ -91,7 +92,12 @@ export function InvoiceTable({
                   onKeyDown={(e) => e.key === "Enter" && void navigate({ to: detailTo, params: { id: i.id } })}
                   className="cursor-pointer border-b border-border last:border-0 hover:bg-secondary/50 focus:bg-secondary/50 focus:outline-none"
                 >
-                  <td className="px-4 py-3 tabular">{i.reference}</td>
+                  <td className="px-4 py-3">
+                    <span className="inline-flex items-center gap-2 tabular">
+                      {i.reference}
+                      <DemoBadge demo={i.is_demo} />
+                    </span>
+                  </td>
                   <td className="px-4 py-3">{i.buyer_name}</td>
                   <td className="px-4 py-3 text-right tabular">{formatCurrency(i.amount, i.currency)}</td>
                   <td className="hidden px-4 py-3 text-right text-muted-foreground tabular sm:table-cell">

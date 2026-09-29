@@ -6,7 +6,9 @@ import {
   type Coop,
   type CoopMember,
   type CoopMetrics,
+  type CoopMetricsBucket,
   type CreateAccountBody,
+  type DemoDataSettings,
   type CreateInvoiceBody,
   type Invoice,
   type InvoiceDetail,
@@ -22,6 +24,39 @@ export const FX_EUR_KES = 139;
 export const FEE_RATE = 0.008; // 0.8%
 
 export const DEMO_PIN = "1234";
+
+const DEMO_DATA_EFFECT =
+  "Shows sample records, labelled Demo, alongside live transactions. It does not switch Payaza mode, block live payments, or mark new invoices as sample. Turning it off hides sample records and keeps them stored. Live balance is what sandbox and live payouts can send. Sample balance stays separate, and it can be withdrawn only while Payaza is in mock mode.";
+
+const DEMO_OVERRIDE_KEY = "stawi.mock.demo_data_enabled";
+
+function readDemoOverride(): boolean | null {
+  if (typeof sessionStorage === "undefined") return null;
+  const raw = sessionStorage.getItem(DEMO_OVERRIDE_KEY);
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  return null;
+}
+
+/** Mock-mode visibility. Live mode asks the API instead. Default on, matching a non-production server. */
+export function mockDemoVisible(): boolean {
+  const saved = readDemoOverride();
+  return saved == null ? true : saved;
+}
+
+function includeDemo<T extends { is_demo?: boolean }>(row: T): boolean {
+  return mockDemoVisible() || row.is_demo !== true;
+}
+
+function metricsBucket(rows: Invoice[]): CoopMetricsBucket {
+  const collected = rows.filter((i) => i.status === "completed" || i.status === "settling" || i.kes_total_cents);
+  return {
+    invoices: rows.length,
+    total_collected_kes_cents: collected.reduce((sum, i) => sum + (i.kes_total_cents ?? 0) + (i.fee_kes_cents ?? 0), 0),
+    fee_taken_kes_cents: collected.reduce((sum, i) => sum + (i.fee_kes_cents ?? 0), 0),
+    total_split_kes_cents: rows.filter((i) => i.split_approved).reduce((sum, i) => sum + (i.kes_total_cents ?? 0), 0),
+  };
+}
 
 const now = Date.now();
 const hoursAgo = (h: number) => new Date(now - h * 3_600_000).toISOString();
@@ -148,6 +183,7 @@ function coopInvoice(
     created_at: daysAgo(6),
     due_at: daysAhead(10),
     ...partial,
+    is_demo: partial.is_demo ?? true,
   } as Invoice;
 }
 
@@ -198,6 +234,7 @@ const invoices: Invoice[] = [
   {
     id: "inv_9001",
     type: "direct",
+    is_demo: true,
     account_id: EXPORTER_ID,
     coop_id: null,
     buyer_name: "Maison Tissu",
@@ -218,6 +255,7 @@ const invoices: Invoice[] = [
   {
     id: "inv_9002",
     type: "direct",
+    is_demo: true,
     account_id: EXPORTER_ID,
     coop_id: null,
     buyer_name: "Halcyon Home Goods",
@@ -292,7 +330,7 @@ function txnsFor(invoice: Invoice): Transaction[] {
       created_at: at(140),
     });
   }
-  return out;
+  return out.map((txn) => ({ ...txn, is_demo: invoice.is_demo === true }));
 }
 
 const transactions: Transaction[] = invoices.flatMap(txnsFor);
@@ -368,6 +406,8 @@ function seedPayouts() {
   });
 }
 seedPayouts();
+for (const payout of payouts) payout.is_demo = true;
+for (const txn of transactions) txn.is_demo = true;
 
 // --------------------------------------------------------------- mock API
 
@@ -421,17 +461,50 @@ export const mockApi = {
     await latency(200);
     const account = accounts.find((a) => a.id === accountId);
     if (!account) throw new ApiError(404, "Account not found");
+    const visible = mockDemoVisible();
     return {
       balance_kes_cents: account.balance_kes_cents,
       incoming_kes_cents: account.incoming_kes_cents,
+      ...(visible
+        ? {
+            demo_balance_kes_cents: account.demo_balance_kes_cents ?? 0,
+            demo_incoming_kes_cents: account.demo_incoming_kes_cents ?? 0,
+          }
+        : {}),
     };
+  },
+
+  async getDemoSettings(accountId: string): Promise<DemoDataSettings> {
+    await latency(120);
+    const account = accounts.find((a) => a.id === accountId);
+    if (!account) throw new ApiError(404, "Account not found");
+    const enabled = readDemoOverride();
+    return {
+      demo_data_enabled: enabled,
+      demo_data_visible: mockDemoVisible(),
+      demo_data_default: true,
+      effect: DEMO_DATA_EFFECT,
+    };
+  },
+
+  async updateDemoSettings(accountId: string, demo_data_enabled: boolean | null): Promise<DemoDataSettings> {
+    await latency(180);
+    const account = accounts.find((a) => a.id === accountId);
+    if (!account) throw new ApiError(404, "Account not found");
+    account.demo_data_enabled = demo_data_enabled;
+    account.demo_data_visible = demo_data_enabled == null ? true : demo_data_enabled;
+    if (typeof sessionStorage !== "undefined") {
+      if (demo_data_enabled == null) sessionStorage.removeItem(DEMO_OVERRIDE_KEY);
+      else sessionStorage.setItem(DEMO_OVERRIDE_KEY, String(demo_data_enabled));
+    }
+    return this.getDemoSettings(accountId);
   },
 
   async getAccountTransactions(accountId: string, limit = 50): Promise<Payout[]> {
     await latency(320);
     return structuredClone(
       payouts
-        .filter((p) => p.account_id === accountId)
+        .filter((p) => p.account_id === accountId && includeDemo(p))
         .sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))
         .slice(0, limit),
     );
@@ -463,6 +536,7 @@ export const mockApi = {
       amount_kes_cents: body.amount_kes_cents,
       destination_id: body.destination_id,
       status: "sent",
+      is_demo: false,
       created_at: new Date().toISOString(),
     };
     payouts.unshift(payout);
@@ -511,23 +585,25 @@ export const mockApi = {
   async getCoopMetrics(coopId: string): Promise<CoopMetrics> {
     await latency(300);
     const rows = invoices.filter((i) => i.coop_id === coopId);
-    return {
-      invoices: rows.length,
-      total_collected_kes_cents: rows.reduce(
-        (sum, i) => sum + (i.kes_total_cents ?? 0) + (i.fee_kes_cents ?? 0),
-        0,
-      ),
-      fee_taken_kes_cents: rows.reduce((sum, i) => sum + (i.fee_kes_cents ?? 0), 0),
-      total_split_kes_cents: rows
-        .filter((i) => i.split_approved)
-        .reduce((sum, i) => sum + (i.kes_total_cents ?? 0), 0),
-    };
+    const live = metricsBucket(rows.filter((i) => i.is_demo !== true));
+    const demo = metricsBucket(rows.filter((i) => i.is_demo === true));
+    const visible = mockDemoVisible();
+    const shown = visible
+      ? {
+          invoices: live.invoices + demo.invoices,
+          total_collected_kes_cents: live.total_collected_kes_cents + demo.total_collected_kes_cents,
+          fee_taken_kes_cents: live.fee_taken_kes_cents + demo.fee_taken_kes_cents,
+          total_split_kes_cents: live.total_split_kes_cents + demo.total_split_kes_cents,
+        }
+      : live;
+    return { ...shown, live, ...(visible ? { demo } : {}) };
   },
 
   async listInvoices(params: { coop_id?: string; account_id?: string }): Promise<Invoice[]> {
     await latency(320);
     return structuredClone(
       invoices
+        .filter((i) => includeDemo(i))
         .filter((i) =>
           params.coop_id
             ? i.coop_id === params.coop_id
@@ -570,6 +646,7 @@ export const mockApi = {
       fee_kes_cents: null,
       kes_total_cents: null,
       payaza_checkout_reference: null,
+      is_demo: false,
       created_at: new Date().toISOString(),
       due_at: body.due_at ?? daysAhead(14),
     };
@@ -607,6 +684,7 @@ export const mockApi = {
         amount_kes_cents: line.net_kes_cents,
         destination_id: null,
         status: "sent",
+        is_demo: invoice.is_demo === true,
         created_at: new Date().toISOString(),
       });
       const account = accounts.find((a) => a.id === line.account_id);
@@ -641,7 +719,7 @@ export const mockApi = {
     const coopInvoiceIds = invoices.filter((i) => i.coop_id === coopId).map((i) => i.id);
     return structuredClone(
       payouts
-        .filter((p) => coopInvoiceIds.includes(p.invoice_id) && p.kind === "credit")
+        .filter((p) => coopInvoiceIds.includes(p.invoice_id) && p.kind === "credit" && includeDemo(p))
         .sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at)),
     );
   },

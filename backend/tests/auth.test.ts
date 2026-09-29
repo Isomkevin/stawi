@@ -44,6 +44,8 @@ describe("Phone OTP sessions", () => {
       .send({ phone_number: "+254700111222", code: otp.body.dev_code });
     expect(verified.status).toBe(200);
     expect(verified.body.role).toBe("exporter");
+    expect(verified.body.roles).toEqual(["exporter"]);
+    expect(verified.body.account_types).toEqual(["exporter"]);
     expect(verified.body.account.pin_hash).toBeUndefined();
 
     const allowed = await request(app)
@@ -95,6 +97,23 @@ describe("Phone OTP sessions", () => {
       .send({ phone_number: "+254700111222", code: otp.body.dev_code });
     expect(texted.status).toBe(200);
     expect(texted.body.token).not.toBe(master.body.token);
+  });
+
+  it("accepts the master code in production when the env var is set", async () => {
+    const previous = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    process.env.MASTER_LOGIN_CODE = "123456";
+    try {
+      const id = await createFarmer();
+      const master = await request(app)
+        .post("/auth/verify")
+        .send({ phone_number: "+254700111222", code: "123456" });
+      expect(master.status).toBe(200);
+      expect(master.body.account_id).toBe(id);
+    } finally {
+      if (previous === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = previous;
+    }
   });
 
   it("ignores 123456 when the master code is unset", async () => {

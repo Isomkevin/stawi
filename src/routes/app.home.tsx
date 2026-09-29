@@ -57,6 +57,16 @@ function HomeTab() {
             {balance.data ? formatKesCents(balance.data.incoming_kes_cents) : "…"}
           </span>
         </p>
+        {(balance.data?.demo_balance_kes_cents ?? 0) > 0 && (
+          <p className="mt-1 text-sm text-amber">
+            Sample {formatKesCents(balance.data?.demo_balance_kes_cents ?? 0)} · not included when you withdraw
+          </p>
+        )}
+        {(balance.data?.demo_balance_kes_cents ?? 0) > 0 && (
+          <p className="mt-1 text-sm text-amber">
+            Sample {formatKesCents(balance.data?.demo_balance_kes_cents ?? 0)} · not included when you withdraw
+          </p>
+        )}
         <Link
           to="/app/withdraw"
           className="mt-5 inline-flex min-h-12 items-center gap-2 rounded-full bg-primary px-5 text-sm font-medium text-primary-foreground hover:bg-primary/90"

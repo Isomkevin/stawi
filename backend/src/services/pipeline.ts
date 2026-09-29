@@ -1,5 +1,14 @@
 import { store } from "../store";
 import { Invoice, Payout, SplitLine, Transaction } from "../types";
+import {
+  allocateWithdrawal,
+  applyWithdrawal,
+  creditBalance,
+  creditIncoming,
+  releaseIncoming,
+  restoreWithdrawal,
+  withdrawalFlags,
+} from "./demoData";
 import { feeCents, splitByShares, toKesCents } from "./money";
 import { notify } from "./notify";
 import { ensureTransactionReference, payaza } from "./payaza";
@@ -64,11 +73,13 @@ export class PipelineService {
     const effectiveAmount = paidAmount || invoice.amount;
     const effectiveCurrency = paidCurrency || invoice.currency;
     const effectivePayazaRef = payazaRef || `PZ-COL-${Date.now()}`;
+    const demo = invoice.is_demo === true;
 
     // 1. Collection Transaction
     const colTx: Transaction = {
       id: `tx_col_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       invoice_id: invoice.id,
+      is_demo: demo,
       type: "collection",
       status: "completed",
       amount: effectiveAmount,
@@ -96,6 +107,7 @@ export class PipelineService {
     const convTx: Transaction = {
       id: `tx_conv_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       invoice_id: invoice.id,
+      is_demo: demo,
       type: "conversion",
       status: "completed",
       amount: grossKesCents / 100,
@@ -117,6 +129,7 @@ export class PipelineService {
       const settleTx: Transaction = {
         id: `tx_settle_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         invoice_id: invoice.id,
+        is_demo: demo,
         type: "settlement",
         status: "completed",
         amount: netKesCents / 100,
@@ -131,12 +144,13 @@ export class PipelineService {
       if (invoice.account_id) {
         const exporter = await store.getAccount(invoice.account_id);
         if (exporter) {
-          exporter.balance_kes_cents += netKesCents;
+          creditBalance(exporter, netKesCents, demo);
           await store.saveAccount(exporter);
 
           const payout: Payout = {
             id: `payout_direct_${Date.now()}`,
             invoice_id: invoice.id,
+            is_demo: demo,
             transaction_id: settleTx.id,
             account_id: exporter.id,
             kind: "credit",
@@ -165,7 +179,7 @@ export class PipelineService {
         for (const line of splitLines) {
           const acc = await store.getAccount(line.account_id);
           if (acc) {
-            acc.incoming_kes_cents += line.net_kes_cents;
+            creditIncoming(acc, line.net_kes_cents, demo);
             await store.saveAccount(acc);
           }
         }
@@ -263,6 +277,7 @@ export class PipelineService {
       return { success: false, error: "Co-op has no members to receive payout" };
     }
 
+    const demo = invoice.is_demo === true;
     const fxRate = invoice.fx_rate || this.getFxRate(invoice.currency);
     const grossKesCents = toKesCents(invoice.amount, invoice.currency, fxRate);
     const platformFeeCents = invoice.fee_kes_cents !== null ? invoice.fee_kes_cents : feeCents(grossKesCents, 0.8);
@@ -278,6 +293,7 @@ export class PipelineService {
     const settleTx: Transaction = {
       id: `tx_settle_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       invoice_id: invoice.id,
+      is_demo: demo,
       type: "settlement",
       status: "completed",
       amount: netKesCents / 100,
@@ -296,13 +312,14 @@ export class PipelineService {
     for (const line of splitLines) {
       const farmer = await store.getAccount(line.account_id);
       if (farmer) {
-        farmer.incoming_kes_cents = Math.max(0, farmer.incoming_kes_cents - line.net_kes_cents);
-        farmer.balance_kes_cents += line.net_kes_cents;
+        releaseIncoming(farmer, line.net_kes_cents, demo);
+        creditBalance(farmer, line.net_kes_cents, demo);
         await store.saveAccount(farmer);
 
         const payout: Payout = {
           id: `payout_split_${invoice.id}_${farmer.id}`,
           invoice_id: invoice.id,
+          is_demo: demo,
           transaction_id: settleTx.id,
           account_id: farmer.id,
           kind: "credit",
@@ -361,7 +378,7 @@ export class PipelineService {
       if (payout.status !== "failed" && payout.kind === "withdrawal") {
         const account = await store.getAccount(payout.account_id);
         if (account) {
-          account.balance_kes_cents += payout.amount_kes_cents;
+          restoreWithdrawal(account, payout);
           await store.saveAccount(account);
         }
       }
@@ -387,6 +404,7 @@ export class PipelineService {
           payaza_reference: decision.reference || decision.merchantReference,
           fx_rate: null,
           fee_kes_cents: null,
+          is_demo: invoice.is_demo === true,
           created_at: new Date().toISOString(),
         });
       }
@@ -492,12 +510,10 @@ export class PipelineService {
       return { success: false, error: "Cannot withdraw to unverified destination" };
     }
 
-    // 5. Check Balance (Prevent overdraw)
-    if (account.balance_kes_cents < amountKesCents) {
-      return {
-        success: false,
-        error: `Insufficient balance. Available: KES ${(account.balance_kes_cents / 100).toFixed(2)}`,
-      };
+    // 5. Check Balance (Prevent overdraw). Sample funds are spendable only in mock mode.
+    const allocation = allocateWithdrawal(account, amountKesCents, payaza.getMode());
+    if (!allocation.ok) {
+      return { success: false, error: allocation.error };
     }
 
     const bankCode =
@@ -508,8 +524,9 @@ export class PipelineService {
       return { success: false, error: "Bank code is required before a bank withdrawal" };
     }
 
-    // 6. Deduct balance
-    account.balance_kes_cents -= amountKesCents;
+    // 6. Deduct balance. Live cents first, then sample cents when mock mode allowed them.
+    applyWithdrawal(account, allocation.fromLive, allocation.fromDemo);
+    const sampleFlags = withdrawalFlags(allocation.fromLive, allocation.fromDemo);
     await store.saveAccount(account);
 
     // 7. Execute Payaza payout. Amounts are major KES; payout_amount equals credit_amount.
@@ -532,8 +549,6 @@ export class PipelineService {
     });
 
     if (!payazaResult.success) {
-      account.balance_kes_cents += amountKesCents;
-      await store.saveAccount(account);
       const failed: Payout = {
         id: `payout_wth_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         invoice_id: "withdrawal",
@@ -544,7 +559,10 @@ export class PipelineService {
         status: "failed",
         created_at: new Date().toISOString(),
         payaza_reference: payoutTxRef,
+        ...sampleFlags,
       };
+      restoreWithdrawal(account, failed);
+      await store.saveAccount(account);
       await store.addPayout(failed);
       return { success: false, error: payazaResult.error || "Payaza payout failed", payout: failed };
     }
@@ -562,6 +580,7 @@ export class PipelineService {
       created_at: new Date().toISOString(),
       idempotency_key: idempotencyKey,
       payaza_reference: payoutTxRef,
+      ...sampleFlags,
     };
     await store.addPayout(payout);
 

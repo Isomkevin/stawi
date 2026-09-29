@@ -16,6 +16,7 @@ import type { Invoice, Transaction } from "@/lib/types";
 import { formatCurrency, formatDate, formatKesCents } from "@/lib/format";
 import { invoiceDetailOptions, accountOptions, coopOptions, coopMembersOptions } from "@/features/buyer/queries";
 import { PayazaCheckout } from "@/components/stawi/Checkout";
+import { DemoBadge } from "@/components/stawi/DemoDataControl";
 import { StatusChip } from "@/components/stawi/StatusChip";
 import { Timeline, type TimelineStep } from "@/components/stawi/Timeline";
 import { Button } from "@/components/ui/button";
@@ -158,8 +159,16 @@ function UnpaidView({
               {invoice.description} · ref {invoice.reference}
             </p>
           </div>
-          <StatusChip status={invoice.status} />
+          <div className="flex flex-col items-end gap-2">
+            <DemoBadge demo={invoice.is_demo} />
+            <StatusChip status={invoice.status} />
+          </div>
         </div>
+        {invoice.is_demo && (
+          <p className="mt-4 rounded-xl border border-amber/40 bg-amber/10 p-3 text-sm text-amber">
+            Sample invoice. A live Payaza checkout is not started from this record.
+          </p>
+        )}
 
         <dl className="mt-6 space-y-3 border-t border-border pt-4 text-sm">
           <Row

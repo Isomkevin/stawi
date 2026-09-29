@@ -694,6 +694,31 @@ export const EXTRA_EXPORTERS: ExporterCatalog[] = [
   },
 ];
 
+export function demoInvoiceIds(): string[] {
+  return [
+    ...CANONICAL_INVOICES,
+    ...KIAMBU_EXTRA_INVOICES,
+    ...WANJIRU_EXTRA_INVOICES,
+    ...EXTRA_COOPS.flatMap((coop) => coop.invoices),
+    ...EXTRA_EXPORTERS.flatMap((exporter) => exporter.invoices),
+  ].map((invoice) => invoice.id);
+}
+
+export function demoAccountIds(): string[] {
+  const ids: string[] = [CANONICAL.treasurerId, CANONICAL.exporterId];
+  for (let i = 0; i < KIAMBU_FARMERS.length; i++) ids.push(`acc_farmer_${i + 1}`);
+  for (const coop of EXTRA_COOPS) {
+    ids.push(coop.treasurer.id);
+    for (let i = 0; i < coop.farmers.length; i++) ids.push(`acc_${coop.slug}_${i + 1}`);
+  }
+  for (const exporter of EXTRA_EXPORTERS) ids.push(exporter.id);
+  return ids;
+}
+
+export function demoCoopIds(): string[] {
+  return [CANONICAL.coopId, ...EXTRA_COOPS.map((coop) => coop.id)];
+}
+
 export function assertCatalogShape(): void {
   if (KIAMBU_FARMERS.length !== 10) throw new Error("Kiambu must keep 10 canonical farmers");
   const kiambuShare = KIAMBU_FARMERS.reduce((sum, farmer) => sum + (farmer.share ?? 0), 0);
