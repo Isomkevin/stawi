@@ -95,7 +95,7 @@ export class PostgresStore extends InMemoryStore {
          id, full_name, phone_number, phone_normalized, id_number, coop_id, channel_capability,
          balance_kes_cents, incoming_kes_cents, demo_balance_kes_cents, demo_incoming_kes_cents,
          is_demo, demo_data_enabled, pin_hash, pin_failed_attempts, pin_locked_until
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
        ON CONFLICT (id) DO UPDATE SET
          full_name = EXCLUDED.full_name,
          phone_number = EXCLUDED.phone_number,
