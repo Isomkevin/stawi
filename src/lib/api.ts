@@ -1,4 +1,5 @@
 import { mockApi } from "./mock";
+import { shipmentsApi, type Shipment } from "./shipments";
 import {
   ApiError,
   type Account,
@@ -154,6 +155,16 @@ export const api = {
           method: "POST",
           body: JSON.stringify({ type, details }),
         }).then((r) => r.account_name),
+
+  // GET /coops/{id}/shipments — TODO(backend): add to contract
+  listShipments: (coopId: string): Promise<Shipment[]> =>
+    isMock ? shipmentsApi.list(coopId) : request(`/coops/${coopId}/shipments`),
+
+  // PATCH /shipments/{id} { action: "advance" } → Shipment — TODO(backend): add to contract
+  advanceShipment: (shipmentId: string): Promise<Shipment> =>
+    isMock
+      ? shipmentsApi.advance(shipmentId)
+      : request(`/shipments/${shipmentId}`, { method: "PATCH", body: JSON.stringify({ action: "advance" }) }),
 
   // TODO(backend): add to contract — OTP login (POST /auth/otp, POST /auth/verify)
   // TODO(backend): add to contract — co-op invite links (POST /coops/{id}/invites)
