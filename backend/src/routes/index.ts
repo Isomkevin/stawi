@@ -972,6 +972,10 @@ apiRouter.post("/webhooks/payaza", async (req: Request, res: Response) => {
     }
 
     const result = await pipeline.applyPayazaWebhook(decision);
+    if (!result.matched && (decision.kind === "payout_success" || decision.kind === "payout_failed")) {
+      res.status(503).json({ received: true, matched: false });
+      return;
+    }
     await store.markWebhookProcessed(dedupeKey);
     res.status(200).json({ received: true, matched: result.matched });
   } catch (err) {

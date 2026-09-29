@@ -15,7 +15,7 @@ The runnable implementation is `backend/`. Types live in `backend/src/types.ts`.
 
 **Co-op** is the same pipe plus a split. The buyer pays the co-op invoice. Money waits in `settling` until the treasurer approves. Stawi then credits each farmer on the linked shipment in proportion to their kilos. A roster member who is not on that shipment is not paid. Farmers withdraw from that balance to M-Pesa or a bank.
 
-Payaza sub-accounts are not used for farmers. Payaza's own guide limits sub-accounts to internal business units. Splits happen in Stawi's ledger (`splitByShares`), then a later withdrawal calls Payaza's payout API. See `skills/payaza/SKILL.md`.
+Payaza sub-accounts are not used for farmers. Payaza's own guide limits sub-accounts to internal business units. Splits happen in Stawi's ledger (`splitByKilos`). Payaza Transfers then pays one person at a time: when the treasurer approves, and again when a farmer or exporter withdraws whatever is still in the balance. See `skills/payaza/SKILL.md`.
 
 ## Money
 
@@ -48,11 +48,11 @@ Collection is idempotent on the Payaza reference. An underpayment does not credi
 | `completed` | Direct: exporter credited. Co-op: split approved and each member credited. |
 | `failed` | Collection or a later step failed. No credit. |
 
-**Direct**, after a successful collection: collection transaction, conversion transaction (rate, gross KES, fee), settlement transaction, one confirmed `credit` payout, balance increased by the net.
+**Direct**, after a successful collection: collection transaction, conversion transaction (rate, gross KES, 0.8% fee), a settlement transaction whose `payaza_reference` is empty (Stawi's record, not a Payaza call), one confirmed `credit` payout, balance increased by the net. The exporter withdraws that balance through Payaza.
 
-**Co-op**, after a successful collection: collection and conversion only. Status becomes `settling`. Incoming is booked for the farmers on the linked shipment. `POST /invoices/{id}/approve-split` checks the treasurer id and PIN, rejects a second approval, rejects a shipment with no farmers, writes the settlement transaction, and creates one confirmed `credit` payout per farmer on that shipment.
+**Co-op**, after a successful collection: collection and conversion only. Status becomes `settling`. The 0.8% fee is stored, and incoming is booked for the farmers on the linked shipment by their kilos. `POST /invoices/{id}/approve-split` checks the treasurer id and PIN, rejects a second approval, rejects a shipment with no farmers, writes the settlement transaction (again with an empty `payaza_reference`), and creates one confirmed `credit` payout per farmer on that shipment. It then calls Payaza Transfers once per farmer who has a verified M-Pesa, other mobile-money, or bank destination. One person per call. That row is saved as `sent` before the call. Mock mode confirms it. Sandbox and live stay `sent` until the payout webhook. A rejected call restores the balance. A farmer with no destination keeps the credit.
 
-**Withdrawal** (`POST /accounts/{id}/withdraw` or USSD option 3): PIN required, destination must exist and be verified, amount is a positive integer of cents, cannot exceed balance. `idempotency_key` returns the original payout on replay. USSD uses `sessionId` as that key. Mock mode confirms immediately. Sandbox and live stay `sent` until the payout webhook. A failed Payaza call restores the balance and stores a `failed` withdrawal. Withdrawal rows use `invoice_id` `"withdrawal"`.
+**Withdrawal** (`POST /accounts/{id}/withdraw` or USSD option 3): PIN required, destination must exist and be verified, amount is a positive integer of cents, cannot exceed balance. `idempotency_key` returns the original payout on replay. USSD uses `sessionId` as that key. The withdrawal row is saved as `sent` before Payaza is called, one person per call, to M-Pesa or a Kenyan bank. Mock mode confirms immediately. Sandbox and live stay `sent` until the payout webhook. A failed Payaza call restores the balance and stores a `failed` withdrawal. A second webhook does not move the balance again. Withdrawal rows use `invoice_id` `"withdrawal"`.
 
 PIN: 4 digits, bcrypt. Five wrong attempts lock the account for 15 minutes. Responses use `{ error: "wrong" | "locked", attemptsLeft? }`.
 

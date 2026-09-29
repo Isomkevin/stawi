@@ -160,7 +160,7 @@ export class PipelineService {
         status: "completed",
         amount: netKesCents / 100,
         currency: "KES",
-        payaza_reference: `PZ-SETTLE-${Date.now()}`,
+        payaza_reference: null,
         fx_rate: null,
         fee_kes_cents: platformFeeCents,
         created_at: new Date().toISOString(),
@@ -322,6 +322,7 @@ export class PipelineService {
    * Auto payout after split approval. No PIN: the treasurer's PIN approved the split.
    * Idempotent on the credit payout id. Returns null when the farmer has no verified destination
    * or the credit is sample money outside mock mode.
+   * One Payaza transfer per farmer. The row is saved as "sent" before the call so a webhook can confirm it.
    */
   private async pushToDestination(credit: Payout, invoice: Invoice): Promise<Payout | null> {
     const idempotencyKey = `auto-${credit.id}`;
@@ -339,39 +340,11 @@ export class PipelineService {
     const amount = credit.amount_kes_cents;
     const allocation = allocateWithdrawal(account, amount, payaza.getMode());
     if (!allocation.ok) return null;
-    const mobile = destination.type !== "bank";
-    const bankCode =
-      destination.bank_code ||
-      (destination.type === "mpesa"
-        ? process.env.PAYAZA_MPESA_BANK_CODE || "SAFKEN"
-        : destination.type === "momo"
-          ? process.env.PAYAZA_MOMO_BANK_CODE || ""
-          : process.env.PAYAZA_BANK_CODE || "");
+    const bankCode = bankCodeFor(destination);
     if (!bankCode && payaza.getMode() !== "mock") return null;
 
-    applyWithdrawal(account, allocation.fromLive, allocation.fromDemo);
-    const sampleFlags = withdrawalFlags(allocation.fromLive, allocation.fromDemo);
-    await store.saveAccount(account);
-
     const reference = ensureTransactionReference(`SPL-${account.id.slice(-6)}-${Date.now()}`);
-    const major = amount / 100;
-    const result = await payaza.initiatePayout({
-      payout_amount: major,
-      currency: "KES",
-      transaction_type: mobile ? "mobile_money" : "kepss",
-      beneficiaries: [
-        {
-          credit_amount: major,
-          account_number: destination.details,
-          account_name: destination.account_name,
-          bank_code: bankCode,
-          narration: `Stawi ${invoice.reference}`,
-          transaction_reference: reference,
-        },
-      ],
-    });
-
-    const settled = result.success && payaza.getMode() === "mock";
+    const sampleFlags = withdrawalFlags(allocation.fromLive, allocation.fromDemo);
     const payout: Payout = {
       id: `payout_auto_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       invoice_id: invoice.id,
@@ -379,31 +352,39 @@ export class PipelineService {
       kind: "withdrawal",
       amount_kes_cents: amount,
       destination_id: destination.id,
-      status: !result.success ? "failed" : settled ? "confirmed" : "sent",
+      status: "sent",
       created_at: new Date().toISOString(),
       idempotency_key: idempotencyKey,
       payaza_reference: reference,
       ...sampleFlags,
     };
-    if (!result.success) {
-      // Money stays in the farmer's Stawi balance so they can withdraw it later.
-      restoreWithdrawal(account, payout);
+
+    await store.withTransaction(async () => {
+      applyWithdrawal(account, allocation.fromLive, allocation.fromDemo);
       await store.saveAccount(account);
-      console.warn(`[Payout] auto payout failed for ${account.id}: ${result.error}`);
-    }
-    await store.addPayout(payout);
-    if (settled) {
+      await store.addPayout(payout);
+    });
+
+    const finished = await this.submitTransfer({
+      payout,
+      narration: `Stawi ${invoice.reference}`,
+      alertReference: invoice.reference,
+    });
+    if (finished.payout.status === "failed") {
+      console.warn(`[Payout] auto payout failed for ${account.id}`);
       await sendPayoutAlerts([
         {
           phone: account.phone_number,
           name: account.full_name,
           amountKesCents: amount,
-          where: destination.type === "bank" ? "your bank" : destination.type === "momo" ? "mobile money" : "M-Pesa",
+          where: "your Stawi balance",
           reference: invoice.reference,
         },
       ]);
+    } else {
+      await sendPayoutAlerts(finished.alerts);
     }
-    return payout;
+    return finished.payout;
   }
 
   private async applyCoopSplit(
@@ -478,7 +459,7 @@ export class PipelineService {
       status: "completed",
       amount: netKesCents / 100,
       currency: "KES",
-      payaza_reference: `PZ-SETTLE-${Date.now()}`,
+      payaza_reference: null,
       fx_rate: null,
       fee_kes_cents: platformFeeCents,
       created_at: new Date().toISOString(),
@@ -545,39 +526,39 @@ export class PipelineService {
       const payout =
         await store.getPayoutByPayazaReference(decision.reference) ||
         (decision.merchantReference ? await store.getPayoutByPayazaReference(decision.merchantReference) : undefined);
-      if (!payout) return { matched: false };
+      if (!payout || payout.kind !== "withdrawal") return { matched: false };
+      if (payout.status === "confirmed" || payout.status === "failed") return { matched: true };
 
       if (decision.kind === "payout_success") {
-        if (payout.status !== "confirmed") {
-          payout.status = "confirmed";
-          await store.updatePayout(payout);
-          const account = await store.getAccount(payout.account_id);
-          const destination = account?.payout_destinations.find((d) => d.id === payout.destination_id);
-          if (account) {
-            const where = destination?.type === "bank" ? "your bank" : destination?.type === "momo" ? "mobile money" : "M-Pesa";
-            await sendPayoutAlerts([
-              {
-                phone: account.phone_number,
-                name: account.full_name,
-                amountKesCents: payout.amount_kes_cents,
-                where,
-                reference: "Withdrawal",
-              },
-            ]);
-          }
+        payout.status = "confirmed";
+        await store.updatePayout(payout);
+        const account = await store.getAccount(payout.account_id);
+        const destination = account?.payout_destinations.find((d) => d.id === payout.destination_id);
+        if (account) {
+          const where = destination?.type === "bank" ? "your bank" : destination?.type === "momo" ? "mobile money" : "M-Pesa";
+          await sendPayoutAlerts([
+            {
+              phone: account.phone_number,
+              name: account.full_name,
+              amountKesCents: payout.amount_kes_cents,
+              where,
+              reference: "Withdrawal",
+            },
+          ]);
         }
         return { matched: true };
       }
 
-      if (payout.status !== "failed" && payout.kind === "withdrawal") {
-        const account = await store.getAccount(payout.account_id);
-        if (account) {
-          restoreWithdrawal(account, payout);
-          await store.saveAccount(account);
-        }
-      }
-      payout.status = "failed";
-      await store.updatePayout(payout);
+      await store.withTransaction(async () => {
+        const fresh = await store.getPayout(payout.id);
+        const account = fresh ? await store.getAccount(fresh.account_id) : undefined;
+        if (!fresh || !account) return;
+        if (fresh.status !== "sent" && fresh.status !== "pending") return;
+        restoreWithdrawal(account, fresh);
+        await store.saveAccount(account);
+        fresh.status = "failed";
+        await store.updatePayout(fresh);
+      });
       return { matched: true };
     }
 
@@ -654,26 +635,36 @@ export class PipelineService {
     pin: string,
     idempotencyKey?: string
   ): Promise<{ success: boolean; payout?: Payout; error?: string; attemptsLeft?: number; lockedUntil?: string }> {
-    const result = await store.withTransaction(() =>
-      this.applyWithdraw(accountId, destinationId, amountKesCents, pin, idempotencyKey)
+    const prepared = await store.withTransaction(() =>
+      this.prepareWithdraw(accountId, destinationId, amountKesCents, pin, idempotencyKey)
     );
-    await sendPayoutAlerts(result.alerts ?? []);
-    const { alerts: _alerts, ...rest } = result;
-    return rest;
+    if (!prepared.success || !prepared.payout || prepared.replay) {
+      return { success: prepared.success, payout: prepared.payout, error: prepared.error, attemptsLeft: prepared.attemptsLeft, lockedUntil: prepared.lockedUntil };
+    }
+
+    const finished = await this.submitTransfer({
+      payout: prepared.payout,
+      narration: "Stawi withdrawal",
+      alertReference: "Withdrawal",
+    });
+    await sendPayoutAlerts(finished.alerts);
+    if (finished.payout.status === "failed") {
+      return { success: false, error: finished.error || "Payaza payout failed", payout: finished.payout };
+    }
+    return { success: true, payout: finished.payout };
   }
 
-  private async applyWithdraw(
+  private async prepareWithdraw(
     accountId: string,
     destinationId: string,
     amountKesCents: number,
     pin: string,
     idempotencyKey?: string
-  ): Promise<{ success: boolean; payout?: Payout; alerts?: PayoutAlert[]; error?: string; attemptsLeft?: number; lockedUntil?: string }> {
-    // 1. Idempotency Check
+  ): Promise<{ success: boolean; payout?: Payout; replay?: boolean; error?: string; attemptsLeft?: number; lockedUntil?: string }> {
     if (idempotencyKey) {
       const existing = await store.getPayoutByIdempotency(idempotencyKey);
       if (existing) {
-        return { success: true, payout: existing };
+        return { success: true, payout: existing, replay: true };
       }
     }
 
@@ -682,12 +673,10 @@ export class PipelineService {
       return { success: false, error: "Account not found" };
     }
 
-    // 2. Validate Amount
     if (!Number.isInteger(amountKesCents) || amountKesCents <= 0) {
       return { success: false, error: "Invalid withdrawal amount: must be positive integer cents" };
     }
 
-    // 3. Verify PIN
     const pinCheck = await verifyAccountPin(account, pin);
     await store.saveAccount(account);
 
@@ -700,7 +689,6 @@ export class PipelineService {
       };
     }
 
-    // 4. Validate Destination
     const destination = account.payout_destinations.find((d) => d.id === destinationId);
     if (!destination) {
       return { success: false, error: "Destination not found on account" };
@@ -709,69 +697,20 @@ export class PipelineService {
       return { success: false, error: "Cannot withdraw to unverified destination" };
     }
 
-    // 5. Check Balance (Prevent overdraw). Sample funds are spendable only in mock mode.
     const allocation = allocateWithdrawal(account, amountKesCents, payaza.getMode());
     if (!allocation.ok) {
       return { success: false, error: allocation.error };
     }
 
-    const bankCode =
-      destination.bank_code ||
-      (destination.type === "mpesa"
-        ? process.env.PAYAZA_MPESA_BANK_CODE || "SAFKEN"
-        : destination.type === "momo"
-          ? process.env.PAYAZA_MOMO_BANK_CODE || ""
-          : process.env.PAYAZA_BANK_CODE || "");
-
+    const bankCode = bankCodeFor(destination);
     if (destination.type !== "mpesa" && !bankCode && payaza.getMode() !== "mock") {
       return { success: false, error: "Bank code is required before a bank withdrawal" };
     }
 
-    // 6. Deduct balance. Live cents first, then sample cents when mock mode allowed them.
     applyWithdrawal(account, allocation.fromLive, allocation.fromDemo);
     const sampleFlags = withdrawalFlags(allocation.fromLive, allocation.fromDemo);
     await store.saveAccount(account);
 
-    // 7. Execute Payaza payout. Amounts are major KES; payout_amount equals credit_amount.
-    const payoutTxRef = ensureTransactionReference(`WTH-${accountId.slice(-6)}-${Date.now()}`);
-    const majorKes = amountKesCents / 100;
-    const payazaResult = await payaza.initiatePayout({
-      payout_amount: majorKes,
-      currency: "KES",
-      transaction_type: destination.type === "bank" ? "kepss" : "mobile_money",
-      beneficiaries: [
-        {
-          credit_amount: majorKes,
-          account_number: destination.details,
-          account_name: destination.account_name,
-          bank_code: bankCode,
-          narration: "Stawi withdrawal",
-          transaction_reference: payoutTxRef,
-        },
-      ],
-    });
-
-    if (!payazaResult.success) {
-      const failed: Payout = {
-        id: `payout_wth_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-        invoice_id: "withdrawal",
-        account_id: account.id,
-        kind: "withdrawal",
-        amount_kes_cents: amountKesCents,
-        destination_id: destination.id,
-        status: "failed",
-        created_at: new Date().toISOString(),
-        payaza_reference: payoutTxRef,
-        ...sampleFlags,
-      };
-      restoreWithdrawal(account, failed);
-      await store.saveAccount(account);
-      await store.addPayout(failed);
-      return { success: false, error: payazaResult.error || "Payaza payout failed", payout: failed };
-    }
-
-    // Mock settles immediately. Sandbox/live stays "sent" until the payout webhook.
-    const settled = payaza.getMode() === "mock";
     const payout: Payout = {
       id: `payout_wth_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       invoice_id: "withdrawal",
@@ -779,32 +718,99 @@ export class PipelineService {
       kind: "withdrawal",
       amount_kes_cents: amountKesCents,
       destination_id: destination.id,
-      status: settled ? "confirmed" : "sent",
+      status: "sent",
       created_at: new Date().toISOString(),
       idempotency_key: idempotencyKey,
-      payaza_reference: payoutTxRef,
+      payaza_reference: ensureTransactionReference(`WTH-${accountId.slice(-6)}-${Date.now()}`),
       ...sampleFlags,
     };
     await store.addPayout(payout);
+    return { success: true, payout };
+  }
 
-    const alerts: PayoutAlert[] = settled
-      ? [
-          {
-            phone: account.phone_number,
-            name: account.full_name,
-            amountKesCents,
-            where: destination.type === "bank" ? "your bank" : "M-Pesa",
-            reference: "Withdrawal",
-          },
-        ]
-      : [];
+  /**
+   * One Payaza transfer, one person. The payout row already exists as "sent".
+   * Mock mode confirms it. Sandbox and live stay "sent" until the payout webhook.
+   * A rejected call puts the cents back. A webhook that already finished the row is left alone.
+   */
+  private async submitTransfer(input: {
+    payout: Payout;
+    narration: string;
+    alertReference: string;
+  }): Promise<{ payout: Payout; alerts: PayoutAlert[]; error?: string }> {
+    const account = await store.getAccount(input.payout.account_id);
+    const destination = account?.payout_destinations.find((d) => d.id === input.payout.destination_id);
+    if (!account || !destination || !input.payout.payaza_reference) {
+      return { payout: input.payout, alerts: [], error: "Payout destination is missing" };
+    }
 
+    const bankCode = bankCodeFor(destination);
+    const major = input.payout.amount_kes_cents / 100;
+    const result = await payaza.initiatePayout({
+      payout_amount: major,
+      currency: "KES",
+      transaction_type: destination.type === "bank" ? "kepss" : "mobile_money",
+      beneficiaries: [
+        {
+          credit_amount: major,
+          account_number: destination.details,
+          account_name: destination.account_name,
+          bank_code: bankCode,
+          narration: input.narration,
+          transaction_reference: input.payout.payaza_reference,
+        },
+      ],
+    });
+
+    const current = (await store.getPayout(input.payout.id)) ?? input.payout;
+    if (current.status === "confirmed" || current.status === "failed") {
+      return { payout: current, alerts: [] };
+    }
+
+    if (!result.success) {
+      await store.withTransaction(async () => {
+        const fresh = (await store.getPayout(current.id)) ?? current;
+        const holder = await store.getAccount(fresh.account_id);
+        if (!holder || (fresh.status !== "sent" && fresh.status !== "pending")) return;
+        restoreWithdrawal(holder, fresh);
+        await store.saveAccount(holder);
+        fresh.status = "failed";
+        await store.updatePayout(fresh);
+      });
+      const failed = (await store.getPayout(current.id)) ?? current;
+      return { payout: failed, alerts: [], error: result.error || "Payaza payout failed" };
+    }
+
+    if (payaza.getMode() !== "mock") {
+      return { payout: current, alerts: [] };
+    }
+
+    current.status = "confirmed";
+    await store.updatePayout(current);
     return {
-      success: true,
-      payout,
-      alerts,
+      payout: current,
+      alerts: [
+        {
+          phone: account.phone_number,
+          name: account.full_name,
+          amountKesCents: current.amount_kes_cents,
+          where: destination.type === "bank" ? "your bank" : destination.type === "momo" ? "mobile money" : "M-Pesa",
+          reference: input.alertReference,
+        },
+      ],
     };
   }
+}
+
+function bankCodeFor(destination: { type: string; bank_code?: string }): string {
+  return (
+    destination.bank_code ||
+    (destination.type === "mpesa"
+      ? process.env.PAYAZA_MPESA_BANK_CODE || "SAFKEN"
+      : destination.type === "momo"
+        ? process.env.PAYAZA_MOMO_BANK_CODE || ""
+        : process.env.PAYAZA_BANK_CODE || "")
+  );
 }
 
 export const pipeline = new PipelineService();

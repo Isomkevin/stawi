@@ -1,6 +1,6 @@
 import request from "supertest";
 import { createApp } from "../src/app";
-import { formatKes } from "../src/services/money";
+import { feeCents, formatKes, toKesCents } from "../src/services/money";
 import { GLOBAL_SMS_RECIPIENT } from "../src/services/notify";
 import { pipeline } from "../src/services/pipeline";
 import { hashPin } from "../src/services/pin";
@@ -366,5 +366,231 @@ describe("Pipeline Service", () => {
     expect(replay.success).toBe(true);
     expect(replay.payout?.id).toBe(wth.payout?.id);
     expect((await store.getAccount(account.id))?.balance_kes_cents).toBe(300000);
+    expect(wth.payout?.status).toBe("confirmed");
+  });
+
+  it("keeps the co-op settlement on Stawi's books and sends one Payaza transfer per farmer", async () => {
+    const previous = {
+      mode: process.env.PAYAZA_MODE,
+      pin: process.env.PAYAZA_PIN,
+      kes: process.env.PAYAZA_KES_ACCOUNT_REF,
+    };
+    process.env.PAYAZA_MODE = "sandbox";
+    process.env.PAYAZA_PIN = "135790";
+    process.env.PAYAZA_KES_ACCOUNT_REF = "KES-TEST-REF";
+
+    const calls: { url: string; body: { service_payload?: { payout_beneficiaries?: unknown[] } } }[] = [];
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn(async (url: unknown, init?: { body?: string }) => {
+      calls.push({ url: String(url), body: init?.body ? JSON.parse(init.body) : {} });
+      return {
+        ok: true,
+        json: async () => ({ response_content: { response_status: "TRANSACTION_INITIATED" } }),
+      } as Response;
+    }) as typeof fetch;
+
+    try {
+      const pinHash = await hashPin("1234");
+      const coop: Coop = { id: "coop_pay", name: "Pay Co-op", treasurer_account_id: "acc_treasurer" };
+      await store.saveCoop(coop);
+      const treasurer: Account = {
+        id: "acc_treasurer",
+        full_name: "Treasurer Dan",
+        phone_number: "+254722222222",
+        id_number: "ID222",
+        payout_destinations: [],
+        coop_id: coop.id,
+        channel_capability: "webapp",
+        balance_kes_cents: 0,
+        incoming_kes_cents: 0,
+        pin_hash: pinHash,
+      };
+      const mpesaFarmer: Account = {
+        id: "acc_mpesa",
+        full_name: "Mpesa Farmer",
+        phone_number: "+254733333331",
+        id_number: "ID331",
+        payout_destinations: [
+          { id: "dest_mpesa", type: "mpesa", details: "+254733333331", account_name: "Mpesa Farmer", is_verified: true },
+        ],
+        coop_id: coop.id,
+        channel_capability: "webapp",
+        balance_kes_cents: 0,
+        incoming_kes_cents: 0,
+        pin_hash: pinHash,
+      };
+      const bankFarmer: Account = {
+        id: "acc_bank",
+        full_name: "Bank Farmer",
+        phone_number: "+254733333332",
+        id_number: "ID332",
+        payout_destinations: [
+          {
+            id: "dest_bank",
+            type: "bank",
+            details: "1234567890",
+            account_name: "Bank Farmer",
+            is_verified: true,
+            bank_code: "01",
+          },
+        ],
+        coop_id: coop.id,
+        channel_capability: "webapp",
+        balance_kes_cents: 0,
+        incoming_kes_cents: 0,
+        pin_hash: pinHash,
+      };
+      const cashFarmer: Account = {
+        id: "acc_cash",
+        full_name: "Cash Farmer",
+        phone_number: "+254733333333",
+        id_number: "ID333",
+        payout_destinations: [],
+        coop_id: coop.id,
+        channel_capability: "webapp",
+        balance_kes_cents: 0,
+        incoming_kes_cents: 0,
+        pin_hash: pinHash,
+      };
+      await store.saveAccount(treasurer);
+      await store.saveAccount(mpesaFarmer);
+      await store.saveAccount(bankFarmer);
+      await store.saveAccount(cashFarmer);
+
+      const inv: Invoice = {
+        id: "inv_pay",
+        type: "coop",
+        account_id: null,
+        coop_id: coop.id,
+        buyer_name: "Buyer BV",
+        buyer_email: "buyer@bv.com",
+        amount: 1000,
+        currency: "USD",
+        description: "Lot",
+        reference: "INV-PAY",
+        status: "pending",
+        split_approved: false,
+        fx_rate: null,
+        fee_kes_cents: null,
+        kes_total_cents: null,
+        payaza_checkout_reference: null,
+        created_at: new Date().toISOString(),
+        due_at: null,
+      };
+      await store.saveInvoice(inv);
+      const shipment: Shipment = {
+        id: "shp_pay",
+        reference: "SHP-PAY",
+        coop_id: coop.id,
+        buyer_name: inv.buyer_name,
+        product: "Coffee",
+        quantity_kg: 100,
+        destination: "Hamburg",
+        value: inv.amount,
+        currency: inv.currency,
+        ship_date: new Date().toISOString(),
+        shipped_at: null,
+        status: "ready",
+        invoice_id: inv.id,
+        farmers: [
+          { account_id: mpesaFarmer.id, kilos: 50 },
+          { account_id: bankFarmer.id, kilos: 30 },
+          { account_id: cashFarmer.id, kilos: 20 },
+        ],
+        updated_at: new Date().toISOString(),
+      };
+      await store.saveShipment(shipment);
+
+      const paid = await pipeline.processPayment(inv.id);
+      const gross = toKesCents(1000, "USD", 129);
+      const fee = feeCents(gross, 0.8);
+      expect(paid.invoice.status).toBe("settling");
+      expect(paid.invoice.fee_kes_cents).toBe(fee);
+      expect(paid.invoice.kes_total_cents).toBe(gross - fee);
+      expect(calls).toHaveLength(0);
+
+      const approval = await pipeline.approveCoopSplit(inv.id, treasurer.id, "1234");
+      expect(approval.success).toBe(true);
+      const settlement = (await store.getTransactions(inv.id)).find((tx) => tx.type === "settlement");
+      expect(settlement?.payaza_reference).toBeNull();
+      expect(settlement?.fee_kes_cents).toBe(fee);
+
+      const credits = approval.payouts ?? [];
+      expect(credits).toHaveLength(3);
+      expect(credits.reduce((sum, row) => sum + row.amount_kes_cents, 0)).toBe(gross - fee);
+      expect(credits.every((row) => row.kind === "credit" && row.status === "confirmed")).toBe(true);
+
+      const payoutCalls = calls.filter((call) => call.url.includes("/payout-receptor/payout"));
+      expect(payoutCalls).toHaveLength(2);
+      expect(calls.some((call) => call.url.includes("split-account") || call.url.includes("subaccount"))).toBe(false);
+      const kinds = payoutCalls.map((call) => (call.body as { transaction_type?: string }).transaction_type);
+      expect(kinds.sort()).toEqual(["kepss", "mobile_money"]);
+      for (const call of payoutCalls) {
+        expect(call.body.service_payload?.payout_beneficiaries).toHaveLength(1);
+      }
+
+      expect((await store.getAccount(mpesaFarmer.id))?.balance_kes_cents).toBe(0);
+      expect((await store.getAccount(bankFarmer.id))?.balance_kes_cents).toBe(0);
+      const cashShare = credits.find((row) => row.account_id === cashFarmer.id)?.amount_kes_cents;
+      expect((await store.getAccount(cashFarmer.id))?.balance_kes_cents).toBe(cashShare);
+
+      const transfers = approval.transfers ?? [];
+      expect(transfers).toHaveLength(2);
+      expect(transfers.every((row) => row.status === "sent" && row.kind === "withdrawal")).toBe(true);
+
+      const mpesaTransfer = transfers.find((row) => row.account_id === mpesaFarmer.id)!;
+      const bankTransfer = transfers.find((row) => row.account_id === bankFarmer.id)!;
+      await pipeline.applyPayazaWebhook({
+        kind: "payout_success",
+        reference: mpesaTransfer.payaza_reference || "",
+        merchantReference: null,
+        invoiceId: null,
+      });
+      expect((await store.getPayout(mpesaTransfer.id))?.status).toBe("confirmed");
+      expect((await store.getAccount(mpesaFarmer.id))?.balance_kes_cents).toBe(0);
+
+      await pipeline.applyPayazaWebhook({
+        kind: "payout_success",
+        reference: mpesaTransfer.payaza_reference || "",
+        merchantReference: null,
+        invoiceId: null,
+      });
+      expect((await store.getAccount(mpesaFarmer.id))?.balance_kes_cents).toBe(0);
+
+      await pipeline.applyPayazaWebhook({
+        kind: "payout_failed",
+        reference: bankTransfer.payaza_reference || "",
+        merchantReference: null,
+        invoiceId: null,
+      });
+      const bankShare = credits.find((row) => row.account_id === bankFarmer.id)?.amount_kes_cents;
+      expect((await store.getPayout(bankTransfer.id))?.status).toBe("failed");
+      expect((await store.getAccount(bankFarmer.id))?.balance_kes_cents).toBe(bankShare);
+
+      cashFarmer.payout_destinations = [
+        { id: "dest_cash", type: "mpesa", details: "+254733333333", account_name: "Cash Farmer", is_verified: true },
+      ];
+      await store.saveAccount((await store.getAccount(cashFarmer.id))!);
+      const savedCash = await store.getAccount(cashFarmer.id);
+      savedCash!.payout_destinations = cashFarmer.payout_destinations;
+      await store.saveAccount(savedCash!);
+
+      const before = payoutCalls.length;
+      const withdrawn = await pipeline.withdraw(cashFarmer.id, "dest_cash", cashShare!, "1234", "cash-wth");
+      expect(withdrawn.success).toBe(true);
+      expect(withdrawn.payout?.status).toBe("sent");
+      expect(calls.filter((call) => call.url.includes("/payout-receptor/payout"))).toHaveLength(before + 1);
+      const last = calls.filter((call) => call.url.includes("/payout-receptor/payout")).at(-1);
+      expect(last?.body.service_payload?.payout_beneficiaries).toHaveLength(1);
+      expect((await store.getAccount(cashFarmer.id))?.balance_kes_cents).toBe(0);
+    } finally {
+      global.fetch = originalFetch;
+      if (previous.mode === undefined) delete process.env.PAYAZA_MODE;
+      else process.env.PAYAZA_MODE = previous.mode;
+      if (previous.pin === undefined) delete process.env.PAYAZA_PIN;
+      else process.env.PAYAZA_PIN = previous.pin;
+      if (previous.kes === undefined) delete process.env.PAYAZA_KES_ACCOUNT_REF;
+      else process.env.PAYAZA_KES_ACCOUNT_REF = previous.kes;
+    }
   });
 });
