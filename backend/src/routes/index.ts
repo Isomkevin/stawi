@@ -551,6 +551,60 @@ apiRouter.get("/coops/:id/shipments", async (req: Request, res: Response) => {
   res.status(200).json(shipments);
 });
 
+// Treasurer drafts a shipment before any invoice exists. Farmers are added afterwards.
+apiRouter.post("/coops/:id/shipments", async (req: Request, res: Response) => {
+  const coop = await store.getCoop(getParam(req.params.id));
+  if (!coop) {
+    res.status(404).json({ error: "Co-op not found" });
+    return;
+  }
+  const b = req.body ?? {};
+  const text = (v: unknown, max = 255) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+  const buyer = text(b.buyer_name);
+  const product = text(b.product);
+  const destination = text(b.destination) || "TBD";
+  const quantity = Number(b.quantity_kg);
+  const value = Number(b.value ?? 0);
+  const currency = ["USD", "EUR", "GBP"].includes(b.currency) ? b.currency : "USD";
+  const shipDate = typeof b.ship_date === "string" && !Number.isNaN(Date.parse(b.ship_date)) ? new Date(b.ship_date).toISOString() : new Date().toISOString();
+  if (!buyer || !product) {
+    res.status(400).json({ error: "Buyer and product are required" });
+    return;
+  }
+  if (!Number.isInteger(quantity) || quantity <= 0) {
+    res.status(400).json({ error: "Quantity must be a whole number of kilos greater than zero" });
+    return;
+  }
+  if (!Number.isFinite(value) || value < 0) {
+    res.status(400).json({ error: "Value must be zero or more" });
+    return;
+  }
+  const existing = await store.listShipments(coop.id);
+  const now = new Date().toISOString();
+  const id = `shp_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
+  const shipment = {
+    id,
+    reference: `${coop.id.replace(/^coop_/, "").slice(0, 3).toUpperCase()}-S-${String(existing.length + 1).padStart(3, "0")}-${id.slice(-4).toUpperCase()}`,
+    coop_id: coop.id,
+    account_id: null,
+    buyer_name: buyer,
+    product,
+    quantity_kg: quantity,
+    destination,
+    value,
+    currency,
+    ship_date: shipDate,
+    shipped_at: null,
+    status: "draft" as const,
+    invoice_id: null,
+    farmers: [],
+    is_demo: false,
+    updated_at: now,
+  };
+  await store.saveShipment(shipment);
+  res.status(201).json(shipment);
+});
+
 // A Direct exporter's own shipments. Older direct invoices get a shipment on first read.
 apiRouter.get("/accounts/:id/shipments", async (req: Request, res: Response) => {
   const accountId = getParam(req.params.id);
