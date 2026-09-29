@@ -69,7 +69,7 @@ function Onboarding() {
         coop_id: invite.coop ? "coop_kiambu" : undefined,
       }),
     onSuccess: (acc) => {
-      signIn("farmer", acc.id);
+      signIn("farmer", { accountId: acc.id });
       void navigate({ to: "/app/home" });
     },
   });

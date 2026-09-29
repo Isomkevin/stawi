@@ -11,7 +11,7 @@ export function RoleGate({ role, children }: { role: Exclude<Role, "buyer">; chi
   const ok = session.role === role;
 
   useEffect(() => {
-    if (ok) return;
+    if (ok || !session.ready) return;
     if (isMock) session.signIn(role);
     else void navigate({ to: "/login" });
   }, [ok, role, session, navigate]);
