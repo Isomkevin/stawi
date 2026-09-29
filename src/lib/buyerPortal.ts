@@ -9,12 +9,11 @@ export const BUYER_PORTAL_CODE = "STAWI-BUYER-2026";
 let mockProofs: Array<PaymentProof & { receipt_data?: string | null }> = [];
 
 async function post<T>(path: string, body?: unknown): Promise<T> {
-  const token = typeof window === "undefined" ? null : window.sessionStorage.getItem("stawi.token");
   const res = await fetch(`${API_BASE_URL}${path}`, {
     method: "POST",
     credentials: "include",
-    headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body ?? {}),
   });
   if (!res.ok) {
     const b = (await res.json().catch(() => ({}))) as { error?: string };

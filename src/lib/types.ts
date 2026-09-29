@@ -268,7 +268,7 @@ export type NewPaymentProofBody = {
   amount: number;
   currency: string;
   paid_at: string;
-  note?: string;
-  receipt_name?: string;
-  receipt_data?: string;
+  note?: string | undefined;
+  receipt_name?: string | undefined;
+  receipt_data?: string | undefined;
 };

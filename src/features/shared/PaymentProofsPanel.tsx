@@ -36,7 +36,10 @@ export function PaymentProofsPanel({ coopId, accountId }: { coopId?: string; acc
   const openReceipt = async (id: string) => {
     try {
       const r = await buyerPortal.receipt(id);
-      if (!r.receipt_data) return toast.error("No receipt attached");
+      if (!r.receipt_data) {
+        toast.error("No receipt attached");
+        return;
+      }
       const w = window.open();
       if (w) w.document.write(`<title>${r.receipt_name ?? "Receipt"}</title><iframe src="${r.receipt_data}" style="border:0;width:100%;height:100vh"></iframe>`);
     } catch (e) {
