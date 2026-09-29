@@ -285,7 +285,7 @@ function useAdvance(coopId: string) {
   });
 }
 
-function DeleteShipment({ s, inv, onDeleted }: { s: Shipment; inv: Invoice | undefined; onDeleted?: () => void }) {
+function DeleteShipment({ s, inv, onDeleted }: { s: Shipment; inv: Invoice | undefined; onDeleted?: (() => void) | undefined }) {
   const coopId = useCoopId();
   const qc = useQueryClient();
   const blocked = inv && inv.status !== "pending" ? "Shipments with a paid invoice can't be deleted" : undefined;

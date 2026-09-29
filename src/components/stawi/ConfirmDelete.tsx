@@ -25,7 +25,7 @@ export function ConfirmDelete({
   title: string;
   description: string;
   onConfirm: () => Promise<unknown>;
-  disabledReason?: string;
+  disabledReason?: string | undefined;
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
