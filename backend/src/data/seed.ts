@@ -17,7 +17,7 @@ import {
   demoCoopIds,
   demoInvoiceIds,
 } from "./catalog";
-import { feeCents, splitByShares, toKesCents } from "../services/money";
+import { feeCents, splitByKilos, toKesCents } from "../services/money";
 import { store } from "../store";
 import { Account, CoopMember, Invoice, InvoiceStatus, PayoutDestination, PayoutStatus, Shipment, ShipmentFarmer, ShipmentStatus } from "../types";
 
@@ -282,8 +282,9 @@ async function seedRail(invoice: Invoice, members: CoopMember[]): Promise<void> 
     return;
   }
 
-  if (members.length === 0) throw new Error(`Co-op invoice ${invoice.id} has no members to split`);
-  const lines = splitByShares(gross, fee, members);
+  const farmers = farmersForInvoice(invoice, members);
+  if (farmers.length === 0) throw new Error(`Co-op invoice ${invoice.id} has no shipment farmers to split`);
+  const lines = splitByKilos(gross, fee, farmers);
   for (const line of lines) {
     const payoutId = `payout_${invoice.id}_${line.account_id}`;
     assertShort(payoutId, "payout");
@@ -359,7 +360,7 @@ async function applyLedger(): Promise<void> {
     }
     const members = await store.getCoopMembers(invoice.coop_id);
     const gross = toKesCents(invoice.amount, invoice.currency, invoice.fx_rate);
-    const lines = splitByShares(gross, invoice.fee_kes_cents, members);
+    const lines = splitByKilos(gross, invoice.fee_kes_cents, farmersForInvoice(invoice, members));
     for (const line of lines) {
       incoming.set(line.account_id, (incoming.get(line.account_id) ?? 0) + line.net_kes_cents);
     }
@@ -689,6 +690,15 @@ function splitKilos(total: number, weights: number[]): number[] {
   return shares;
 }
 
+function lotForInvoice(invoice: Invoice, members: CoopMember[]): { quantity: number; farmers: ShipmentFarmer[] } {
+  const quantity = kilosFromDescription(invoice.description, invoice.amount);
+  return { quantity, farmers: assignFarmers(members, `shp_${invoice.id}`, quantity) };
+}
+
+function farmersForInvoice(invoice: Invoice, members: CoopMember[]): ShipmentFarmer[] {
+  return lotForInvoice(invoice, members).farmers;
+}
+
 function assignFarmers(members: CoopMember[], key: string, totalKg: number): ShipmentFarmer[] {
   if (members.length === 0 || totalKg <= 0) return [];
   const count = Math.min(members.length, 3 + (hashCode(`${key}:count`) % 6));
@@ -718,11 +728,10 @@ export async function seedShipments(): Promise<void> {
     const invoices = (await store.getInvoices({ coop_id: coop.id })).filter((invoice) => invoice.type === "coop");
     for (const invoice of invoices) {
       const status = stageForInvoice(invoice.status);
-      const quantity = kilosFromDescription(invoice.description, invoice.amount);
       const timing = timingFor(status, invoice.created_at);
       const id = `shp_${invoice.id}`;
       assertShort(id, "shipment");
-      const farmers = assignFarmers(members, id, quantity);
+      const { quantity, farmers } = lotForInvoice(invoice, members);
       const farmerKg = farmers.reduce((total, farmer) => total + farmer.kilos, 0);
       if (farmerKg !== quantity) throw new Error(`Shipment ${id} kilos ${farmerKg} do not match ${quantity}`);
       const shipment: Shipment = {
@@ -819,7 +828,7 @@ async function rebalanceDemoAccounts(): Promise<void> {
     if (invoice.fx_rate == null || invoice.fee_kes_cents == null) continue;
     const members = await store.getCoopMembers(invoice.coop_id);
     const gross = toKesCents(invoice.amount, invoice.currency, invoice.fx_rate);
-    const lines = splitByShares(gross, invoice.fee_kes_cents, members);
+    const lines = splitByKilos(gross, invoice.fee_kes_cents, farmersForInvoice(invoice, members));
     const target = invoice.is_demo ? demoIncoming : liveIncoming;
     for (const line of lines) {
       target.set(line.account_id, (target.get(line.account_id) ?? 0) + line.net_kes_cents);

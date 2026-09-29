@@ -611,6 +611,14 @@ export class PostgresStore extends InMemoryStore {
     return result.rows.map((row) => this.mapShipment(row, farmers.get(row.id) || []));
   }
 
+  public async getShipmentByInvoice(invoiceId: string): Promise<Shipment | undefined> {
+    const result = await this.q("SELECT * FROM shipments WHERE invoice_id = $1 LIMIT 1", [invoiceId]);
+    if (!result.rows[0]) return undefined;
+    const id = result.rows[0].id as string;
+    const farmers = await this.farmersFor([id]);
+    return this.mapShipment(result.rows[0], farmers.get(id) || []);
+  }
+
   public async flagDemoInvoice(id: string): Promise<boolean> {
     const updated = await this.q("UPDATE invoices SET is_demo = true WHERE id = $1 AND is_demo = false", [id]);
     if ((updated.rowCount ?? 0) === 0) return false;

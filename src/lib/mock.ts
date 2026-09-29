@@ -155,6 +155,19 @@ const members: CoopMember[] = farmerSeed.map((f, i) => ({
 
 // ---------------------------------------------------------------- invoices
 
+function payeeFor(invoice: Invoice): { payee_name: string; farmer_count: number | null } {
+  if (invoice.coop_id) {
+    const coop = coops.find((c) => c.id === invoice.coop_id);
+    const farmer_count = members.filter((m) => m.coop_id === invoice.coop_id).length;
+    return { payee_name: coop?.name ?? "Stawi seller", farmer_count };
+  }
+  if (invoice.account_id) {
+    const account = accounts.find((a) => a.id === invoice.account_id);
+    return { payee_name: account?.full_name ?? "Stawi seller", farmer_count: null };
+  }
+  return { payee_name: "Stawi seller", farmer_count: null };
+}
+
 function kesFromAmount(amount: number, currency: string) {
   const rate = fxFor(currency);
   const gross = Math.round(amount * rate * 100);
@@ -623,6 +636,7 @@ export const mockApi = {
       invoice,
       transactions: transactions.filter((t) => t.invoice_id === invoiceId),
       split_preview: splitFor(invoice),
+      ...payeeFor(invoice),
     });
   },
 
@@ -665,6 +679,8 @@ export const mockApi = {
       checkoutUrl: null,
       public_key: "PZ_PUBLIC_KEY_SANDBOX",
       transaction_reference: reference,
+      link_id: null,
+      connection_mode: "Test",
     };
   },
 

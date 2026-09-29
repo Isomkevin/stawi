@@ -9,6 +9,8 @@ export interface CheckoutSessionResult {
   public_key: string;
   transaction_reference: string;
   link_id: string | null;
+  /** Payaza Web SDK connection_mode. Sandbox and mock use Test. */
+  connection_mode: "Test" | "Live";
 }
 
 export interface PayoutBeneficiary {
@@ -228,6 +230,7 @@ export class PayazaService {
       `STAWI-${invoice.id}-${Date.now().toString(36)}-${attempt}`
     );
     const mode = this.getMode();
+    const connection_mode: "Test" | "Live" = mode === "live" ? "Live" : "Test";
 
     if (mode === "mock") {
       return {
@@ -236,6 +239,7 @@ export class PayazaService {
         public_key: this.getPublicKey(),
         transaction_reference: transactionReference,
         link_id: null,
+        connection_mode,
       };
     }
 
@@ -270,6 +274,7 @@ export class PayazaService {
           public_key: this.getPublicKey(),
           transaction_reference: transactionReference,
           link_id: null,
+          connection_mode,
         };
       }
 
@@ -280,6 +285,7 @@ export class PayazaService {
         public_key: this.getPublicKey(),
         transaction_reference: transactionReference,
         link_id: data.data?.id ? String(data.data.id) : null,
+        connection_mode,
       };
     } catch (err) {
       console.warn("[Payaza] Payment link call failed, falling back to SDK checkout ref:", err);
@@ -289,6 +295,7 @@ export class PayazaService {
         public_key: this.getPublicKey(),
         transaction_reference: transactionReference,
         link_id: null,
+        connection_mode,
       };
     }
   }

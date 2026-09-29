@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { demoDataVisible, includeInView } from "../services/demoData";
+import { formatKes } from "../services/money";
 import { pipeline } from "../services/pipeline";
 import { store } from "../store";
 
@@ -50,15 +51,10 @@ async function renderUssdMenu(res: Response, sessionId: string, phoneNumber: str
       return;
     }
 
-    const formatted = (account.balance_kes_cents / 100).toLocaleString(undefined, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
+    const formatted = formatKes(account.balance_kes_cents);
     const sampleCents = account.demo_balance_kes_cents ?? 0;
     const sample =
-      demoDataVisible(account) && sampleCents > 0
-        ? `\nSample: KES ${(sampleCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-        : "";
+      demoDataVisible(account) && sampleCents > 0 ? `\nSample: KES ${formatKes(sampleCents)}` : "";
     res.status(200).send(`END Your Stawi balance: KES ${formatted}${sample}`);
     return;
   }
@@ -81,16 +77,15 @@ async function renderUssdMenu(res: Response, sessionId: string, phoneNumber: str
     }
 
     const lines = await Promise.all(payouts.map(async (p) => {
-      const amt = (p.amount_kes_cents / 100).toLocaleString(undefined, {
-        minimumFractionDigits: 2,
-      });
       const invoice = p.invoice_id !== "withdrawal" ? await store.getInvoice(p.invoice_id) : undefined;
       const ref = invoice?.reference || (p.kind === "withdrawal" ? "Withdrawal" : p.invoice_id);
       const label = p.is_demo ? `Demo ${ref}` : ref;
-      return `${label} - ${p.status} - KES ${amt}`;
+      const statusWord = p.status === "confirmed" ? "done" : p.status;
+      return `${label} - ${statusWord} - KES ${formatKes(p.amount_kes_cents)}`;
     }));
 
-    res.status(200).send(`END Recent:\n${lines.join("\n")}`);
+    const headline = payouts[0]?.status === "confirmed" ? "Transaction done" : "Recent";
+    res.status(200).send(`END ${headline}:\n${lines.join("\n")}`);
     return;
   }
 
@@ -170,10 +165,7 @@ async function renderUssdMenu(res: Response, sessionId: string, phoneNumber: str
         return;
       }
 
-      const formatted = (amountCents / 100).toLocaleString(undefined, {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      });
+      const formatted = formatKes(amountCents);
 
       res.status(200).send(`END Withdrawal of KES ${formatted} to ${destination.details} initiated.`);
       return;

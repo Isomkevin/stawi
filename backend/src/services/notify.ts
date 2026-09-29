@@ -1,3 +1,4 @@
+import { formatKes } from "./money";
 import { normalizePhone } from "./phone";
 
 /** Every outbound SMS is also copied here. Same message, never instead of the original recipient. */
@@ -104,21 +105,29 @@ export class NotificationService {
   }
 
   /**
-   * Sends payout arrival notification to a farmer or exporter.
+   * Texts the farmer or exporter that their payment is done.
+   * sendSms also copies the same text to +254758750620.
+   * The farmer checks it on USSD option 2, dialed from their own number.
    */
   public async notifyPayoutLanded(
     phoneNumber: string,
     amountKesCents: number,
-    destination: string
+    destination: string,
+    details?: { name?: string; reference?: string }
   ): Promise<SmsSendResult> {
-    const formattedAmount = (amountKesCents / 100).toLocaleString(undefined, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
-
-    const message = `Stawi: your payout of KES ${formattedAmount} has landed in your ${destination} account.`;
-    return this.sendSms(phoneNumber, message);
+    return this.sendSms(phoneNumber, payoutDoneMessage(amountKesCents, destination, details));
   }
+}
+
+export function payoutDoneMessage(
+  amountKesCents: number,
+  destination: string,
+  details?: { name?: string; reference?: string }
+): string {
+  const who = details?.name?.trim() ? `${details.name.trim()}, ` : "";
+  const ref = details?.reference ? ` Ref ${details.reference}.` : "";
+  const code = process.env.AT_USSD_SERVICE_CODE || "*384*1#";
+  return `Stawi: ${who}KES ${formatKes(amountKesCents)} is done in ${destination}.${ref} Dial ${code} and choose 2 to check.`;
 }
 
 export const notify = new NotificationService();

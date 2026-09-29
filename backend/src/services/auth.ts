@@ -225,8 +225,8 @@ export async function enforceAuth(req: Request, res: Response, next: NextFunctio
       }
     }
 
-    const shipmentMatch = req.path.match(/^\/shipments\/([^/]+)$/);
-    if (shipmentMatch && (req.method === "PATCH" || req.method === "DELETE")) {
+    const shipmentMatch = req.path.match(/^\/shipments\/([^/]+)(?:\/farmers(?:\/[^/]+)?)?$/);
+    if (shipmentMatch && (req.method === "PATCH" || req.method === "DELETE" || req.method === "POST")) {
       const shipment = await store.getShipment(decodeURIComponent(shipmentMatch[1]));
       if (!shipment) {
         res.status(404).json({ error: "Shipment not found" });

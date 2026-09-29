@@ -289,6 +289,15 @@ export class InMemoryStore {
       .map((shipment) => ({ ...shipment, farmers: shipment.farmers.map((farmer) => ({ ...farmer })) }));
   }
 
+  public async getShipmentByInvoice(invoiceId: string): Promise<Shipment | undefined> {
+    for (const shipment of this.shipments.values()) {
+      if (shipment.invoice_id === invoiceId) {
+        return { ...shipment, farmers: shipment.farmers.map((farmer) => ({ ...farmer })) };
+      }
+    }
+    return undefined;
+  }
+
   // Webhook idempotency
   public async isWebhookProcessed(reference: string): Promise<boolean> {
     return this.processedWebhookRefs.has(reference);

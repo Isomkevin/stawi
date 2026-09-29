@@ -117,8 +117,9 @@ Option 1 (text = "1")
   END Your Stawi balance: KES {amount}
 
 Option 2 (text = "2")
-  → call GET /accounts/{id}/transactions?limit=3
-  END Recent: {invoice_ref} - {status} - KES {amount} ...
+  → the phone number selects the account, then the last 3 payouts on that account
+  END Transaction done:
+  {invoice_ref} - done - KES {amount}
 
 Option 3 (text = "3")
   CON Withdraw to:
@@ -140,7 +141,7 @@ Session state (which menu level, which account) should be looked up fresh from `
 
 ## SMS (notifications, not the primary interaction channel)
 
-Use SMS for push notifications the farmer doesn't have to dial in for — e.g., "Your Stawi payout of KES 1,200 has landed" the moment a Payout Transaction completes. This is a good, low-effort addition once USSD read/withdraw works.
+Use SMS when a farmer or exporter is credited, and again when a withdrawal is confirmed. The text names them, says the payment is done, and tells them to dial USSD and choose 2. That check uses their own phone number, so each farmer sees only their payout.
 
 ```javascript
 const AfricasTalking = require('africastalking')({
@@ -151,7 +152,7 @@ const sms = AfricasTalking.SMS;
 
 await sms.send({
   to: [farmerPhoneNumber], // international format, e.g. +2547XXXXXXXX
-  message: `Stawi: your payout of KES ${amount} has landed in your ${destination} account.`,
+  message: `Stawi: ${name}, KES ${amount} is done in your Stawi balance. Ref ${reference}. Dial *384*1# and choose 2 to check.`,
   // Live only: approved alphanumeric sender ID or shortcode. Omit in sandbox.
   ...(process.env.AT_ENV === 'live' && { from: process.env.AT_SENDER_ID }),
 });

@@ -13,7 +13,7 @@ The runnable implementation is `backend/`. Types live in `backend/src/types.ts`.
 
 **Direct** is one exporter. The buyer pays, Stawi converts to KES, takes a fee, and credits that exporter's Stawi balance.
 
-**Co-op** is the same pipe plus a split. The buyer pays the co-op invoice. Money waits in `settling` until the treasurer approves. Stawi then credits each member's balance by contribution share. Farmers withdraw from that balance to M-Pesa or a bank.
+**Co-op** is the same pipe plus a split. The buyer pays the co-op invoice. Money waits in `settling` until the treasurer approves. Stawi then credits each farmer on the linked shipment in proportion to their kilos. A roster member who is not on that shipment is not paid. Farmers withdraw from that balance to M-Pesa or a bank.
 
 Payaza sub-accounts are not used for farmers. Payaza's own guide limits sub-accounts to internal business units. Splits happen in Stawi's ledger (`splitByShares`), then a later withdrawal calls Payaza's payout API. See `skills/payaza/SKILL.md`.
 
@@ -26,6 +26,8 @@ All KES amounts are integer cents (`*_kes_cents`). Never floats.
 `splitByShares` uses the largest-remainder method. For one invoice, member gross lines sum to the gross, net lines sum to the net, and fee lines sum to the fee.
 
 A member's `contribution_share` is a percentage. Shares for one co-op are expected to sum to 100. The splitter normalizes by the total share it is given, and still sums exactly.
+
+A co-op invoice does not split by roster share. It pays the farmers on the shipment whose `invoice_id` points at that invoice, weighted by their kilos. `split_preview.share` is that weight as an integer percent, and those percents sum to 100. Approving the split with no shipment farmers is rejected.
 
 `balance_kes_cents` is the live spendable balance. It increases when a live credit payout is confirmed and decreases when a withdrawal is sent. `incoming_kes_cents` is a co-op member's live share of invoices that are `settling` and not yet approved. Approval moves that amount from incoming into balance.
 
@@ -48,7 +50,7 @@ Collection is idempotent on the Payaza reference. An underpayment does not credi
 
 **Direct**, after a successful collection: collection transaction, conversion transaction (rate, gross KES, fee), settlement transaction, one confirmed `credit` payout, balance increased by the net.
 
-**Co-op**, after a successful collection: collection and conversion only. Status becomes `settling`. `POST /invoices/{id}/approve-split` checks the treasurer id and PIN, rejects a second approval, writes the settlement transaction, and creates one confirmed `credit` payout per member.
+**Co-op**, after a successful collection: collection and conversion only. Status becomes `settling`. Incoming is booked for the farmers on the linked shipment. `POST /invoices/{id}/approve-split` checks the treasurer id and PIN, rejects a second approval, rejects a shipment with no farmers, writes the settlement transaction, and creates one confirmed `credit` payout per farmer on that shipment.
 
 **Withdrawal** (`POST /accounts/{id}/withdraw` or USSD option 3): PIN required, destination must exist and be verified, amount is a positive integer of cents, cannot exceed balance. `idempotency_key` returns the original payout on replay. USSD uses `sessionId` as that key. Mock mode confirms immediately. Sandbox and live stay `sent` until the payout webhook. A failed Payaza call restores the balance and stores a `failed` withdrawal. Withdrawal rows use `invoice_id` `"withdrawal"`.
 
@@ -83,7 +85,7 @@ Coop { id, name, treasurer_account_id }
 CoopMember {
   coop_id, account_id, full_name?,
   contribution_share,    // percentage
-  kilos?                 // recorded volume; not used to compute the split
+  kilos?                 // roster volume. The split uses shipment kilos, not this field.
 }
 ```
 
@@ -140,7 +142,7 @@ Payout {
 
 ### Shipment
 
-A co-op lot moving to a buyer. `value` is a buyer-currency decimal, same as invoice `amount`. `quantity_kg` and each farmer `kilos` are whole kilograms. Farmer kilos on a shipment sum to `quantity_kg`.
+A co-op lot moving to a buyer. `value` is a buyer-currency decimal, same as invoice `amount`. `quantity_kg` and each farmer `kilos` are whole kilograms. Farmer kilos must not exceed `quantity_kg`, and they must sum to it before a draft can move on. Only these farmers are paid when the linked invoice is split.
 
 ```
 Shipment {
@@ -155,7 +157,13 @@ Shipment {
 }
 ```
 
-`PATCH /shipments/{id}` with `{ action: "advance" }` moves one stage forward. Advancing into `in_transit` sets `shipped_at`. Advancing from `delivered` to `completed` requires the linked invoice to be `completed`. A second advance on a completed shipment is rejected.
+Creating a co-op invoice also opens a draft shipment linked to it. The quantity is the kilogram amount in the description, or 1000 kg when the description has none. It starts with no farmers.
+
+`POST /shipments/{id}/farmers` with `{ account_id, kilos }` puts a co-op member on the shipment, or updates their kilos. Kilos are a positive integer. The person must already be a member. The new total cannot exceed `quantity_kg`. The same call returns 201 the first time and 200 when it changes kilos. It is refused once the linked invoice split is approved.
+
+`DELETE /shipments/{id}/farmers/{accountId}` takes that farmer off the shipment, with the same lock. If the linked invoice is `settling`, both calls rewrite incoming balances from the farmers now on the shipment.
+
+`PATCH /shipments/{id}` with `{ action: "advance" }` moves one stage forward. A draft moves on only when farmer kilos sum to `quantity_kg`. Advancing into `in_transit` sets `shipped_at`. Advancing from `delivered` to `completed` requires the linked invoice to be `completed`. A second advance on a completed shipment is rejected.
 
 `DELETE /shipments/{id}` removes the shipment. It is refused when the linked invoice is no longer `pending`. Deleting a pending invoice clears `invoice_id` on any shipment that pointed at it.
 
@@ -211,6 +219,11 @@ PATCH /coops/{id}/members/{accountId}   { contribution_share }
 DELETE /coops/{id}/members/{accountId}  -> 204. 404 if they are not a member.
 GET  /coops/{id}/payouts                -> Payout[] for this co-op's invoices, newest first
 GET  /coops/{id}/shipments              -> Shipment[] for this co-op, latest ship date first
+POST /shipments/{id}/farmers            { account_id, kilos } -> Shipment
+                                        201 when the farmer is new, 200 when kilos change.
+                                        400 if they are not a member, kilos are not a positive integer, or the total would exceed quantity_kg.
+                                        409 once the linked invoice split is approved.
+DELETE /shipments/{id}/farmers/{accountId} -> Shipment. 404 if they are not on it. Same 409 lock.
 PATCH /shipments/{id}                   { action: "advance" } -> Shipment
 DELETE /shipments/{id}                  -> 204. 409 if the linked invoice is no longer pending.
 GET  /coops/{id}/metrics                -> { invoices, total_collected_kes_cents, fee_taken_kes_cents, total_split_kes_cents, avg_payout_time, live, demo? }
@@ -226,8 +239,14 @@ POST /name-enquiry                      { type, details } -> { account_name }
 
 GET  /invoices?coop_id=&account_id=
 POST /invoices                          { type, account_id | coop_id, buyer_name, buyer_email, buyer_phone?, amount, currency, description?, reference?, due_at? }
-GET  /invoices/{id}                     -> { invoice, transactions, split_preview: SplitLine[] | null }
-POST /invoices/{id}/checkout-session    -> { reference, checkoutUrl | null, public_key, transaction_reference, link_id | null }
+                                        A co-op invoice also opens a draft shipment with this invoice_id and no farmers.
+GET  /invoices/{id}                     -> { invoice, transactions, split_preview: SplitLine[] | null, payee_name, farmer_count }
+                                        Public. payee_name is the co-op name or the exporter's full name.
+                                        farmer_count is the member count for a co-op invoice, and null for a direct invoice.
+                                        The buyer page uses these fields. It does not call GET /coops or GET /accounts.
+POST /invoices/{id}/checkout-session    -> { reference, checkoutUrl | null, public_key, transaction_reference, link_id | null, connection_mode: "Test" | "Live" }
+                                        The buyer page opens the Payaza Web SDK with public_key and transaction_reference.
+                                        connection_mode is Live only when PAYAZA_MODE=live. The webhook marks the invoice paid.
 POST /invoices/{id}/approve-split       { treasurer_id, pin }
 DELETE /invoices/{id}                   -> 204 when status is pending. 409 otherwise.
 
@@ -243,7 +262,7 @@ GET  /dev/seed-ids                      Mock mode only. Canonical Kiambu ids. Th
 
 ## Channel parity
 
-Web and USSD both read `balance_kes_cents` and the same payout list. USSD only changes presentation (for example `KES 1,200.00` instead of cents). The menu is balance, last three payouts, and withdraw-with-PIN to a verified M-Pesa or bank destination.
+Web and USSD both read `balance_kes_cents` and the same payout list. USSD only changes presentation (for example `KES 1,200.00` instead of cents). The menu is balance, last three payouts, and withdraw-with-PIN to a verified M-Pesa or bank destination. A confirmed credit or withdrawal texts that account. The same text is copied to `+254758750620`. USSD option 2 on the paid account's phone shows that payout as done.
 
 ## Where the demo data lives
 

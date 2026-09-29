@@ -9,10 +9,32 @@ import {
   restoreWithdrawal,
   withdrawalFlags,
 } from "./demoData";
-import { feeCents, splitByShares, toKesCents } from "./money";
+import { feeCents, splitByKilos, toKesCents } from "./money";
 import { notify } from "./notify";
 import { ensureTransactionReference, payaza } from "./payaza";
 import { verifyAccountPin } from "./pin";
+
+type PayoutAlert = {
+  phone: string;
+  name: string;
+  amountKesCents: number;
+  where: string;
+  reference?: string;
+};
+
+/** Best-effort. A failed text never undoes the payout. */
+async function sendPayoutAlerts(alerts: PayoutAlert[]): Promise<void> {
+  for (const alert of alerts) {
+    try {
+      await notify.notifyPayoutLanded(alert.phone, alert.amountKesCents, alert.where, {
+        name: alert.name,
+        reference: alert.reference,
+      });
+    } catch (err) {
+      console.warn("[SMS Warning] payout alert failed:", err);
+    }
+  }
+}
 
 export class PipelineService {
   /**
@@ -46,7 +68,9 @@ export class PipelineService {
     paidAmount?: number,
     paidCurrency?: string
   ): Promise<{ invoice: Invoice; transactions: Transaction[]; payouts: Payout[] }> {
-    return await store.withTransaction(() => this.applyCollection(invoiceId, payazaRef, paidAmount, paidCurrency));
+    const result = await store.withTransaction(() => this.applyCollection(invoiceId, payazaRef, paidAmount, paidCurrency));
+    await sendPayoutAlerts(result.alerts);
+    return { invoice: result.invoice, transactions: result.transactions, payouts: result.payouts };
   }
 
   private async applyCollection(
@@ -54,7 +78,7 @@ export class PipelineService {
     payazaRef?: string,
     paidAmount?: number,
     paidCurrency?: string
-  ): Promise<{ invoice: Invoice; transactions: Transaction[]; payouts: Payout[] }> {
+  ): Promise<{ invoice: Invoice; transactions: Transaction[]; payouts: Payout[]; alerts: PayoutAlert[] }> {
     const invoice = await store.getInvoice(invoiceId);
     if (!invoice) {
       throw new Error(`Invoice ${invoiceId} not found`);
@@ -67,6 +91,7 @@ export class PipelineService {
         invoice,
         transactions: await store.getTransactions(invoiceId),
         payouts: groups.flat().filter((p) => p.invoice_id === invoiceId),
+        alerts: [],
       };
     }
 
@@ -120,6 +145,7 @@ export class PipelineService {
     await store.addTransaction(convTx);
 
     const generatedPayouts: Payout[] = [];
+    const alerts: PayoutAlert[] = [];
 
     if (invoice.type === "direct") {
       // Stawi Direct Flow: Immediate settlement & credit to exporter
@@ -161,9 +187,13 @@ export class PipelineService {
           };
           await store.addPayout(payout);
           generatedPayouts.push(payout);
-
-          // Best-effort SMS alert
-          notify.notifyPayoutLanded(exporter.phone_number, netKesCents, "Stawi").catch(() => {});
+          alerts.push({
+            phone: exporter.phone_number,
+            name: exporter.full_name,
+            amountKesCents: netKesCents,
+            where: "your Stawi balance",
+            reference: invoice.reference,
+          });
         }
       }
     } else {
@@ -172,10 +202,11 @@ export class PipelineService {
       invoice.split_approved = false;
       await store.saveInvoice(invoice);
 
-      // Pre-calculate preview and mark incoming_kes_cents on members
+      // Incoming is only the farmers on this invoice's shipment.
       if (invoice.coop_id) {
-        const members = await store.getCoopMembers(invoice.coop_id);
-        const splitLines = splitByShares(grossKesCents, platformFeeCents, members);
+        const shipment = await store.getShipmentByInvoice(invoice.id);
+        const farmers = shipment?.farmers.filter((farmer) => farmer.kilos > 0) ?? [];
+        const splitLines = splitByKilos(grossKesCents, platformFeeCents, farmers);
         for (const line of splitLines) {
           const acc = await store.getAccount(line.account_id);
           if (acc) {
@@ -190,6 +221,7 @@ export class PipelineService {
       invoice,
       transactions: await store.getTransactions(invoiceId),
       payouts: generatedPayouts,
+      alerts,
     };
   }
 
@@ -202,14 +234,47 @@ export class PipelineService {
       return null;
     }
 
-    const members = await store.getCoopMembers(invoice.coop_id);
-    if (members.length === 0) return [];
+    const shipment = await store.getShipmentByInvoice(invoice.id);
+    const farmers = shipment?.farmers.filter((farmer) => farmer.kilos > 0) ?? [];
+    if (farmers.length === 0) return [];
 
     const fxRate = invoice.fx_rate || this.getFxRate(invoice.currency);
     const grossKesCents = toKesCents(invoice.amount, invoice.currency, fxRate);
     const platformFeeCents = invoice.fee_kes_cents !== null ? invoice.fee_kes_cents : feeCents(grossKesCents, 0.8);
 
-    return splitByShares(grossKesCents, platformFeeCents, members);
+    return splitByKilos(grossKesCents, platformFeeCents, farmers);
+  }
+
+  /**
+   * Rewrites incoming balances for a co-op from its settling invoices.
+   * Used after the treasurer changes who is on a shipment that is already waiting on the split.
+   */
+  public async refreshCoopIncoming(coopId: string): Promise<void> {
+    const members = await store.getCoopMembers(coopId);
+    const totals = new Map<string, { live: number; demo: number }>();
+    for (const member of members) totals.set(member.account_id, { live: 0, demo: 0 });
+
+    const invoices = await store.getInvoices({ coop_id: coopId });
+    for (const invoice of invoices) {
+      if (invoice.status !== "settling") continue;
+      const lines = await this.getSplitPreview(invoice.id);
+      if (!lines) continue;
+      for (const line of lines) {
+        const row = totals.get(line.account_id) ?? { live: 0, demo: 0 };
+        if (invoice.is_demo) row.demo += line.net_kes_cents;
+        else row.live += line.net_kes_cents;
+        totals.set(line.account_id, row);
+      }
+    }
+
+    for (const member of members) {
+      const account = await store.getAccount(member.account_id);
+      if (!account) continue;
+      const row = totals.get(member.account_id) ?? { live: 0, demo: 0 };
+      account.incoming_kes_cents = row.live;
+      account.demo_incoming_kes_cents = row.demo;
+      await store.saveAccount(account);
+    }
   }
 
   /**
@@ -224,14 +289,17 @@ export class PipelineService {
     treasurerId: string,
     pin: string
   ): Promise<{ success: boolean; invoice?: Invoice; payouts?: Payout[]; error?: string; attemptsLeft?: number; lockedUntil?: string }> {
-    return await store.withTransaction(() => this.applyCoopSplit(invoiceId, treasurerId, pin));
+    const result = await store.withTransaction(() => this.applyCoopSplit(invoiceId, treasurerId, pin));
+    await sendPayoutAlerts(result.alerts ?? []);
+    const { alerts: _alerts, ...rest } = result;
+    return rest;
   }
 
   private async applyCoopSplit(
     invoiceId: string,
     treasurerId: string,
     pin: string
-  ): Promise<{ success: boolean; invoice?: Invoice; payouts?: Payout[]; error?: string; attemptsLeft?: number; lockedUntil?: string }> {
+  ): Promise<{ success: boolean; invoice?: Invoice; payouts?: Payout[]; alerts?: PayoutAlert[]; error?: string; attemptsLeft?: number; lockedUntil?: string }> {
     const invoice = await store.getInvoice(invoiceId);
     if (!invoice) {
       return { success: false, error: "Invoice not found" };
@@ -272,9 +340,10 @@ export class PipelineService {
       };
     }
 
-    const members = await store.getCoopMembers(coop.id);
-    if (members.length === 0) {
-      return { success: false, error: "Co-op has no members to receive payout" };
+    const shipment = await store.getShipmentByInvoice(invoice.id);
+    const farmers = shipment?.farmers.filter((farmer) => farmer.kilos > 0) ?? [];
+    if (farmers.length === 0) {
+      return { success: false, error: "Add farmers to the shipment before approving the split" };
     }
 
     const demo = invoice.is_demo === true;
@@ -305,9 +374,10 @@ export class PipelineService {
     };
     await store.addTransaction(settleTx);
 
-    // Exact allocation by shares
-    const splitLines = splitByShares(grossKesCents, platformFeeCents, members);
+    // Exact allocation by the kilos on this shipment
+    const splitLines = splitByKilos(grossKesCents, platformFeeCents, farmers);
     const createdPayouts: Payout[] = [];
+    const alerts: PayoutAlert[] = [];
 
     for (const line of splitLines) {
       const farmer = await store.getAccount(line.account_id);
@@ -330,8 +400,13 @@ export class PipelineService {
         };
         await store.addPayout(payout);
         createdPayouts.push(payout);
-
-        notify.notifyPayoutLanded(farmer.phone_number, line.net_kes_cents, "Stawi").catch(() => {});
+        alerts.push({
+          phone: farmer.phone_number,
+          name: farmer.full_name,
+          amountKesCents: line.net_kes_cents,
+          where: "your Stawi balance",
+          reference: invoice.reference,
+        });
       }
     }
 
@@ -339,6 +414,7 @@ export class PipelineService {
       success: true,
       invoice,
       payouts: createdPayouts,
+      alerts,
     };
   }
 
@@ -367,9 +443,16 @@ export class PipelineService {
           const account = await store.getAccount(payout.account_id);
           const destination = account?.payout_destinations.find((d) => d.id === payout.destination_id);
           if (account) {
-            notify
-              .notifyPayoutLanded(account.phone_number, payout.amount_kes_cents, destination?.details || "M-Pesa")
-              .catch(() => {});
+            const where = destination?.type === "bank" ? "your bank" : "M-Pesa";
+            await sendPayoutAlerts([
+              {
+                phone: account.phone_number,
+                name: account.full_name,
+                amountKesCents: payout.amount_kes_cents,
+                where,
+                reference: "Withdrawal",
+              },
+            ]);
           }
         }
         return { matched: true };
@@ -460,7 +543,12 @@ export class PipelineService {
     pin: string,
     idempotencyKey?: string
   ): Promise<{ success: boolean; payout?: Payout; error?: string; attemptsLeft?: number; lockedUntil?: string }> {
-    return await store.withTransaction(() => this.applyWithdraw(accountId, destinationId, amountKesCents, pin, idempotencyKey));
+    const result = await store.withTransaction(() =>
+      this.applyWithdraw(accountId, destinationId, amountKesCents, pin, idempotencyKey)
+    );
+    await sendPayoutAlerts(result.alerts ?? []);
+    const { alerts: _alerts, ...rest } = result;
+    return rest;
   }
 
   private async applyWithdraw(
@@ -469,7 +557,7 @@ export class PipelineService {
     amountKesCents: number,
     pin: string,
     idempotencyKey?: string
-  ): Promise<{ success: boolean; payout?: Payout; error?: string; attemptsLeft?: number; lockedUntil?: string }> {
+  ): Promise<{ success: boolean; payout?: Payout; alerts?: PayoutAlert[]; error?: string; attemptsLeft?: number; lockedUntil?: string }> {
     // 1. Idempotency Check
     if (idempotencyKey) {
       const existing = await store.getPayoutByIdempotency(idempotencyKey);
@@ -584,13 +672,22 @@ export class PipelineService {
     };
     await store.addPayout(payout);
 
-    if (settled) {
-      notify.notifyPayoutLanded(account.phone_number, amountKesCents, destination.details).catch(() => {});
-    }
+    const alerts: PayoutAlert[] = settled
+      ? [
+          {
+            phone: account.phone_number,
+            name: account.full_name,
+            amountKesCents,
+            where: destination.type === "bank" ? "your bank" : "M-Pesa",
+            reference: "Withdrawal",
+          },
+        ]
+      : [];
 
     return {
       success: true,
       payout,
+      alerts,
     };
   }
 }

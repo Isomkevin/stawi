@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs";
-import { feeCents, splitByShares, toKesCents } from "../src/services/money";
+import { feeCents, splitByKilos, toKesCents } from "../src/services/money";
 import { seedDatabase, SEED_IDS } from "../src/data/seed";
 import { store } from "../src/store";
 import { Payout } from "../src/types";
@@ -114,7 +114,7 @@ describe("rich demo seed", () => {
       expect(account.demo_balance_kes_cents).toBe(credits - withdrawn);
       expect(account.demo_balance_kes_cents).toBeGreaterThanOrEqual(0);
     }
-    expect(payoutCount).toBeGreaterThanOrEqual(400);
+    expect(payoutCount).toBeGreaterThanOrEqual(140);
     expect(failedWithdrawal).toBe(true);
 
     for (const invoice of invoices) {
@@ -133,10 +133,11 @@ describe("rich demo seed", () => {
       if (invoice.status !== "settling" || !invoice.coop_id || invoice.fx_rate == null || invoice.fee_kes_cents == null) {
         continue;
       }
-      const members = await store.getCoopMembers(invoice.coop_id);
       const gross = toKesCents(invoice.amount, invoice.currency, invoice.fx_rate);
       expect(feeCents(gross, 0.8)).toBe(invoice.fee_kes_cents);
-      for (const line of splitByShares(gross, invoice.fee_kes_cents, members)) {
+      const shipment = (await store.listShipments(invoice.coop_id)).find((item) => item.invoice_id === invoice.id);
+      expect(shipment?.farmers.length).toBeGreaterThan(0);
+      for (const line of splitByKilos(gross, invoice.fee_kes_cents, shipment?.farmers ?? [])) {
         expectedIncoming.set(line.account_id, (expectedIncoming.get(line.account_id) ?? 0) + line.net_kes_cents);
       }
     }

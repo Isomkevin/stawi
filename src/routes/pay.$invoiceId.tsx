@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { motion } from "motion/react";
 import {
   ArrowLeft,
@@ -11,10 +11,12 @@ import {
   XCircle,
 } from "lucide-react";
 import { useState } from "react";
-import { api } from "@/lib/api";
-import type { Invoice, Transaction } from "@/lib/types";
+import { api, isMock } from "@/lib/api";
+import type { Invoice, InvoiceDetail, Transaction } from "@/lib/types";
+import { ApiError } from "@/lib/types";
 import { formatCurrency, formatDate, formatKesCents } from "@/lib/format";
-import { invoiceDetailOptions, accountOptions, coopOptions, coopMembersOptions } from "@/features/buyer/queries";
+import { invoiceDetailOptions } from "@/features/buyer/queries";
+import { openPayazaCheckout } from "@/lib/payazaWidget";
 import { PayazaCheckout } from "@/components/stawi/Checkout";
 import { DemoBadge } from "@/components/stawi/DemoDataControl";
 import { StatusChip } from "@/components/stawi/StatusChip";
@@ -50,21 +52,8 @@ function PayPage() {
   const { data } = useSuspenseQuery(invoiceDetailOptions(invoiceId));
   const invoice = data.invoice;
 
-  const coopId = invoice.coop_id;
-  const accountId = invoice.account_id;
-  // Optional lookups: only one of these exists per invoice type.
-  const coopQuery = useQuery({ ...coopOptions(coopId ?? "none"), enabled: Boolean(coopId) });
-  const membersQuery = useQuery({
-    ...coopMembersOptions(coopId ?? "none"),
-    enabled: Boolean(coopId),
-  });
-  const accountQuery = useQuery({
-    ...accountOptions(accountId ?? "none"),
-    enabled: Boolean(accountId),
-  });
-
-  const payeeName =
-    coopQuery.data?.name ?? accountQuery.data?.full_name ?? "Stawi seller";
+  const payeeName = data.payee_name ?? "Stawi seller";
+  const farmerCount = data.farmer_count ?? null;
 
   if (invoice.status === "pending" && invoice.due_at && new Date(invoice.due_at) < new Date()) {
     return (
@@ -100,14 +89,14 @@ function PayPage() {
         <ReceiptView
           invoice={invoice}
           payeeName={payeeName}
-          farmerCount={coopId ? (membersQuery.data?.length ?? 0) : null}
+          farmerCount={farmerCount}
           transactions={data.transactions}
         />
       ) : (
         <UnpaidView
           invoice={invoice}
           payeeName={payeeName}
-          farmerCount={coopId ? (membersQuery.data?.length ?? 0) : null}
+          farmerCount={farmerCount}
         />
       )}
     </Shell>
@@ -124,16 +113,55 @@ function UnpaidView({
   farmerCount: number | null;
 }) {
   const [phase, setPhase] = useState<Phase>("idle");
+  const [payError, setPayError] = useState<string | null>(null);
   const queryClient = useQueryClient();
+  const demoBlocked = !isMock && invoice.is_demo === true;
   const pay = useMutation({
-    mutationFn: () => api.simulatePayment(invoice.id),
-    onSuccess: (updated) => {
-      queryClient.setQueryData(["invoice", invoice.id], {
-        invoice: updated,
-        transactions: [],
+    mutationFn: async (): Promise<{ invoice: Invoice | null; declined?: boolean }> => {
+      if (isMock) return { invoice: await api.simulatePayment(invoice.id) };
+
+      const session = await api.createCheckoutSession(invoice.id);
+      const outcome = await openPayazaCheckout({
+        session,
+        amount: invoice.amount,
+        currency: invoice.currency,
+        buyerName: invoice.buyer_name,
+        buyerEmail: invoice.buyer_email,
+        buyerPhone: invoice.buyer_phone,
+        invoiceId: invoice.id,
       });
+      if (outcome === "redirect" || outcome === "closed") return { invoice: null };
+      if (outcome === "declined") return { invoice: null, declined: true };
+
+      for (let attempt = 0; attempt < 15; attempt += 1) {
+        const detail = await api.getInvoice(invoice.id);
+        if (detail.invoice.status !== "pending") return { invoice: detail.invoice };
+        await new Promise((resolve) => window.setTimeout(resolve, 2000));
+      }
+      throw new ApiError(202, "Payment is with your bank. Refresh this page in a moment.");
+    },
+    onSuccess: (result) => {
+      const updated = result.invoice;
+      if (result.declined) {
+        setPhase("declined");
+        setPayError(null);
+        return;
+      }
+      if (!updated) return;
+      queryClient.setQueryData(["invoice", invoice.id], (current: InvoiceDetail | undefined) => ({
+        invoice: updated,
+        transactions: current?.transactions ?? [],
+        split_preview: current?.split_preview ?? null,
+        payee_name: current?.payee_name,
+        farmer_count: current?.farmer_count,
+      }));
       queryClient.invalidateQueries({ queryKey: ["invoice", invoice.id] });
       setPhase("idle");
+      setPayError(null);
+    },
+    onError: (err) => {
+      setPhase("idle");
+      setPayError(err instanceof ApiError ? err.message : "Payment could not be started");
     },
   });
 
@@ -205,8 +233,12 @@ function UnpaidView({
       <Button
         size="lg"
         className="w-full min-h-[52px] text-base"
-        disabled={pay.isPending}
-        onClick={() => setPhase("checkout")}
+        disabled={pay.isPending || demoBlocked}
+        onClick={() => {
+          setPayError(null);
+          if (isMock) setPhase("checkout");
+          else pay.mutate();
+        }}
       >
         Pay {formatCurrency(invoice.amount, invoice.currency)} securely
       </Button>
@@ -233,6 +265,15 @@ function UnpaidView({
         >
           <XCircle className="size-4 shrink-0" strokeWidth={2} />
           The payment was declined. No money has moved — you can try again.
+        </p>
+      )}
+      {payError && (
+        <p
+          role="alert"
+          className="flex items-center gap-2 rounded-xl border border-terracotta/40 bg-terracotta/10 px-4 py-3 text-sm text-terracotta"
+        >
+          <XCircle className="size-4 shrink-0" strokeWidth={2} />
+          {payError}
         </p>
       )}
       {pay.isPending && (

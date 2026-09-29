@@ -150,4 +150,68 @@ describe("REST API Endpoints", () => {
     process.env.PAYAZA_MODE = "mock";
     delete process.env.AUTH_REQUIRED;
   });
+
+  it("names the seller on a public invoice without a session", async () => {
+    const account = await request(app).post("/accounts").send({
+      full_name: "Grace Wanjiru",
+      phone_number: "+254700111222",
+      id_number: "ID777888",
+      pin: "1234",
+      destination: { type: "mpesa", details: "+254700111222", account_name: "Grace Wanjiru" },
+      ussd: false,
+    });
+    const coop = await request(app).post("/coops").send({
+      name: "Kiambu Highlands Coffee Co-op",
+      treasurer_account_id: account.body.id,
+    });
+    const invoice = await request(app).post("/invoices").send({
+      type: "coop",
+      coop_id: coop.body.id,
+      buyer_name: "East Produce Kenya",
+      buyer_email: "ap@eastproduce.example",
+      amount: 1000,
+      currency: "USD",
+      description: "10 tonnes coffee",
+    });
+
+    const res = await request(app).get(`/invoices/${invoice.body.id}`);
+    expect(res.status).toBe(200);
+    expect(res.body.payee_name).toBe("Kiambu Highlands Coffee Co-op");
+    expect(res.body.farmer_count).toBe(0);
+    expect(res.body.invoice.buyer_name).toBe("East Produce Kenya");
+  });
+
+  it("refuses simulated payment when Payaza is not in mock mode", async () => {
+    const invoice = await request(app).post("/invoices").send({
+      type: "direct",
+      account_id: "acc_demo",
+      buyer_name: "East Produce Kenya",
+      buyer_email: "ap@eastproduce.example",
+      amount: 1000,
+      currency: "USD",
+      description: "Coffee",
+    });
+    process.env.PAYAZA_MODE = "sandbox";
+    const res = await request(app).post(`/dev/simulate-payment/${invoice.body.id}`);
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/PAYAZA_MODE=mock/);
+    process.env.PAYAZA_MODE = "mock";
+  });
+
+  it("checkout session includes the Payaza connection mode", async () => {
+    const invoice = await request(app).post("/invoices").send({
+      type: "direct",
+      account_id: "acc_demo",
+      buyer_name: "East Produce Kenya",
+      buyer_email: "ap@eastproduce.example",
+      amount: 1000,
+      currency: "USD",
+      description: "Coffee",
+    });
+    const res = await request(app).post(`/invoices/${invoice.body.id}/checkout-session`);
+    expect(res.status).toBe(200);
+    expect(res.body.connection_mode).toBe("Test");
+    expect(res.body.transaction_reference).toBeTruthy();
+    expect(res.body.public_key).toBeTruthy();
+  });
 });

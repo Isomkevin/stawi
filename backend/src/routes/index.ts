@@ -5,7 +5,7 @@ import { clearSessionCookie, enforceAuth, hashToken, issueSession, requestOtp, r
 import { classifyPayazaWebhook, payaza } from "../services/payaza";
 import { hashPin } from "../services/pin";
 import { pipeline } from "../services/pipeline";
-import { advanceShipment } from "../services/shipments";
+import { addShipmentFarmer, advanceShipment, openShipmentForInvoice, removeShipmentFarmer } from "../services/shipments";
 import { store } from "../store";
 import { Account, CoopMetrics, CoopMetricsBucket, CoopMember, DemoDataSettings, Invoice, PublicAccount, UNRESOLVED_ACCOUNT_NAME } from "../types";
 import { DEMO_DATA_EFFECT, demoDataDefault, demoDataVisible, includeInView, isDemo, parseDemoDataEnabled } from "../services/demoData";
@@ -20,6 +20,20 @@ apiRouter.use(enforceAuth);
 function getParam(param: string | string[] | undefined): string {
   if (Array.isArray(param)) return param[0] || "";
   return param || "";
+}
+
+/** Seller label for the public pay page. Does not include member phones or account numbers. */
+async function publicPayee(invoice: Invoice): Promise<{ payee_name: string; farmer_count: number | null }> {
+  if (invoice.type === "coop" && invoice.coop_id) {
+    const coop = await store.getCoop(invoice.coop_id);
+    const members = await store.getCoopMembers(invoice.coop_id);
+    return { payee_name: coop?.name || "Stawi seller", farmer_count: members.length };
+  }
+  if (invoice.account_id) {
+    const account = await store.getAccount(invoice.account_id);
+    return { payee_name: account?.full_name || "Stawi seller", farmer_count: null };
+  }
+  return { payee_name: "Stawi seller", farmer_count: null };
 }
 
 function toPublicAccount(account: Account, viewer?: Account): PublicAccount {
@@ -547,6 +561,38 @@ apiRouter.patch("/shipments/:id", async (req: Request, res: Response) => {
   res.status(200).json(result.shipment);
 });
 
+apiRouter.post("/shipments/:id/farmers", async (req: Request, res: Response) => {
+  const accountId = req.body?.account_id;
+  const kilos = Number(req.body?.kilos);
+  if (!accountId || !Number.isInteger(kilos) || kilos <= 0) {
+    res.status(400).json({ error: "account_id and a whole number of kilos are required" });
+    return;
+  }
+  const result = await addShipmentFarmer(getParam(req.params.id), String(accountId), kilos);
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  await refreshIncomingIfSettling(result.shipment);
+  res.status(result.created ? 201 : 200).json(result.shipment);
+});
+
+apiRouter.delete("/shipments/:id/farmers/:accountId", async (req: Request, res: Response) => {
+  const result = await removeShipmentFarmer(getParam(req.params.id), getParam(req.params.accountId));
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  await refreshIncomingIfSettling(result.shipment);
+  res.status(200).json(result.shipment);
+});
+
+async function refreshIncomingIfSettling(shipment: { coop_id: string; invoice_id: string | null }): Promise<void> {
+  if (!shipment.invoice_id) return;
+  const invoice = await store.getInvoice(shipment.invoice_id);
+  if (invoice?.status === "settling") await pipeline.refreshCoopIncoming(shipment.coop_id);
+}
+
 apiRouter.delete("/shipments/:id", async (req: Request, res: Response) => {
   const shipment = await store.getShipment(getParam(req.params.id));
   if (!shipment) {
@@ -704,6 +750,7 @@ apiRouter.post("/invoices", async (req: Request, res: Response) => {
   };
 
   await store.saveInvoice(invoice);
+  if (invoice.type === "coop" && invoice.coop_id) await openShipmentForInvoice(invoice);
   res.status(201).json(invoice);
 });
 
@@ -720,11 +767,14 @@ apiRouter.get("/invoices/:id", async (req: Request, res: Response) => {
 
   const transactions = await store.getTransactions(invoice.id);
   const split_preview = invoice.type === "coop" ? await pipeline.getSplitPreview(invoice.id) : null;
+  const payee = await publicPayee(invoice);
 
   res.status(200).json({
     invoice,
     transactions,
     split_preview,
+    payee_name: payee.payee_name,
+    farmer_count: payee.farmer_count,
   });
 });
 

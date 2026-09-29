@@ -1,4 +1,4 @@
-import { allocate, feeCents, splitByShares, toKesCents } from "../src/services/money";
+import { allocate, feeCents, splitByKilos, splitByShares, toKesCents } from "../src/services/money";
 
 describe("Money Service", () => {
   describe("toKesCents", () => {
@@ -98,6 +98,21 @@ describe("Money Service", () => {
       for (const line of lines) {
         expect(line.gross_kes_cents).toBe(line.net_kes_cents + line.fee_kes_cents);
       }
+    });
+  });
+
+  describe("splitByKilos", () => {
+    it("pays in proportion to kilos and reports percents that sum to 100", () => {
+      const gross = 1_000_000;
+      const fee = 8_000;
+      const lines = splitByKilos(gross, fee, [
+        { account_id: "a", kilos: 300 },
+        { account_id: "b", kilos: 100 },
+      ]);
+      expect(lines.map((line) => line.share)).toEqual([75, 25]);
+      expect(lines.reduce((sum, line) => sum + line.share, 0)).toBe(100);
+      expect(lines.reduce((sum, line) => sum + line.net_kes_cents, 0)).toBe(gross - fee);
+      expect(lines[0].net_kes_cents).toBeGreaterThan(lines[1].net_kes_cents);
     });
   });
 });

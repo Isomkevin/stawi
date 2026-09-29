@@ -138,6 +138,10 @@ export type InvoiceDetail = {
   invoice: Invoice;
   transactions: Transaction[];
   split_preview: SplitLine[] | null;
+  /** Co-op name or exporter name. Present on the public pay page. */
+  payee_name?: string;
+  /** Member count for a co-op invoice. Null for a direct invoice. */
+  farmer_count?: number | null;
 };
 
 export type CheckoutSession = {
@@ -145,6 +149,8 @@ export type CheckoutSession = {
   checkoutUrl: string | null;
   public_key: string;
   transaction_reference: string;
+  link_id?: string | null;
+  connection_mode?: "Test" | "Live";
 };
 
 export type CreateAccountBody = {

@@ -1,5 +1,16 @@
 import { SplitLine } from "../types";
 
+/** Formats integer KES cents as `1,234.50`. The same text is used in SMS and USSD. */
+export function formatKes(cents: number): string {
+  const negative = cents < 0;
+  const abs = Math.abs(Math.trunc(cents));
+  const whole = Math.floor(abs / 100)
+    .toString()
+    .replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  const frac = String(abs % 100).padStart(2, "0");
+  return `${negative ? "-" : ""}${whole}.${frac}`;
+}
+
 /**
  * Converts a foreign or local currency amount into integer KES cents.
  * Rule: Money is always integer KES cents. Never floats.
@@ -114,4 +125,32 @@ export function splitByShares(
       net_kes_cents: net,
     };
   });
+}
+
+/**
+ * Splits a co-op invoice across the farmers on its shipment.
+ * Kilos are the weights. `share` is those kilos as an integer percent, and the percents sum to 100.
+ */
+export function splitByKilos(
+  grossKesCents: number,
+  feeKesCents: number,
+  farmers: { account_id: string; kilos: number }[]
+): SplitLine[] {
+  const weighed = farmers.filter((farmer) => farmer.kilos > 0);
+  if (weighed.length === 0) return [];
+
+  const lines = splitByShares(
+    grossKesCents,
+    feeKesCents,
+    weighed.map((farmer) => ({ account_id: farmer.account_id, contribution_share: farmer.kilos }))
+  );
+  const percents = allocate(
+    100,
+    weighed.map((farmer) => ({ account_id: farmer.account_id, share: farmer.kilos }))
+  );
+
+  return lines.map((line, index) => ({
+    ...line,
+    share: percents[index].amt,
+  }));
 }

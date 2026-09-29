@@ -20,9 +20,8 @@ type Props = {
 };
 
 /**
- * PayazaCheckout wraps the payment provider. In mock mode it simulates the
- * hosted checkout (approve / decline / cancel); live mode will hand off to the
- * provider's hosted page instead.
+ * Mock-mode stand-in for Payaza. Live checkout uses the Payaza Web SDK
+ * from the pay page (openPayazaCheckout) and does not call this dialog.
  */
 export function PayazaCheckout({
   open,

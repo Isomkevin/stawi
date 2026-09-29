@@ -222,6 +222,104 @@ describe("Co-op shipments", () => {
     expect(again.status).toBe(404);
   });
 
+  it("adds a co-op farmer to a shipment so they can be paid", async () => {
+    await store.saveAccount({
+      id: "acc_farmer",
+      full_name: "Wanjiku",
+      phone_number: "+254722000001",
+      id_number: "ID2",
+      payout_destinations: [],
+      coop_id: "coop_test",
+      channel_capability: "webapp",
+      balance_kes_cents: 0,
+      incoming_kes_cents: 50_000,
+      demo_incoming_kes_cents: 0,
+    });
+    await store.saveAccount({
+      id: "acc_other",
+      full_name: "Achieng",
+      phone_number: "+254722000002",
+      id_number: "ID3",
+      payout_destinations: [],
+      coop_id: "coop_test",
+      channel_capability: "webapp",
+      balance_kes_cents: 0,
+      incoming_kes_cents: 50_000,
+    });
+    await store.addCoopMember({ coop_id: "coop_test", account_id: "acc_farmer", contribution_share: 50 });
+    await store.addCoopMember({ coop_id: "coop_test", account_id: "acc_other", contribution_share: 50 });
+    await store.saveInvoice({
+      id: "inv_settling",
+      type: "coop",
+      account_id: null,
+      coop_id: "coop_test",
+      buyer_name: "Buyer",
+      buyer_email: "buyer@example.com",
+      amount: 100,
+      currency: "USD",
+      description: "Lot",
+      reference: "INV-SETTLING",
+      status: "settling",
+      split_approved: false,
+      fx_rate: 129,
+      fee_kes_cents: 10320,
+      kes_total_cents: 1_279_680,
+      payaza_checkout_reference: null,
+      created_at: new Date().toISOString(),
+      due_at: null,
+    });
+    await store.saveShipment(shipment({ status: "draft", quantity_kg: 100, farmers: [], invoice_id: null }));
+    const blocked = await request(app).patch("/shipments/shp_test").send({ action: "advance" });
+    expect(blocked.status).toBe(400);
+    expect(blocked.body.error).toBe("Add farmers whose kilos add up to the shipment quantity");
+
+    await store.saveShipment(shipment({
+      status: "delivered",
+      quantity_kg: 100,
+      farmers: [],
+      invoice_id: "inv_settling",
+    }));
+
+    const stranger = await request(app).post("/shipments/shp_test/farmers").send({ account_id: "acc_missing", kilos: 10 });
+    expect(stranger.status).toBe(400);
+
+    const added = await request(app).post("/shipments/shp_test/farmers").send({ account_id: "acc_farmer", kilos: 60 });
+    expect(added.status).toBe(201);
+    expect(added.body.farmers).toEqual([{ account_id: "acc_farmer", kilos: 60 }]);
+
+    const updated = await request(app).post("/shipments/shp_test/farmers").send({ account_id: "acc_farmer", kilos: 40 });
+    expect(updated.status).toBe(200);
+
+    const second = await request(app).post("/shipments/shp_test/farmers").send({ account_id: "acc_other", kilos: 60 });
+    expect(second.status).toBe(201);
+    expect(second.body.farmers).toEqual([
+      { account_id: "acc_farmer", kilos: 40 },
+      { account_id: "acc_other", kilos: 60 },
+    ]);
+
+    const farmer = await store.getAccount("acc_farmer");
+    const other = await store.getAccount("acc_other");
+    expect((farmer?.incoming_kes_cents ?? 0) + (other?.incoming_kes_cents ?? 0)).toBe(1_279_680);
+    expect(other?.incoming_kes_cents).toBeGreaterThan(farmer?.incoming_kes_cents ?? 0);
+
+    const tooMuch = await request(app).post("/shipments/shp_test/farmers").send({ account_id: "acc_other", kilos: 80 });
+    expect(tooMuch.status).toBe(400);
+
+    const removed = await request(app).delete("/shipments/shp_test/farmers/acc_other");
+    expect(removed.status).toBe(200);
+    expect(removed.body.farmers).toEqual([{ account_id: "acc_farmer", kilos: 40 }]);
+    expect((await store.getAccount("acc_other"))?.incoming_kes_cents).toBe(0);
+    expect((await store.getAccount("acc_farmer"))?.incoming_kes_cents).toBe(1_279_680);
+
+    await store.saveInvoice({
+      ...(await store.getInvoice("inv_settling"))!,
+      status: "completed",
+      split_approved: true,
+    });
+    const locked = await request(app).post("/shipments/shp_test/farmers").send({ account_id: "acc_other", kilos: 60 });
+    expect(locked.status).toBe(409);
+  });
+
   it("returns 404 for an unknown co-op or shipment", async () => {
     const missingCoop = await request(app).get("/coops/missing/shipments");
     expect(missingCoop.status).toBe(404);

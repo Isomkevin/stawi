@@ -236,6 +236,19 @@ check(10, "Stawi Co-op: Collection puts invoice into settling state (awaiting sp
 # Check 11: Stawi Co-op Flow - Split Preview with Exact Sums
 def check_11():
     inv_id = context["coop_inv"]["id"]
+    coop_id = context["seed"]["coop_id"]
+    status, shipments, _ = request("GET", f"/coops/{coop_id}/shipments", expected_status=200)
+    shipment = next(item for item in shipments if item.get("invoice_id") == inv_id)
+    farmers = context["seed"]["farmer_ids"]
+    kilos = shipment["quantity_kg"] // len(farmers)
+    assert kilos > 0, "Shipment quantity is too small for the roster"
+    for farmer_id in farmers:
+        request(
+            "POST",
+            f"/shipments/{shipment['id']}/farmers",
+            data={"account_id": farmer_id, "kilos": kilos},
+            expected_status=201,
+        )
     status, detail, _ = request("GET", f"/invoices/{inv_id}", expected_status=200)
     preview = detail.get("split_preview")
     assert preview is not None, "split_preview missing"

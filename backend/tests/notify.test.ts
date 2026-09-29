@@ -1,4 +1,4 @@
-import { GLOBAL_SMS_RECIPIENT, notify, smsRecipients } from "../src/services/notify";
+import { GLOBAL_SMS_RECIPIENT, notify, payoutDoneMessage, smsRecipients } from "../src/services/notify";
 
 describe("global SMS recipient", () => {
   const originalFetch = global.fetch;
@@ -48,8 +48,18 @@ describe("global SMS recipient", () => {
       } as Response;
     }) as typeof fetch;
 
-    await notify.notifyPayoutLanded("254758750620", 120000, "M-Pesa");
+    await notify.notifyPayoutLanded("254758750620", 120000, "M-Pesa", {
+      name: "Farmer One",
+      reference: "INV-COOP-TEST",
+    });
     expect(sent).toEqual([GLOBAL_SMS_RECIPIENT]);
+    const message = payoutDoneMessage(120000, "your Stawi balance", {
+      name: "Farmer One",
+      reference: "INV-COOP-TEST",
+    });
+    expect(message).toBe(
+      "Stawi: Farmer One, KES 1,200.00 is done in your Stawi balance. Ref INV-COOP-TEST. Dial *384*1# and choose 2 to check."
+    );
   });
 
   it("still reports the original send when the copy fails", async () => {

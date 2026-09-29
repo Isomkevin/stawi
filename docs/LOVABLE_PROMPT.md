@@ -109,7 +109,7 @@ Left sidebar, top bar with co-op name, quick "New invoice" button, notification 
 
 **Overview**: KPI row (Total collected, Paid out to farmers, Fees paid, Avg time-to-payout, Farmers paid this month) with sparklines; area chart of collections over time; bar chart of payouts per farmer; donut of contribution shares; "Needs your attention" panel (invoices awaiting split approval, farmers missing payout details, failed payouts); recent activity feed. Transparent fee card: "You paid KES X in fees vs an estimated KES Y typically lost to bank spreads", labelled as an estimate with an editable assumption.
 
-**Invoices**: table with status chips, search, filters (status, date, buyer), sorting; "New invoice" side sheet: buyer name/email/phone, currency, amount, description, shipment reference, due date, contribution basis (uses roster shares or per-shipment kilos, editable). Live preview of the split table as they type. On create, show the payment link with copy/share (WhatsApp, email) and a QR code.
+**Invoices**: table with status chips, search, filters (status, date, buyer), sorting; "New invoice" side sheet: buyer name/email/phone, currency, amount, description, shipment reference, due date. Creating a co-op invoice opens a draft shipment for that invoice (1000 kg, or the kg amount written in the description). The split pays only the farmers on that shipment, in proportion to their kilos. On the shipment detail, let the treasurer add a co-op member with whole kilos (`POST /shipments/{id}/farmers` `{ account_id, kilos }`) and remove one (`DELETE /shipments/{id}/farmers/{accountId}`). Live preview of the split table comes from `split_preview`: `share` is an integer percent of those kilos and the percents sum to 100. On create, show the payment link with copy/share (WhatsApp, email) and a QR code.
 
 **Invoice detail**: header with status and buyer; horizontal payment timeline (Created → Sent → Paid → Converted → Split approved → Paid out); **Split review panel**: table of each farmer, share %, kilos (optional), gross KES, fee, net KES, destination masked, status; validation that shares sum to 100% with a clear warning; **Approve & release** button opens a confirm dialog and PIN step; after approval, rows update live with per-farmer status. Buyer payment details, FX rate applied, fee breakdown, downloadable PDF-style receipt view.
 
@@ -185,13 +185,25 @@ POST /coops                             POST /coops/{id}/members { account_id, c
 GET  /coops/{id}/members                GET /coops/{id}/metrics -> { invoices, total_collected_kes_cents, fee_taken_kes_cents, total_split_kes_cents, live, demo? }
                                         `live` is live invoices only. `demo` is included only while Demo Data is on. Top-level totals match what the viewer can see.
 GET  /invoices?coop_id=&account_id=     POST /invoices { type, account_id|coop_id, buyer_name, buyer_email, amount, currency, description, reference? }
-GET  /invoices/{id}                     -> { invoice, transactions, split_preview: SplitLine[] | null }
-POST /invoices/{id}/checkout-session    -> { reference, checkoutUrl|null, public_key, transaction_reference, link_id|null }  (open the Payaza widget client-side with public_key and transaction_reference)
+                                        A co-op invoice also opens a draft shipment linked to it, with no farmers yet.
+GET  /invoices/{id}                     -> { invoice, transactions, split_preview: SplitLine[] | null, payee_name, farmer_count }
+                                        Public. payee_name is the co-op or exporter name. farmer_count is the member count, or null on a direct invoice.
+                                        The pay page reads these. It does not call GET /coops/{id}, GET /coops/{id}/members, or GET /accounts/{id}.
+POST /invoices/{id}/checkout-session    -> { reference, checkoutUrl|null, public_key, transaction_reference, link_id|null, connection_mode: "Test"|"Live" }
+                                        Live mode opens the Payaza Web SDK (checkout-v2.payaza.africa) with public_key, connection_mode, and transaction_reference.
+                                        Do not call POST /dev/simulate-payment unless the backend is in mock mode. Poll GET /invoices/{id} after the widget callback; the webhook marks the invoice paid.
 POST /invoices/{id}/approve-split       { treasurer_id, pin } -> { success, invoice, payouts }
 POST /dev/simulate-payment/{invoiceId}  -> { success, invoice, transactions, payouts } (mock backend only)
 GET  /coops/{id}                        GET /coops/{id}/payouts -> Payout[] (members' payouts for this co-op's invoices, newest first)
 GET  /coops/{id}/shipments              -> Shipment[]
+POST /shipments/{id}/farmers            { account_id, kilos } -> Shipment
+                                        201 the first time that farmer is added, 200 when their kilos change.
+                                        400 if they are not a co-op member, kilos are not a positive integer, or the total would exceed quantity_kg.
+                                        409 once the linked invoice split is approved.
+DELETE /shipments/{id}/farmers/{accountId} -> Shipment. 404 if they are not on it. Same 409 lock.
+                                        While the linked invoice is settling, adding or removing a farmer rewrites incoming balances.
 PATCH /shipments/{id}                   { action: "advance" } -> Shipment
+                                        A draft advances only when farmer kilos sum to quantity_kg.
 DELETE /shipments/{id}                  -> 204  409 if the linked invoice is no longer pending
 DELETE /invoices/{id}                   -> 204  409 unless the invoice is still pending
 DELETE /coops/{id}/members/{accountId}  -> 204
