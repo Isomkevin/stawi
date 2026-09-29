@@ -205,7 +205,7 @@ function Onboarding() {
               <label className="flex items-center justify-between gap-4 rounded-xl border border-border p-4 text-sm">
                 <span>
                   <span className="font-medium">Basic phone access</span>
-                  <span className="block text-muted-foreground">Check balance and withdraw by dialling *384*72#</span>
+                  <span className="block text-muted-foreground">Check balance and withdraw by dialling *384*56990#</span>
                 </span>
                 <Switch checked={ussd} onCheckedChange={setUssd} />
               </label>

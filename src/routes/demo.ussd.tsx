@@ -22,7 +22,7 @@ export const Route = createFileRoute("/demo/ussd")({
 });
 
 type LogEntry = { dir: "req" | "res"; body: string };
-const CODE = "*384*72#";
+const CODE = "*384*56990#";
 const MENU = "CON Stawi\n1. My balance\n2. Last payment status\n3. Withdraw to M-Pesa\n0. Exit";
 
 function UssdSim() {

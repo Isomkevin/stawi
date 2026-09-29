@@ -88,7 +88,7 @@ function HomeTab() {
           <Phone className="size-5 text-sage" />
           <div className="text-sm">
             <p className="font-medium">{t("home.phoneAccess")}</p>
-            <p className="text-xs text-muted-foreground">{t("home.dial", { code: "*384*72#" })}</p>
+            <p className="text-xs text-muted-foreground">{t("home.dial", { code: "*384*56990#" })}</p>
           </div>
         </div>
       )}

@@ -111,7 +111,7 @@ function ProfileTab() {
         <label className="flex min-h-11 items-center justify-between text-sm">
           <span>
             Basic phone access (USSD)
-            <span className="block text-xs text-muted-foreground">Dial *384*72# from any phone</span>
+            <span className="block text-xs text-muted-foreground">Dial *384*56990# from any phone</span>
           </span>
           <Switch checked={ussdOn} onCheckedChange={(v) => setUssd(v)} />
         </label>

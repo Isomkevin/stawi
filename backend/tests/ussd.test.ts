@@ -95,4 +95,60 @@ describe("USSD Gateway Adapter", () => {
     const updated = await store.getAccountByPhone("+254700112233");
     expect(updated?.balance_kes_cents).toBe(250000);
   });
+
+  it("sends the USSD withdrawal through Payaza and leaves it sent", async () => {
+    const previous = {
+      mode: process.env.PAYAZA_MODE,
+      pin: process.env.PAYAZA_PIN,
+      kes: process.env.PAYAZA_KES_ACCOUNT_REF,
+    };
+    process.env.PAYAZA_MODE = "sandbox";
+    process.env.PAYAZA_PIN = "135790";
+    process.env.PAYAZA_KES_ACCOUNT_REF = "KES-TEST-REF";
+
+    const calls: { url: string; body: { transaction_type?: string; service_payload?: { payout_beneficiaries?: unknown[] } } }[] = [];
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn(async (url: unknown, init?: { body?: string }) => {
+      calls.push({ url: String(url), body: init?.body ? JSON.parse(init.body) : {} });
+      return {
+        ok: true,
+        json: async () => ({ response_content: { response_status: "TRANSACTION_INITIATED" } }),
+      } as Response;
+    }) as typeof fetch;
+
+    try {
+      const res = await request(app)
+        .post(`/ussd/callback?s=${secret}`)
+        .send({ sessionId: "S-ussd-pay", phoneNumber: "+254700112233", text: "3*1*1000*1234" });
+
+      expect(res.status).toBe(200);
+      expect(res.text).toContain("END Withdrawal of KES 1,000.00 to +254700112233 initiated.");
+
+      const payoutCalls = calls.filter((call) => call.url.includes("/payout-receptor/payout"));
+      expect(payoutCalls).toHaveLength(1);
+      expect(payoutCalls[0].body.transaction_type).toBe("mobile_money");
+      expect(payoutCalls[0].body.service_payload?.payout_beneficiaries).toHaveLength(1);
+
+      const account = await store.getAccountByPhone("+254700112233");
+      expect(account?.balance_kes_cents).toBe(250000);
+      const payouts = await store.getPayoutsByAccount(account!.id);
+      expect(payouts[0].status).toBe("sent");
+      expect(payouts[0].kind).toBe("withdrawal");
+
+      const replay = await request(app)
+        .post(`/ussd/callback?s=${secret}`)
+        .send({ sessionId: "S-ussd-pay", phoneNumber: "+254700112233", text: "3*1*1000*1234" });
+      expect(replay.text).toContain("initiated.");
+      expect(calls.filter((call) => call.url.includes("/payout-receptor/payout"))).toHaveLength(1);
+      expect((await store.getAccountByPhone("+254700112233"))?.balance_kes_cents).toBe(250000);
+    } finally {
+      global.fetch = originalFetch;
+      if (previous.mode === undefined) delete process.env.PAYAZA_MODE;
+      else process.env.PAYAZA_MODE = previous.mode;
+      if (previous.pin === undefined) delete process.env.PAYAZA_PIN;
+      else process.env.PAYAZA_PIN = previous.pin;
+      if (previous.kes === undefined) delete process.env.PAYAZA_KES_ACCOUNT_REF;
+      else process.env.PAYAZA_KES_ACCOUNT_REF = previous.kes;
+    }
+  });
 });
