@@ -314,17 +314,18 @@ apiRouter.post("/accounts/:id/destinations", async (req: Request, res: Response)
     return;
   }
   const { type, details, account_name, bank_code } = req.body ?? {};
-  if ((type !== "mpesa" && type !== "bank") || !details || !account_name) {
+  if ((type !== "mpesa" && type !== "momo" && type !== "bank") || !details || !account_name) {
     res.status(400).json({ error: "Missing type, details or account_name" });
     return;
   }
   const clean = String(details).replace(/\s/g, "");
-  const valid = type === "mpesa" ? /^\+?\d{9,13}$/.test(clean) : /^\d{6,20}$/.test(clean);
+  const mobile = type === "mpesa" || type === "momo";
+  const valid = mobile ? /^\+?\d{9,13}$/.test(clean) : /^\d{6,20}$/.test(clean);
   if (!valid) {
-    res.status(400).json({ error: type === "mpesa" ? "Invalid M-Pesa number" : "Invalid bank account number" });
+    res.status(400).json({ error: mobile ? "Invalid mobile money number" : "Invalid bank account number" });
     return;
   }
-  const normalized = type === "mpesa" ? store.normalizePhone(clean) : clean;
+  const normalized = mobile ? store.normalizePhone(clean) : clean;
   if (account.payout_destinations.some((d) => d.type === type && d.details === normalized)) {
     res.status(409).json({ error: "Destination already added" });
     return;
@@ -548,6 +549,89 @@ apiRouter.get("/coops/:id/shipments", async (req: Request, res: Response) => {
   res.status(200).json(shipments);
 });
 
+// A Direct exporter's own shipments. Older direct invoices get a shipment on first read.
+apiRouter.get("/accounts/:id/shipments", async (req: Request, res: Response) => {
+  const accountId = getParam(req.params.id);
+  const account = await store.getAccount(accountId);
+  if (!account) {
+    res.status(404).json({ error: "Account not found" });
+    return;
+  }
+  const invoices = await store.getInvoices({ account_id: accountId });
+  for (const invoice of invoices) {
+    if (invoice.type !== "direct") continue;
+    if (await store.getShipmentByInvoice(invoice.id)) continue;
+    await openShipmentForInvoice(invoice);
+  }
+  const visible = seesDemo(req);
+  const shipments = (await store.listAccountShipments(accountId)).filter((shipment) => includeInView(shipment, visible));
+  res.status(200).json(shipments);
+});
+
+// Finds which CSV phones already have a Stawi account. Response carries names only, no ID numbers or balances.
+apiRouter.post("/coops/:id/members/lookup", async (req: Request, res: Response) => {
+  const coopId = getParam(req.params.id);
+  const phones = req.body?.phones;
+  if (!Array.isArray(phones) || phones.length === 0 || phones.length > 1000) {
+    res.status(400).json({ error: "phones must be a list of 1 to 1000 numbers" });
+    return;
+  }
+  const members = await store.getCoopMembers(coopId);
+  const memberIds = new Set(members.map((m) => m.account_id));
+  const results = [];
+  for (const raw of phones) {
+    const phone = typeof raw === "string" ? store.normalizePhone(raw.slice(0, 32)) : "";
+    const account = phone ? await store.getAccountByPhone(phone) : undefined;
+    results.push({
+      phone_number: phone,
+      account_id: account?.id ?? null,
+      full_name: account?.full_name ?? null,
+      already_member: account ? memberIds.has(account.id) : false,
+      other_coop: Boolean(account?.coop_id && account.coop_id !== coopId),
+    });
+  }
+  res.status(200).json(results);
+});
+
+// Texts invite links to farmers. Links must point at this app's onboarding page.
+apiRouter.post("/coops/:id/invites/sms", async (req: Request, res: Response) => {
+  const coop = await store.getCoop(getParam(req.params.id));
+  if (!coop) {
+    res.status(404).json({ error: "Co-op not found" });
+    return;
+  }
+  const recipients = req.body?.recipients;
+  if (!Array.isArray(recipients) || recipients.length === 0 || recipients.length > 500) {
+    res.status(400).json({ error: "recipients must be a list of 1 to 500 farmers" });
+    return;
+  }
+  const { notify } = await import("../services/notify");
+  const { isKenyanPhone } = await import("../services/phone");
+  const results = [];
+  for (const r of recipients) {
+    const phone = typeof r?.phone_number === "string" ? store.normalizePhone(r.phone_number) : "";
+    const name = typeof r?.full_name === "string" ? r.full_name.trim().slice(0, 60) : "";
+    const link = typeof r?.link === "string" ? r.link.trim() : "";
+    if (!isKenyanPhone(phone)) {
+      results.push({ phone_number: phone, sent: false, error: "Not a Kenyan phone number" });
+      continue;
+    }
+    if (!/^https:\/\/[^\s]+\/onboarding\?/.test(link) || link.length > 600) {
+      results.push({ phone_number: phone, sent: false, error: "Invite link is not valid" });
+      continue;
+    }
+    const greeting = name ? `Hi ${name.split(" ")[0]}, ` : "";
+    const message = `${greeting}${coop.name} invites you to Stawi to get paid for your deliveries on M-Pesa. Join here: ${link}`;
+    try {
+      const sent = await notify.sendSms(phone, message);
+      results.push({ phone_number: phone, sent: sent.success, error: sent.success ? undefined : sent.error || "Text failed" });
+    } catch (err) {
+      results.push({ phone_number: phone, sent: false, error: err instanceof Error ? err.message : "Text failed" });
+    }
+  }
+  res.status(200).json({ sent: results.filter((r) => r.sent).length, failed: results.filter((r) => !r.sent).length, results });
+});
+
 apiRouter.patch("/shipments/:id", async (req: Request, res: Response) => {
   if (req.body?.action !== "advance") {
     res.status(400).json({ error: "action must be advance" });
@@ -648,7 +732,7 @@ apiRouter.get("/coops/:id/payouts", async (req: Request, res: Response) => {
 // Local name check. Payaza's name enquiry is documented for NGN and GHS only.
 apiRouter.post("/name-enquiry", async (req: Request, res: Response) => {
   const { type, details } = req.body ?? {};
-  if ((type !== "mpesa" && type !== "bank") || !details) {
+  if ((type !== "mpesa" && type !== "momo" && type !== "bank") || !details) {
     res.status(400).json({ error: "Missing type or details" });
     return;
   }
@@ -750,7 +834,9 @@ apiRouter.post("/invoices", async (req: Request, res: Response) => {
   };
 
   await store.saveInvoice(invoice);
-  if (invoice.type === "coop" && invoice.coop_id) await openShipmentForInvoice(invoice);
+  if ((invoice.type === "coop" && invoice.coop_id) || (invoice.type === "direct" && invoice.account_id)) {
+    await openShipmentForInvoice(invoice);
+  }
   res.status(201).json(invoice);
 });
 

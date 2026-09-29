@@ -192,3 +192,7 @@ ALTER TABLE shipments ADD COLUMN IF NOT EXISTS is_demo BOOLEAN NOT NULL DEFAULT 
 -- Direct exporters own shipments too. Those rows have account_id set and coop_id NULL.
 ALTER TABLE shipments ALTER COLUMN coop_id DROP NOT NULL;
 ALTER TABLE shipments ADD COLUMN IF NOT EXISTS account_id VARCHAR(64) REFERENCES accounts(id) ON DELETE CASCADE;
+
+-- Airtel Money and other mobile money wallets.
+ALTER TABLE payout_destinations DROP CONSTRAINT IF EXISTS payout_destinations_type_check;
+ALTER TABLE payout_destinations ADD CONSTRAINT payout_destinations_type_check CHECK (type IN ('mpesa', 'momo', 'bank'));
