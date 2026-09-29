@@ -3,8 +3,11 @@ import { mockApi } from "./mock";
 import { shipmentsApi } from "./shipments";
 import { ApiError, type BuyerLookup, type NewPaymentProofBody, type PaymentProof } from "./types";
 
-/** Hardcoded for now. The server accepts BUYER_PORTAL_CODE, defaulting to this value. */
-export const BUYER_PORTAL_CODE = "STAWI-BUYER-2026";
+/** Share text for one shipment. Every shipment has its own code and this same URL shape. */
+export function buyerPortalShareText(code: string): string {
+  const origin = typeof window === "undefined" ? "" : window.location.origin;
+  return `Pay or report a transfer: ${origin}/buyer?code=${encodeURIComponent(code)}`;
+}
 
 let mockProofs: Array<PaymentProof & { receipt_data?: string | null }> = [];
 
@@ -22,11 +25,15 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
   return (await res.json()) as T;
 }
 
-async function mockLookup(code: string, ref: string): Promise<BuyerLookup> {
-  if (code.trim().toUpperCase() !== BUYER_PORTAL_CODE) throw new ApiError(403, "That access code isn't right");
+async function mockLookup(code: string, ref = ""): Promise<BuyerLookup> {
+  const key = code.trim().toUpperCase();
   const all = await shipmentsApi.list("coop_kiambu");
-  const s = all.find((x) => x.reference.toLowerCase() === ref.trim().toLowerCase());
-  if (!s?.invoice_id) throw new ApiError(404, "No shipment with that number has an invoice yet");
+  const s = all.find((x) => (x.buyer_code ?? "").toUpperCase() === key);
+  if (!s) throw new ApiError(403, "That access code isn't right");
+  if (ref.trim() && s.reference.toLowerCase() !== ref.trim().toLowerCase()) {
+    throw new ApiError(404, "No shipment with that number has an invoice yet");
+  }
+  if (!s.invoice_id) throw new ApiError(404, "No shipment with that number has an invoice yet");
   const { invoice, payee_name } = await mockApi.getInvoice(s.invoice_id);
   return {
     shipment: { reference: s.reference, product: s.product, quantity_kg: s.quantity_kg, destination: s.destination, ship_date: s.ship_date, status: s.status },
@@ -37,8 +44,10 @@ async function mockLookup(code: string, ref: string): Promise<BuyerLookup> {
 }
 
 export const buyerPortal = {
-  lookup: (access_code: string, shipment_reference: string): Promise<BuyerLookup> =>
-    isMock ? mockLookup(access_code, shipment_reference) : post("/buyer/lookup", { access_code, shipment_reference }),
+  lookup: (access_code: string, shipment_reference = ""): Promise<BuyerLookup> =>
+    isMock
+      ? mockLookup(access_code, shipment_reference)
+      : post("/buyer/lookup", { access_code, ...(shipment_reference.trim() ? { shipment_reference } : {}) }),
 
   submitProof: async (body: NewPaymentProofBody): Promise<PaymentProof> => {
     if (!isMock) return post("/buyer/payment-proofs", body);

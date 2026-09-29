@@ -5,8 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/stawi/EmptyState";
 import { PageHeader } from "@/features/shared/DashboardShell";
-import { BUYER_PORTAL_CODE, buyerPortal } from "@/lib/buyerPortal";
+import { buyerPortal, buyerPortalShareText } from "@/lib/buyerPortal";
 import { formatCurrency, formatDate, formatDateTime } from "@/lib/format";
+import { accountShipmentsOptions, coopShipmentsOptions } from "@/lib/queries";
 
 const tone: Record<string, string> = {
   submitted: "bg-secondary text-foreground",
@@ -17,6 +18,7 @@ const tone: Record<string, string> = {
 /** Buyer bank-transfer proofs for a co-op (coopId) or a direct exporter (accountId). */
 export function PaymentProofsPanel({ coopId, accountId }: { coopId?: string; accountId?: string }) {
   const qc = useQueryClient();
+  const links = useQuery(coopId ? coopShipmentsOptions(coopId) : accountShipmentsOptions(accountId!));
   const key = ["payment-proofs", coopId ?? accountId];
   const proofs = useQuery({
     queryKey: key,
@@ -46,26 +48,56 @@ export function PaymentProofsPanel({ coopId, accountId }: { coopId?: string; acc
       toast.error((e as Error).message);
     }
   };
-  const portalUrl = typeof window === "undefined" ? "/buyer" : `${window.location.origin}/buyer`;
+  const portalLinks = (links.data ?? []).filter((s) => s.buyer_code);
 
   return (
     <div>
       <PageHeader
         title="Buyer payments"
         description="Bank transfers buyers reported in the buyer portal. Confirm once the money is in your account; the invoice then becomes paid and the split can be approved."
-        action={
-          <Button
-            variant="outline"
-            className="h-11"
-            onClick={() => {
-              void navigator.clipboard.writeText(`Pay or report a transfer: ${portalUrl} — access code ${BUYER_PORTAL_CODE}`);
-              toast.success("Buyer portal link and code copied");
-            }}
-          >
-            <Copy className="size-4" /> Copy portal link
-          </Button>
-        }
       />
+      <section className="mb-6 rounded-2xl border border-border bg-card">
+        <div className="border-b border-border px-4 py-3">
+          <h2 className="text-sm font-medium">Portal links</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Each shipment has its own link. Opening it shows that shipment in the buyer portal.
+          </p>
+        </div>
+        {links.isLoading ? (
+          <Skeleton className="m-4 h-16 rounded-xl" />
+        ) : links.isError ? (
+          <p className="p-4 text-sm text-destructive">Couldn't load portal links. {(links.error as Error).message}</p>
+        ) : portalLinks.length === 0 ? (
+          <p className="p-4 text-sm text-muted-foreground">Create a shipment to get a buyer portal link.</p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {portalLinks.map((s) => {
+              const share = buyerPortalShareText(s.buyer_code!);
+              const url = share.replace(/^Pay or report a transfer: /, "");
+              return (
+                <li key={s.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="font-medium">{s.reference} · {s.buyer_name}</p>
+                    <p className="truncate text-sm text-muted-foreground">{url}</p>
+                    {!s.invoice_id && <p className="text-xs text-muted-foreground">Add an invoice before the buyer can pay from this link.</p>}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-10"
+                    onClick={() => {
+                      void navigator.clipboard.writeText(share);
+                      toast.success("Buyer portal link copied");
+                    }}
+                  >
+                    <Copy className="size-4" /> Copy portal link
+                  </Button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
       {proofs.isLoading ? (
         <Skeleton className="h-40 w-full rounded-2xl" />
       ) : proofs.isError ? (

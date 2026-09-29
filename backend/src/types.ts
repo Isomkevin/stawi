@@ -217,6 +217,11 @@ export type Shipment = {
   status: ShipmentStatus;
   invoice_id: string | null;
   farmers: ShipmentFarmer[];
+  /**
+   * Unique code for this shipment's buyer portal.
+   * The share link is `/buyer?code=` plus this value. Assigned when the shipment is saved.
+   */
+  buyer_code?: string;
   updated_at: string;
   is_demo?: boolean;
 };

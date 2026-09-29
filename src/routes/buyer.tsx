@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CheckCircle2, CreditCard, FileUp, Landmark, Loader2, Search } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -45,10 +45,17 @@ function readFile(file: File): Promise<string> {
   });
 }
 
+function codeFromLocation(): string {
+  if (typeof window === "undefined") return "";
+  return new URLSearchParams(window.location.search).get("code")?.trim() ?? "";
+}
+
 function BuyerPortal() {
-  const [code, setCode] = useState("");
+  const linked = codeFromLocation();
+  const [code, setCode] = useState(linked);
   const [ref, setRef] = useState("");
   const [found, setFound] = useState<BuyerLookup | null>(null);
+  const [opening, setOpening] = useState(Boolean(linked));
   const [mode, setMode] = useState<"card" | "transfer">("card");
 
   const lookup = useMutation({
@@ -57,19 +64,43 @@ function BuyerPortal() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  useEffect(() => {
+    if (!linked) return;
+    setCode(linked);
+    let cancelled = false;
+    buyerPortal.lookup(linked)
+      .then((r) => {
+        if (!cancelled) setFound(r);
+      })
+      .catch((e: Error) => {
+        if (!cancelled) toast.error(e.message);
+      })
+      .finally(() => {
+        if (!cancelled) setOpening(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [linked]);
+
   return (
     <main className="mx-auto min-h-screen max-w-2xl px-4 py-10 sm:py-16">
       <Link to="/" className="text-display text-2xl">Stawi</Link>
       <h1 className="text-display mt-6 text-3xl sm:text-4xl">Buyer portal</h1>
       <p className="mt-2 text-muted-foreground">
-        Enter your access code and the shipment number on your documents. Pay by card, or tell us about a bank transfer you have made.
+        Open the link from your seller, or enter the access code on your documents. Pay by card, or tell us about a bank transfer you have made.
       </p>
+      {opening && !found && (
+        <p className="mt-6 flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" /> Opening this shipment…
+        </p>
+      )}
 
       <form
         className="mt-8 grid gap-4 rounded-2xl border border-border bg-card p-5 sm:grid-cols-[1fr_1fr_auto] sm:items-end"
         onSubmit={(e) => {
           e.preventDefault();
-          if (code.trim() && ref.trim()) lookup.mutate();
+          if (code.trim()) lookup.mutate();
         }}
       >
         <div className="space-y-1.5">
@@ -77,10 +108,10 @@ function BuyerPortal() {
           <Input id="code" value={code} onChange={(e) => setCode(e.target.value)} placeholder="STAWI-BUYER-…" autoComplete="off" maxLength={64} />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="ref">Shipment number</Label>
-          <Input id="ref" value={ref} onChange={(e) => setRef(e.target.value)} placeholder="e.g. KHC-S-102" maxLength={128} />
+          <Label htmlFor="ref">Shipment number (optional)</Label>
+          <Input id="ref" value={ref} onChange={(e) => setRef(e.target.value)} placeholder="Optional if you have the link" maxLength={128} />
         </div>
-        <Button type="submit" className="h-10" disabled={lookup.isPending || !code.trim() || !ref.trim()}>
+        <Button type="submit" className="h-10" disabled={lookup.isPending || !code.trim()}>
           {lookup.isPending ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />} Find
         </Button>
       </form>

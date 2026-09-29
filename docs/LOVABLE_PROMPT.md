@@ -264,7 +264,8 @@ When `VITE_API_MODE=live`, ignore this mock and read the backend. That ledger is
 - `GET /invoices/{id}/receipt` (public) → payment receipt after the buyer has paid. 409 while the invoice is still unpaid or failed. Show it on the pay page and the invoice detail, with a print or save action.
 
 ### Buyer portal and payment proofs (added)
-- `POST /buyer/lookup` (public) `{ access_code, shipment_reference }` → `{ shipment, invoice, payee_name, proofs }`. Code is `BUYER_PORTAL_CODE` env, default `STAWI-BUYER-2026`.
+- `Shipment` includes `buyer_code`: an 8-character code, unique per shipment. The share text is `Pay or report a transfer: {origin}/buyer?code={buyer_code}`. Opening that URL looks the shipment up and shows its buyer portal. Every shipment of a co-op has a different code and the same URL shape.
+- `POST /buyer/lookup` (public) `{ access_code, shipment_reference? }` → `{ shipment, invoice, payee_name, proofs }`. The code alone selects the shipment. A shipment number, when sent, must match that shipment.
 - `POST /buyer/payment-proofs` (public) `{ access_code, shipment_reference, payer_name, payer_email, bank_reference, amount, currency, paid_at, note?, receipt_name?, receipt_data? (data URL, PNG/JPG/WEBP/PDF ≤2 MB) }` → `PaymentProof` (201).
 - `GET /coops/{id}/payment-proofs`, `GET /accounts/{id}/payment-proofs` → `PaymentProof[]` with `has_receipt`.
 - `GET /payment-proofs/{id}/receipt`; `POST /payment-proofs/{id}/confirm` (records the collection via `processPayment`, so the co-op split can then be approved) ; `POST /payment-proofs/{id}/reject`. Payee only.

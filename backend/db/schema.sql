@@ -192,6 +192,9 @@ ALTER TABLE shipments ADD COLUMN IF NOT EXISTS is_demo BOOLEAN NOT NULL DEFAULT 
 -- Direct exporters own shipments too. Those rows have account_id set and coop_id NULL.
 ALTER TABLE shipments ALTER COLUMN coop_id DROP NOT NULL;
 ALTER TABLE shipments ADD COLUMN IF NOT EXISTS account_id VARCHAR(64) REFERENCES accounts(id) ON DELETE CASCADE;
+-- One buyer-portal code per shipment. The public link is /buyer?code=<buyer_code>.
+ALTER TABLE shipments ADD COLUMN IF NOT EXISTS buyer_code VARCHAR(16);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_shipments_buyer_code ON shipments (buyer_code);
 
 -- Airtel Money and other mobile money wallets.
 ALTER TABLE payout_destinations DROP CONSTRAINT IF EXISTS payout_destinations_type_check;

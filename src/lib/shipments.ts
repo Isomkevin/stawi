@@ -34,7 +34,25 @@ const shipments: Shipment[] = [
   { id: "shp_108", reference: "KHC-S-108", coop_id: "coop_kiambu", buyer_name: "Nordic Roasters AB", product: "AB grade green coffee", quantity_kg: 1800, destination: "Gothenburg, SE", value: 7400, currency: "EUR", ship_date: d(-3), shipped_at: null, status: "ready", invoice_id: null, farmers: f([[3, 300], [5, 300], [6, 300], [8, 300], [9, 300], [10, 300]]), updated_at: d(-4) },
 ];
 
-for (const shipment of shipments) shipment.is_demo = true;
+const PORTAL_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+/** Stable 8-character portal code so a mock shipment keeps the same link. */
+function portalCode(seed: string): string {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) h = Math.imul(h ^ seed.charCodeAt(i), 16777619);
+  let x = h >>> 0;
+  let out = "";
+  for (let i = 0; i < 8; i++) {
+    out += PORTAL_ALPHABET[x % PORTAL_ALPHABET.length];
+    x = Math.imul(x ^ (x >>> 13), 16777619) >>> 0;
+  }
+  return out;
+}
+
+for (const shipment of shipments) {
+  shipment.is_demo = true;
+  shipment.buyer_code = portalCode(shipment.id);
+}
 
 const wait = (ms = 250) => new Promise((r) => setTimeout(r, ms));
 
@@ -52,8 +70,9 @@ export const shipmentsApi = {
   create: async (coopId: string, input: NewShipmentInput): Promise<Shipment> => {
     await wait();
     const n = shipments.length + 101;
+    const id = `shp_${n}_${Date.now().toString(36)}`;
     const s: Shipment = {
-      id: `shp_${n}_${Date.now().toString(36)}`,
+      id,
       reference: `KHC-S-${n}`,
       coop_id: coopId,
       ...input,
@@ -62,6 +81,7 @@ export const shipmentsApi = {
       status: "draft",
       invoice_id: null,
       farmers: [],
+      buyer_code: portalCode(id),
       updated_at: new Date().toISOString(),
     };
     shipments.unshift(s);

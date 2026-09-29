@@ -1009,23 +1009,21 @@ apiRouter.post("/invoices/:id/approve-split", async (req: Request, res: Response
 });
 
 // -------------------------------------------------------------
-// Buyer portal (access code + shipment number, no account)
+// Buyer portal. Each shipment has its own code. The link is /buyer?code=<code>.
 // -------------------------------------------------------------
-/** Hardcoded default until buyer accounts exist. Override with BUYER_PORTAL_CODE. */
-function buyerCodeOk(code: unknown): boolean {
-  const expected = process.env.BUYER_PORTAL_CODE || "STAWI-BUYER-2026";
-  return typeof code === "string" && code.trim().toUpperCase() === expected.toUpperCase();
-}
-
 async function buyerShipment(req: Request, res: Response) {
   const { access_code, shipment_reference } = req.body || {};
-  if (!buyerCodeOk(access_code)) {
+  const shipment = await store.findShipmentByBuyerCode(access_code);
+  if (!shipment) {
     res.status(403).json({ error: "That access code isn't right" });
     return null;
   }
   const ref = typeof shipment_reference === "string" ? shipment_reference.trim().slice(0, 128) : "";
-  const shipment = ref ? await store.findShipmentByReference(ref) : undefined;
-  if (!shipment || !shipment.invoice_id) {
+  if (ref && shipment.reference.toLowerCase() !== ref.toLowerCase()) {
+    res.status(404).json({ error: "No shipment with that number has an invoice yet" });
+    return null;
+  }
+  if (!shipment.invoice_id) {
     res.status(404).json({ error: "No shipment with that number has an invoice yet" });
     return null;
   }

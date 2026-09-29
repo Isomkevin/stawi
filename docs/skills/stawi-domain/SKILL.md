@@ -153,9 +153,12 @@ Shipment {
   status: "draft" | "preparing" | "ready" | "in_transit" | "delivered" | "completed",
   invoice_id: string | null,
   farmers: [{ account_id, kilos }],
+  buyer_code,                         // unique per shipment, assigned on save
   updated_at
 }
 ```
+
+`buyer_code` is an 8-character code, different for every shipment in a co-op. The buyer link is always `{origin}/buyer?code={buyer_code}`. `POST /buyer/lookup` with `{ access_code }` opens that shipment. `shipment_reference` is optional and, when sent, must match the shipment that owns the code.
 
 Creating a co-op invoice also opens a draft shipment linked to it. The quantity is the kilogram amount in the description, or 1000 kg when the description has none. It starts with no farmers.
 

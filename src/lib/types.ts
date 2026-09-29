@@ -235,6 +235,8 @@ export type Shipment = {
   status: ShipmentStatus;
   invoice_id: string | null;
   farmers: ShipmentFarmer[];
+  /** Unique per shipment. The buyer link is `/buyer?code=` plus this value. */
+  buyer_code?: string;
   updated_at: string;
   is_demo?: boolean;
 };

@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "async_hooks";
 import fs from "fs";
 import path from "path";
 import { Pool, PoolClient, QueryResult, QueryResultRow } from "pg";
+import { normalizeBuyerCode, randomBuyerCode } from "../services/buyerCode";
 import { InMemoryStore } from "../store";
 import { ACCOUNT_TYPES, Account, AccountType, Coop, CoopMember, Invoice, PaymentProof, Payout, PayoutDestination, Shipment, ShipmentFarmer, ShipmentStatus, Transaction } from "../types";
 
@@ -524,9 +525,40 @@ export class PostgresStore extends InMemoryStore {
       status: row.status as ShipmentStatus,
       invoice_id: row.invoice_id,
       farmers,
+      buyer_code: typeof row.buyer_code === "string" ? row.buyer_code : undefined,
       is_demo: row.is_demo === true,
       updated_at: iso(row.updated_at) || new Date().toISOString(),
     };
+  }
+
+  private async allocatePortalCode(): Promise<string> {
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const code = randomBuyerCode();
+      const hit = await this.q("SELECT 1 FROM shipments WHERE buyer_code = $1", [code]);
+      if (!hit.rows[0]) return code;
+    }
+    throw new Error("Could not allocate a buyer portal code");
+  }
+
+  private async portalCodeForSave(shipment: Shipment): Promise<string> {
+    const incoming = normalizeBuyerCode(shipment.buyer_code);
+    if (incoming) {
+      const hit = await this.q<{ id: string }>("SELECT id FROM shipments WHERE buyer_code = $1", [incoming]);
+      if (!hit.rows[0] || hit.rows[0].id === shipment.id) return incoming;
+    }
+    const existing = await this.q<{ buyer_code: string | null }>("SELECT buyer_code FROM shipments WHERE id = $1", [shipment.id]);
+    if (existing.rows[0]?.buyer_code) return existing.rows[0].buyer_code;
+    return this.allocatePortalCode();
+  }
+
+  /** Older rows were saved before portal codes existed. Fill the code on read so the link is stable. */
+  private async withBuyerCode(shipment: Shipment): Promise<Shipment> {
+    if (shipment.buyer_code) return shipment;
+    const code = await this.allocatePortalCode();
+    await this.q("UPDATE shipments SET buyer_code = $1 WHERE id = $2 AND buyer_code IS NULL", [code, shipment.id]);
+    const again = await this.q<{ buyer_code: string | null }>("SELECT buyer_code FROM shipments WHERE id = $1", [shipment.id]);
+    shipment.buyer_code = again.rows[0]?.buyer_code || code;
+    return shipment;
   }
 
   private async farmersFor(shipmentIds: string[]): Promise<Map<string, ShipmentFarmer[]>> {
@@ -545,11 +577,12 @@ export class PostgresStore extends InMemoryStore {
   }
 
   public async saveShipment(shipment: Shipment): Promise<Shipment> {
+    shipment.buyer_code = await this.portalCodeForSave(shipment);
     await this.q(
       `INSERT INTO shipments (
          id, reference, coop_id, buyer_name, product, quantity_kg, destination, value, currency,
-         ship_date, shipped_at, status, invoice_id, is_demo, updated_at, account_id
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+         ship_date, shipped_at, status, invoice_id, is_demo, updated_at, account_id, buyer_code
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
        ON CONFLICT (id) DO UPDATE SET
          reference = EXCLUDED.reference,
          coop_id = EXCLUDED.coop_id,
@@ -565,7 +598,8 @@ export class PostgresStore extends InMemoryStore {
          invoice_id = EXCLUDED.invoice_id,
          is_demo = EXCLUDED.is_demo,
          updated_at = EXCLUDED.updated_at,
-         account_id = EXCLUDED.account_id`,
+         account_id = EXCLUDED.account_id,
+         buyer_code = COALESCE(EXCLUDED.buyer_code, shipments.buyer_code)`,
       [
         shipment.id,
         shipment.reference,
@@ -583,6 +617,7 @@ export class PostgresStore extends InMemoryStore {
         shipment.is_demo === true,
         shipment.updated_at,
         shipment.account_id ?? null,
+        shipment.buyer_code,
       ]
     );
     await this.q("DELETE FROM shipment_farmers WHERE shipment_id = $1", [shipment.id]);
@@ -604,21 +639,23 @@ export class PostgresStore extends InMemoryStore {
     const result = await this.q("SELECT * FROM shipments WHERE id = $1", [id]);
     if (!result.rows[0]) return undefined;
     const farmers = await this.farmersFor([id]);
-    return this.mapShipment(result.rows[0], farmers.get(id) || []);
+    return this.withBuyerCode(this.mapShipment(result.rows[0], farmers.get(id) || []));
   }
 
   public async listShipments(coopId: string): Promise<Shipment[]> {
     const result = await this.q("SELECT * FROM shipments WHERE coop_id = $1 ORDER BY ship_date DESC", [coopId]);
     const ids = result.rows.map((row) => row.id as string);
     const farmers = await this.farmersFor(ids);
-    return result.rows.map((row) => this.mapShipment(row, farmers.get(row.id) || []));
+    const shipments = result.rows.map((row) => this.mapShipment(row, farmers.get(row.id) || []));
+    return Promise.all(shipments.map((shipment) => this.withBuyerCode(shipment)));
   }
 
   public async listAccountShipments(accountId: string): Promise<Shipment[]> {
     const result = await this.q("SELECT * FROM shipments WHERE account_id = $1 ORDER BY ship_date DESC", [accountId]);
     const ids = result.rows.map((row) => row.id as string);
     const farmers = await this.farmersFor(ids);
-    return result.rows.map((row) => this.mapShipment(row, farmers.get(row.id) || []));
+    const shipments = result.rows.map((row) => this.mapShipment(row, farmers.get(row.id) || []));
+    return Promise.all(shipments.map((shipment) => this.withBuyerCode(shipment)));
   }
 
   public async getShipmentByInvoice(invoiceId: string): Promise<Shipment | undefined> {
@@ -626,11 +663,21 @@ export class PostgresStore extends InMemoryStore {
     if (!result.rows[0]) return undefined;
     const id = result.rows[0].id as string;
     const farmers = await this.farmersFor([id]);
-    return this.mapShipment(result.rows[0], farmers.get(id) || []);
+    return this.withBuyerCode(this.mapShipment(result.rows[0], farmers.get(id) || []));
   }
 
   public async findShipmentByReference(reference: string): Promise<Shipment | undefined> {
     const result = await this.q("SELECT * FROM shipments WHERE LOWER(reference) = LOWER($1) LIMIT 1", [reference.trim()]);
+    if (!result.rows[0]) return undefined;
+    const id = result.rows[0].id as string;
+    const farmers = await this.farmersFor([id]);
+    return this.withBuyerCode(this.mapShipment(result.rows[0], farmers.get(id) || []));
+  }
+
+  public async findShipmentByBuyerCode(code: string): Promise<Shipment | undefined> {
+    const key = normalizeBuyerCode(code);
+    if (!key) return undefined;
+    const result = await this.q("SELECT * FROM shipments WHERE buyer_code = $1 LIMIT 1", [key]);
     if (!result.rows[0]) return undefined;
     const id = result.rows[0].id as string;
     const farmers = await this.farmersFor([id]);

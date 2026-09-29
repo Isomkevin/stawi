@@ -1,3 +1,4 @@
+import { normalizeBuyerCode, randomBuyerCode } from "./services/buyerCode";
 import { normalizePhone as normalizeKenyanPhone } from "./services/phone";
 import {
   ACCOUNT_TYPES,
@@ -266,18 +267,48 @@ export class InMemoryStore {
     this.sessions.delete(tokenHash);
   }
 
+  private buyerCodeTaken(code: string, exceptId?: string): boolean {
+    for (const shipment of this.shipments.values()) {
+      if (shipment.id !== exceptId && shipment.buyer_code === code) return true;
+    }
+    return false;
+  }
+
+  private mintBuyerCode(exceptId?: string): string {
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const code = randomBuyerCode();
+      if (!this.buyerCodeTaken(code, exceptId)) return code;
+    }
+    throw new Error("Could not allocate a buyer portal code");
+  }
+
+  /** Keeps a shipment's code stable. Fills one in when the row has never had one. */
+  private resolveBuyerCode(shipment: Shipment): string {
+    const incoming = normalizeBuyerCode(shipment.buyer_code);
+    if (incoming && !this.buyerCodeTaken(incoming, shipment.id)) return incoming;
+    const stored = this.shipments.get(shipment.id)?.buyer_code;
+    if (stored) return stored;
+    return this.mintBuyerCode(shipment.id);
+  }
+
+  private copyShipment(shipment: Shipment): Shipment {
+    if (!shipment.buyer_code) shipment.buyer_code = this.mintBuyerCode(shipment.id);
+    return { ...shipment, farmers: shipment.farmers.map((farmer) => ({ ...farmer })) };
+  }
+
   public async saveShipment(shipment: Shipment): Promise<Shipment> {
+    shipment.buyer_code = this.resolveBuyerCode(shipment);
     this.shipments.set(shipment.id, {
       ...shipment,
       farmers: shipment.farmers.map((farmer) => ({ ...farmer })),
     });
-    return this.shipments.get(shipment.id)!;
+    return this.copyShipment(this.shipments.get(shipment.id)!);
   }
 
   public async getShipment(id: string): Promise<Shipment | undefined> {
     const shipment = this.shipments.get(id);
     if (!shipment) return undefined;
-    return { ...shipment, farmers: shipment.farmers.map((farmer) => ({ ...farmer })) };
+    return this.copyShipment(shipment);
   }
 
   public async deleteShipment(id: string): Promise<boolean> {
@@ -288,21 +319,19 @@ export class InMemoryStore {
     return Array.from(this.shipments.values())
       .filter((shipment) => shipment.coop_id === coopId)
       .sort((a, b) => b.ship_date.localeCompare(a.ship_date))
-      .map((shipment) => ({ ...shipment, farmers: shipment.farmers.map((farmer) => ({ ...farmer })) }));
+      .map((shipment) => this.copyShipment(shipment));
   }
 
   public async listAccountShipments(accountId: string): Promise<Shipment[]> {
     return Array.from(this.shipments.values())
       .filter((shipment) => shipment.account_id === accountId)
       .sort((a, b) => b.ship_date.localeCompare(a.ship_date))
-      .map((shipment) => ({ ...shipment, farmers: shipment.farmers.map((farmer) => ({ ...farmer })) }));
+      .map((shipment) => this.copyShipment(shipment));
   }
 
   public async getShipmentByInvoice(invoiceId: string): Promise<Shipment | undefined> {
     for (const shipment of this.shipments.values()) {
-      if (shipment.invoice_id === invoiceId) {
-        return { ...shipment, farmers: shipment.farmers.map((farmer) => ({ ...farmer })) };
-      }
+      if (shipment.invoice_id === invoiceId) return this.copyShipment(shipment);
     }
     return undefined;
   }
@@ -310,9 +339,16 @@ export class InMemoryStore {
   public async findShipmentByReference(reference: string): Promise<Shipment | undefined> {
     const key = reference.trim().toLowerCase();
     for (const shipment of this.shipments.values()) {
-      if (shipment.reference.toLowerCase() === key) {
-        return { ...shipment, farmers: shipment.farmers.map((farmer) => ({ ...farmer })) };
-      }
+      if (shipment.reference.toLowerCase() === key) return this.copyShipment(shipment);
+    }
+    return undefined;
+  }
+
+  public async findShipmentByBuyerCode(code: string): Promise<Shipment | undefined> {
+    const key = normalizeBuyerCode(code);
+    if (!key) return undefined;
+    for (const shipment of this.shipments.values()) {
+      if (shipment.buyer_code === key) return this.copyShipment(shipment);
     }
     return undefined;
   }
