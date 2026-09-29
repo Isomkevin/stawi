@@ -6,7 +6,7 @@ import { classifyPayazaWebhook, payaza } from "../services/payaza";
 import { hashPin } from "../services/pin";
 import { pipeline } from "../services/pipeline";
 import { paymentReceipt } from "../services/receipt";
-import { addShipmentFarmer, advanceShipment, openShipmentForInvoice, removeShipmentFarmer } from "../services/shipments";
+import { addShipmentFarmer, advanceShipment, openShipmentForInvoice, removeShipmentFarmer, updateShipmentDetails } from "../services/shipments";
 import { store } from "../store";
 import { randomUUID } from "crypto";
 import { Account, PaymentProof, CoopMetrics, CoopMetricsBucket, CoopMember, DemoDataSettings, Invoice, PublicAccount, UNRESOLVED_ACCOUNT_NAME } from "../types";
@@ -689,11 +689,20 @@ apiRouter.post("/coops/:id/invites/sms", async (req: Request, res: Response) => 
 });
 
 apiRouter.patch("/shipments/:id", async (req: Request, res: Response) => {
-  if (req.body?.action !== "advance") {
+  if (req.body?.action === "advance") {
+    const result = await advanceShipment(getParam(req.params.id));
+    if (!result.ok) {
+      res.status(result.status).json({ error: result.error });
+      return;
+    }
+    res.status(200).json(result.shipment);
+    return;
+  }
+  if (req.body?.action) {
     res.status(400).json({ error: "action must be advance" });
     return;
   }
-  const result = await advanceShipment(getParam(req.params.id));
+  const result = await updateShipmentDetails(getParam(req.params.id), req.body ?? {});
   if (!result.ok) {
     res.status(result.status).json({ error: result.error });
     return;
@@ -734,23 +743,6 @@ async function refreshIncomingIfSettling(shipment: { coop_id: string; invoice_id
   const invoice = await store.getInvoice(shipment.invoice_id);
   if (invoice?.status === "settling") await pipeline.refreshCoopIncoming(shipment.coop_id);
 }
-
-apiRouter.delete("/shipments/:id", async (req: Request, res: Response) => {
-  const shipment = await store.getShipment(getParam(req.params.id));
-  if (!shipment) {
-    res.status(404).json({ error: "Shipment not found" });
-    return;
-  }
-  if (shipment.invoice_id) {
-    const invoice = await store.getInvoice(shipment.invoice_id);
-    if (invoice && invoice.status !== "pending") {
-      res.status(409).json({ error: "Shipments with a paid invoice can't be deleted" });
-      return;
-    }
-  }
-  await store.deleteShipment(shipment.id);
-  res.status(204).send();
-});
 
 apiRouter.delete("/shipments/:id", async (req: Request, res: Response) => {
   const shipment = await store.getShipment(getParam(req.params.id));

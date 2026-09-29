@@ -100,6 +100,46 @@ describe("Co-op shipments", () => {
     expect(done.status).toBe(400);
   });
 
+  it("edits shipment details until an invoice is linked", async () => {
+    await store.saveShipment(shipment({ status: "draft", quantity_kg: 100, farmers: [{ account_id: "acc_farmer", kilos: 40 }] }));
+
+    const edited = await request(app).patch("/shipments/shp_test").send({
+      buyer_name: "Nordic Roasters",
+      product: "AB grade",
+      quantity_kg: 80,
+      destination: "Malmö, SE",
+      value: 4200,
+      currency: "EUR",
+      ship_date: "2026-11-02",
+    });
+    expect(edited.status).toBe(200);
+    expect(edited.body).toMatchObject({
+      buyer_name: "Nordic Roasters",
+      product: "AB grade",
+      quantity_kg: 80,
+      destination: "Malmö, SE",
+      value: 4200,
+      currency: "EUR",
+      status: "draft",
+      invoice_id: null,
+    });
+    expect(edited.body.farmers).toEqual([{ account_id: "acc_farmer", kilos: 40 }]);
+
+    const tooSmall = await request(app).patch("/shipments/shp_test").send({ quantity_kg: 30 });
+    expect(tooSmall.status).toBe(400);
+    expect((await store.getShipment("shp_test"))?.quantity_kg).toBe(80);
+
+    await store.saveShipment(shipment({
+      id: "shp_invoiced",
+      reference: "TEST-S-2",
+      invoice_id: "inv_open",
+      buyer_name: "Locked Buyer",
+    }));
+    const locked = await request(app).patch("/shipments/shp_invoiced").send({ buyer_name: "Someone else" });
+    expect(locked.status).toBe(409);
+    expect((await store.getShipment("shp_invoiced"))?.buyer_name).toBe("Locked Buyer");
+  });
+
   it("deletes a shipment with no paid invoice and refuses one that has been paid", async () => {
     await store.saveInvoice({
       id: "inv_open",

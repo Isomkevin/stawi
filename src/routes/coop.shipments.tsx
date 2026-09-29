@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, ArrowRight, Check, ChevronRight, Copy, Loader2, MapPin, Package, Plus, Search, Ship, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, ChevronRight, Copy, Loader2, MapPin, Package, Pencil, Plus, Search, Ship, X } from "lucide-react";
 import { toast } from "sonner";
 import { DemoBadge } from "@/components/stawi/DemoDataControl";
 import { PinPad } from "@/components/stawi/PinPad";
@@ -365,6 +365,97 @@ function NewShipment({ onCreated }: { onCreated: (id: string) => void }) {
   );
 }
 
+function EditShipment({ s }: { s: Shipment }) {
+  const coopId = useCoopId();
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const assigned = s.farmers.reduce((sum, farmer) => sum + farmer.kilos, 0);
+  const fromShipment = () => ({
+    buyer_name: s.buyer_name,
+    product: s.product,
+    quantity_kg: String(s.quantity_kg),
+    destination: s.destination === "TBD" ? "" : s.destination,
+    value: s.value ? String(s.value) : "",
+    currency: (s.currency === "EUR" || s.currency === "GBP" ? s.currency : "USD") as "USD" | "EUR" | "GBP",
+    ship_date: s.ship_date.slice(0, 10),
+  });
+  const [f, setF] = useState(fromShipment);
+  const set = (k: keyof ReturnType<typeof fromShipment>) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setF((p) => ({ ...p, [k]: e.target.value }));
+  const qty = Number(f.quantity_kg);
+  const valid = Boolean(f.buyer_name.trim() && f.product.trim() && Number.isInteger(qty) && qty >= Math.max(assigned, 1));
+  const save = useMutation({
+    mutationFn: () =>
+      api.updateShipment(s.id, {
+        buyer_name: f.buyer_name.trim(),
+        product: f.product.trim(),
+        quantity_kg: qty,
+        destination: f.destination.trim() || "TBD",
+        value: Number(f.value) || 0,
+        currency: f.currency,
+        ship_date: f.ship_date,
+      }),
+    onSuccess: async (next) => {
+      await qc.invalidateQueries({ queryKey: ["coop", coopId, "shipments"] });
+      toast.success(`${next.reference} updated`);
+      setOpen(false);
+    },
+    onError: (e) => toast.error(e instanceof ApiError ? e.message : "Couldn't update the shipment"),
+  });
+  return (
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => {
+          setF(fromShipment());
+          setOpen(true);
+        }}
+      >
+        <Pencil className="size-3.5" /> Edit
+      </Button>
+      <Sheet open={open} onOpenChange={setOpen}>
+        <SheetContent className="w-full overflow-y-auto sm:max-w-md">
+          <SheetTitle>Edit {s.reference}</SheetTitle>
+          <p className="mt-1 text-sm text-muted-foreground">You can change these details until an invoice is created.</p>
+          <form
+            className="mt-5 space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (valid) save.mutate();
+            }}
+          >
+            <Field label="Buyer"><Input required value={f.buyer_name} onChange={set("buyer_name")} /></Field>
+            <Field label="Product"><Input required value={f.product} onChange={set("product")} /></Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Quantity (kg)"><Input required inputMode="numeric" value={f.quantity_kg} onChange={set("quantity_kg")} /></Field>
+              <Field label="Ship date"><Input type="date" value={f.ship_date} onChange={set("ship_date")} /></Field>
+            </div>
+            <Field label="Destination"><Input value={f.destination} onChange={set("destination")} placeholder="Hamburg, DE" /></Field>
+            <div className="grid grid-cols-[1fr_7rem] gap-3">
+              <Field label="Value"><Input inputMode="decimal" value={f.value} onChange={set("value")} /></Field>
+              <Field label="Currency">
+                <Select value={f.currency} onValueChange={(v) => setF((p) => ({ ...p, currency: v as typeof p.currency }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {["USD", "EUR", "GBP"].map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </Field>
+            </div>
+            {assigned > 0 && (
+              <p className="text-xs text-muted-foreground">Farmers already have {assigned.toLocaleString()} kg on this shipment, so quantity stays at least that.</p>
+            )}
+            <Button type="submit" className="w-full" disabled={!valid || save.isPending}>
+              {save.isPending ? "Saving…" : "Save changes"}
+            </Button>
+          </form>
+        </SheetContent>
+      </Sheet>
+    </>
+  );
+}
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block space-y-1.5 text-sm font-medium">
@@ -589,7 +680,8 @@ function ShipmentDetail({ s, inv, att, payouts, nameOf, onClose }: { s: Shipment
           <h2 className="text-display truncate text-2xl">{s.buyer_name}</h2>
           <p className="text-sm text-muted-foreground">{s.product}</p>
         </div>
-        <div className="flex items-center">
+        <div className="flex items-center gap-1">
+          {!s.invoice_id && <EditShipment s={s} />}
           <DeleteShipment s={s} inv={inv} onDeleted={onClose} />
           {onClose && (
             <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close details"><X className="size-4" /></Button>

@@ -66,6 +66,75 @@ export async function advanceShipment(
   return { ok: true, shipment };
 }
 
+export type ShipmentDetailPatch = {
+  buyer_name?: unknown;
+  product?: unknown;
+  quantity_kg?: unknown;
+  destination?: unknown;
+  value?: unknown;
+  currency?: unknown;
+  ship_date?: unknown;
+};
+
+/** Buyer, crop, kilos, destination, value, and ship date stay editable until an invoice is linked. */
+export async function updateShipmentDetails(
+  id: string,
+  patch: ShipmentDetailPatch
+): Promise<{ ok: true; shipment: Shipment } | { ok: false; status: number; error: string }> {
+  const current = await store.getShipment(id);
+  if (!current) return { ok: false, status: 404, error: "Shipment not found" };
+  if (current.invoice_id) {
+    return { ok: false, status: 409, error: "Shipment details are locked once an invoice exists" };
+  }
+
+  const text = (value: unknown, fallback: string, max = 255) =>
+    value === undefined ? fallback : typeof value === "string" ? value.trim().slice(0, max) : "";
+  const buyer = text(patch.buyer_name, current.buyer_name);
+  const product = text(patch.product, current.product);
+  const destination =
+    patch.destination === undefined ? current.destination : text(patch.destination, "", 255) || "TBD";
+  const quantity = patch.quantity_kg === undefined ? current.quantity_kg : Number(patch.quantity_kg);
+  const value = patch.value === undefined ? current.value : Number(patch.value);
+  const currency =
+    patch.currency === undefined
+      ? current.currency
+      : ["USD", "EUR", "GBP"].includes(String(patch.currency))
+        ? String(patch.currency)
+        : "";
+  const shipDate =
+    patch.ship_date === undefined
+      ? current.ship_date
+      : typeof patch.ship_date === "string" && !Number.isNaN(Date.parse(patch.ship_date))
+        ? new Date(patch.ship_date).toISOString()
+        : "";
+
+  if (!buyer || !product) return { ok: false, status: 400, error: "Buyer and product are required" };
+  if (!Number.isInteger(quantity) || quantity <= 0) {
+    return { ok: false, status: 400, error: "Quantity must be a whole number of kilos greater than zero" };
+  }
+  const assigned = current.farmers.reduce((sum, farmer) => sum + farmer.kilos, 0);
+  if (quantity < assigned) {
+    return { ok: false, status: 400, error: "Quantity can't be less than the kilos already assigned to farmers" };
+  }
+  if (!Number.isFinite(value) || value < 0) return { ok: false, status: 400, error: "Value must be zero or more" };
+  if (!currency) return { ok: false, status: 400, error: "Currency must be USD, EUR, or GBP" };
+  if (!shipDate) return { ok: false, status: 400, error: "Ship date is not valid" };
+
+  const shipment: Shipment = {
+    ...current,
+    buyer_name: buyer,
+    product,
+    quantity_kg: quantity,
+    destination,
+    value,
+    currency,
+    ship_date: shipDate,
+    updated_at: new Date().toISOString(),
+  };
+  await store.saveShipment(shipment);
+  return { ok: true, shipment };
+}
+
 async function farmerListLocked(shipment: Shipment): Promise<string | null> {
   if (!shipment.invoice_id) return null;
   const invoice = await store.getInvoice(shipment.invoice_id);

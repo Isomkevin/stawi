@@ -83,6 +83,30 @@ export const shipmentsApi = {
     s.updated_at = new Date().toISOString();
     return { ...s };
   },
+  update: async (id: string, input: NewShipmentInput): Promise<Shipment> => {
+    await wait();
+    const s = shipments.find((x) => x.id === id);
+    if (!s) throw new ApiError(404, "Shipment not found");
+    if (s.invoice_id) throw new ApiError(409, "Shipment details are locked once an invoice exists");
+    const assigned = s.farmers.reduce((sum, farmer) => sum + farmer.kilos, 0);
+    if (!Number.isInteger(input.quantity_kg) || input.quantity_kg <= 0) {
+      throw new ApiError(400, "Quantity must be a whole number of kilos greater than zero");
+    }
+    if (input.quantity_kg < assigned) {
+      throw new ApiError(400, "Quantity can't be less than the kilos already assigned to farmers");
+    }
+    Object.assign(s, {
+      buyer_name: input.buyer_name,
+      product: input.product,
+      quantity_kg: input.quantity_kg,
+      destination: input.destination || "TBD",
+      value: input.value,
+      currency: input.currency,
+      ship_date: new Date(input.ship_date).toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+    return { ...s, farmers: [...s.farmers] };
+  },
   remove: async (id: string): Promise<void> => {
     await wait();
     const i = shipments.findIndex((x) => x.id === id);

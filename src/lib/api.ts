@@ -224,6 +224,13 @@ export const api = {
       ? shipmentsApi.removeFarmer(shipmentId, accountId)
       : request(`/shipments/${shipmentId}/farmers/${accountId}`, { method: "DELETE" }),
 
+  // PATCH /shipments/{id} { buyer_name, product, quantity_kg, destination, value, currency, ship_date } → Shipment
+  // 409 once an invoice is linked.
+  updateShipment: (shipmentId: string, input: NewShipmentInput): Promise<Shipment> =>
+    isMock
+      ? shipmentsApi.update(shipmentId, input)
+      : request(`/shipments/${shipmentId}`, { method: "PATCH", body: JSON.stringify(input) }),
+
   // PATCH /shipments/{id} { action: "advance" } → Shipment
   advanceShipment: (shipmentId: string): Promise<Shipment> =>
     isMock

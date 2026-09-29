@@ -163,7 +163,7 @@ Creating a co-op invoice also opens a draft shipment linked to it. The quantity 
 
 `DELETE /shipments/{id}/farmers/{accountId}` takes that farmer off the shipment, with the same lock. If the linked invoice is `settling`, both calls rewrite incoming balances from the farmers now on the shipment.
 
-`PATCH /shipments/{id}` with `{ action: "advance" }` moves one stage forward. A draft moves on only when farmer kilos sum to `quantity_kg`. Advancing into `in_transit` sets `shipped_at`. Advancing from `delivered` to `completed` requires the linked invoice to be `completed`. A second advance on a completed shipment is rejected.
+`PATCH /shipments/{id}` with shipment fields (`buyer_name`, `product`, `quantity_kg`, `destination`, `value`, `currency`, `ship_date`) updates those details. Omitted fields stay as they are. `quantity_kg` must stay a positive whole number and cannot drop below the kilos already assigned to farmers. This is refused with 409 once `invoice_id` is set. The same route with `{ action: "advance" }` moves one stage forward. A draft moves on only when farmer kilos sum to `quantity_kg`. Advancing into `in_transit` sets `shipped_at`. Advancing from `delivered` to `completed` requires the linked invoice to be `completed`. A second advance on a completed shipment is rejected.
 
 `DELETE /shipments/{id}` removes the shipment. It is refused when the linked invoice is no longer `pending`. Deleting a pending invoice clears `invoice_id` on any shipment that pointed at it.
 
@@ -224,7 +224,9 @@ POST /shipments/{id}/farmers            { account_id, kilos } -> Shipment
                                         400 if they are not a member, kilos are not a positive integer, or the total would exceed quantity_kg.
                                         409 once the linked invoice split is approved.
 DELETE /shipments/{id}/farmers/{accountId} -> Shipment. 404 if they are not on it. Same 409 lock.
-PATCH /shipments/{id}                   { action: "advance" } -> Shipment
+PATCH /shipments/{id}                   { buyer_name?, product?, quantity_kg?, destination?, value?, currency?, ship_date? } -> Shipment
+                                        409 once an invoice is linked. quantity_kg cannot drop below assigned farmer kilos.
+                                        { action: "advance" } -> Shipment
 DELETE /shipments/{id}                  -> 204. 409 if the linked invoice is no longer pending.
 GET  /coops/{id}/metrics                -> { invoices, total_collected_kes_cents, fee_taken_kes_cents, total_split_kes_cents, avg_payout_time, live, demo? }
                                         Top-level totals include sample invoices when Demo Data is on, and live invoices only when it is off.
