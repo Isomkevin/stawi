@@ -1,5 +1,5 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
-import { FileText, LayoutDashboard } from "lucide-react";
+import { FileText, LayoutDashboard, Package } from "lucide-react";
 import { RoleGate } from "@/components/stawi/RoleGate";
 import { DashboardShell } from "@/features/shared/DashboardShell";
 
@@ -26,6 +26,7 @@ function DirectLayout() {
         nav={[
           { to: "/direct/overview", label: "Overview", icon: LayoutDashboard },
           { to: "/direct/invoices", label: "Invoices", icon: FileText },
+          { to: "/direct/shipments", label: "Shipments", icon: Package },
         ]}
       >
         <Outlet />
