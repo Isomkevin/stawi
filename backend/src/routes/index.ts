@@ -7,7 +7,8 @@ import { hashPin } from "../services/pin";
 import { pipeline } from "../services/pipeline";
 import { addShipmentFarmer, advanceShipment, openShipmentForInvoice, removeShipmentFarmer } from "../services/shipments";
 import { store } from "../store";
-import { Account, CoopMetrics, CoopMetricsBucket, CoopMember, DemoDataSettings, Invoice, PublicAccount, UNRESOLVED_ACCOUNT_NAME } from "../types";
+import { randomUUID } from "crypto";
+import { Account, PaymentProof, CoopMetrics, CoopMetricsBucket, CoopMember, DemoDataSettings, Invoice, PublicAccount, UNRESOLVED_ACCOUNT_NAME } from "../types";
 import { DEMO_DATA_EFFECT, demoDataDefault, demoDataVisible, includeInView, isDemo, parseDemoDataEnabled } from "../services/demoData";
 import { handleUssdCallback } from "../ussd/handler";
 import { registerAdmin } from "./admin";
@@ -935,6 +936,175 @@ apiRouter.post("/invoices/:id/approve-split", async (req: Request, res: Response
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
+});
+
+// -------------------------------------------------------------
+// Buyer portal (access code + shipment number, no account)
+// -------------------------------------------------------------
+/** Hardcoded default until buyer accounts exist. Override with BUYER_PORTAL_CODE. */
+function buyerCodeOk(code: unknown): boolean {
+  const expected = process.env.BUYER_PORTAL_CODE || "STAWI-BUYER-2026";
+  return typeof code === "string" && code.trim().toUpperCase() === expected.toUpperCase();
+}
+
+async function buyerShipment(req: Request, res: Response) {
+  const { access_code, shipment_reference } = req.body || {};
+  if (!buyerCodeOk(access_code)) {
+    res.status(403).json({ error: "That access code isn't right" });
+    return null;
+  }
+  const ref = typeof shipment_reference === "string" ? shipment_reference.trim().slice(0, 128) : "";
+  const shipment = ref ? await store.findShipmentByReference(ref) : undefined;
+  if (!shipment || !shipment.invoice_id) {
+    res.status(404).json({ error: "No shipment with that number has an invoice yet" });
+    return null;
+  }
+  const invoice = await store.getInvoice(shipment.invoice_id);
+  if (!invoice) {
+    res.status(404).json({ error: "Invoice not found" });
+    return null;
+  }
+  return { shipment, invoice };
+}
+
+apiRouter.post("/buyer/lookup", async (req: Request, res: Response) => {
+  const found = await buyerShipment(req, res);
+  if (!found) return;
+  const { shipment, invoice } = found;
+  const payee = await publicPayee(invoice);
+  const proofs = await store.listPaymentProofs({ invoice_id: invoice.id });
+  res.status(200).json({
+    shipment: {
+      reference: shipment.reference, product: shipment.product, quantity_kg: shipment.quantity_kg,
+      destination: shipment.destination, ship_date: shipment.ship_date, status: shipment.status,
+    },
+    invoice: {
+      id: invoice.id, reference: invoice.reference, amount: invoice.amount, currency: invoice.currency,
+      description: invoice.description, status: invoice.status, buyer_name: invoice.buyer_name, due_at: invoice.due_at,
+    },
+    payee_name: payee.payee_name,
+    proofs: proofs.map(({ receipt_data, payer_email, ...rest }) => rest),
+  });
+});
+
+apiRouter.post("/buyer/payment-proofs", async (req: Request, res: Response) => {
+  const found = await buyerShipment(req, res);
+  if (!found) return;
+  const { shipment, invoice } = found;
+  if (invoice.status !== "pending") {
+    res.status(409).json({ error: "This invoice is already paid" });
+    return;
+  }
+  const b = req.body || {};
+  const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+  const amount = Number(b.amount);
+  const payer_name = str(b.payer_name, 255);
+  const payer_email = str(b.payer_email, 255);
+  const bank_reference = str(b.bank_reference, 128);
+  const paid_at = str(b.paid_at, 32);
+  const receipt = typeof b.receipt_data === "string" ? b.receipt_data : "";
+  if (!payer_name || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(payer_email) || !bank_reference || !paid_at || !(amount > 0)) {
+    res.status(400).json({ error: "Fill in name, email, transfer reference, date and amount" });
+    return;
+  }
+  if (receipt && (!/^data:(image\/(png|jpeg|webp)|application\/pdf);base64,/.test(receipt) || receipt.length > 3_000_000)) {
+    res.status(400).json({ error: "Receipt must be a PNG, JPG, WEBP or PDF under 2 MB" });
+    return;
+  }
+  const proof: PaymentProof = {
+    id: `pp_${randomUUID()}`,
+    invoice_id: invoice.id,
+    shipment_id: shipment.id,
+    shipment_reference: shipment.reference,
+    coop_id: invoice.coop_id,
+    account_id: invoice.type === "direct" ? invoice.account_id : null,
+    payer_name, payer_email, bank_reference, amount,
+    currency: str(b.currency, 8).toUpperCase() || invoice.currency,
+    paid_at, note: str(b.note, 1000) || null,
+    receipt_name: receipt ? str(b.receipt_name, 255) || "receipt" : null,
+    receipt_data: receipt || null,
+    status: "submitted", reviewed_by: null, reviewed_at: null,
+    created_at: new Date().toISOString(),
+  };
+  await store.savePaymentProof(proof);
+  const { receipt_data, ...out } = proof;
+  res.status(201).json(out);
+});
+
+apiRouter.get("/coops/:id/payment-proofs", async (req: Request, res: Response) => {
+  const proofs = await store.listPaymentProofs({ coop_id: getParam(req.params.id) });
+  res.status(200).json(proofs.map(({ receipt_data, ...rest }) => ({ ...rest, has_receipt: Boolean(receipt_data) })));
+});
+
+apiRouter.get("/accounts/:id/payment-proofs", async (req: Request, res: Response) => {
+  const proofs = await store.listPaymentProofs({ account_id: getParam(req.params.id) });
+  res.status(200).json(proofs.map(({ receipt_data, ...rest }) => ({ ...rest, has_receipt: Boolean(receipt_data) })));
+});
+
+async function reviewableProof(req: Request, res: Response): Promise<PaymentProof | null> {
+  const proof = await store.getPaymentProof(getParam(req.params.id));
+  if (!proof) {
+    res.status(404).json({ error: "Payment proof not found" });
+    return null;
+  }
+  const me = req.account?.id;
+  let allowed = false;
+  if (proof.coop_id) {
+    const coop = await store.getCoop(proof.coop_id);
+    allowed = Boolean(coop && coop.treasurer_account_id === me);
+  } else allowed = Boolean(proof.account_id && proof.account_id === me);
+  if (!allowed && process.env.AUTH_REQUIRED !== "false") {
+    res.status(403).json({ error: "Only the payee can review this payment" });
+    return null;
+  }
+  return proof;
+}
+
+apiRouter.get("/payment-proofs/:id/receipt", async (req: Request, res: Response) => {
+  const proof = await reviewableProof(req, res);
+  if (!proof) return;
+  res.status(200).json({ receipt_name: proof.receipt_name, receipt_data: proof.receipt_data ?? null });
+});
+
+/** Treasurer checked the bank statement: record the collection so the split can be approved. */
+apiRouter.post("/payment-proofs/:id/confirm", async (req: Request, res: Response) => {
+  try {
+    const proof = await reviewableProof(req, res);
+    if (!proof) return;
+    if (proof.status !== "submitted") {
+      res.status(409).json({ error: `Already ${proof.status}` });
+      return;
+    }
+    const invoice = await store.getInvoice(proof.invoice_id);
+    if (!invoice || invoice.status !== "pending") {
+      res.status(409).json({ error: "This invoice is already paid" });
+      return;
+    }
+    const result = await pipeline.processPayment(invoice.id, `BANK-${proof.bank_reference}`, proof.amount, proof.currency);
+    proof.status = "confirmed";
+    proof.reviewed_by = req.account?.id ?? null;
+    proof.reviewed_at = new Date().toISOString();
+    await store.savePaymentProof(proof);
+    const { receipt_data, ...out } = proof;
+    res.status(200).json({ proof: out, invoice: result.invoice });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+apiRouter.post("/payment-proofs/:id/reject", async (req: Request, res: Response) => {
+  const proof = await reviewableProof(req, res);
+  if (!proof) return;
+  if (proof.status !== "submitted") {
+    res.status(409).json({ error: `Already ${proof.status}` });
+    return;
+  }
+  proof.status = "rejected";
+  proof.reviewed_by = req.account?.id ?? null;
+  proof.reviewed_at = new Date().toISOString();
+  await store.savePaymentProof(proof);
+  const { receipt_data, ...out } = proof;
+  res.status(200).json(out);
 });
 
 // -------------------------------------------------------------

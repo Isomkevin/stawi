@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 import { Pool, PoolClient, QueryResult, QueryResultRow } from "pg";
 import { InMemoryStore } from "../store";
-import { ACCOUNT_TYPES, Account, AccountType, Coop, CoopMember, Invoice, Payout, PayoutDestination, Shipment, ShipmentFarmer, ShipmentStatus, Transaction } from "../types";
+import { ACCOUNT_TYPES, Account, AccountType, Coop, CoopMember, Invoice, PaymentProof, Payout, PayoutDestination, Shipment, ShipmentFarmer, ShipmentStatus, Transaction } from "../types";
 
 const txClient = new AsyncLocalStorage<PoolClient>();
 
@@ -627,6 +627,72 @@ export class PostgresStore extends InMemoryStore {
     const id = result.rows[0].id as string;
     const farmers = await this.farmersFor([id]);
     return this.mapShipment(result.rows[0], farmers.get(id) || []);
+  }
+
+  public async findShipmentByReference(reference: string): Promise<Shipment | undefined> {
+    const result = await this.q("SELECT * FROM shipments WHERE LOWER(reference) = LOWER($1) LIMIT 1", [reference.trim()]);
+    if (!result.rows[0]) return undefined;
+    const id = result.rows[0].id as string;
+    const farmers = await this.farmersFor([id]);
+    return this.mapShipment(result.rows[0], farmers.get(id) || []);
+  }
+
+  private mapProof(row: QueryResultRow): PaymentProof {
+    const iso = (v: unknown) => (v instanceof Date ? v.toISOString() : v == null ? null : String(v));
+    return {
+      id: row.id,
+      invoice_id: row.invoice_id,
+      shipment_id: row.shipment_id ?? null,
+      shipment_reference: row.shipment_reference,
+      coop_id: row.coop_id ?? null,
+      account_id: row.account_id ?? null,
+      payer_name: row.payer_name,
+      payer_email: row.payer_email,
+      bank_reference: row.bank_reference,
+      amount: Number(row.amount),
+      currency: row.currency,
+      paid_at: row.paid_at,
+      note: row.note ?? null,
+      receipt_name: row.receipt_name ?? null,
+      receipt_data: row.receipt_data ?? null,
+      status: row.status,
+      reviewed_by: row.reviewed_by ?? null,
+      reviewed_at: iso(row.reviewed_at),
+      created_at: iso(row.created_at) || new Date().toISOString(),
+    };
+  }
+
+  public async savePaymentProof(p: PaymentProof): Promise<PaymentProof> {
+    await this.q(
+      `INSERT INTO payment_proofs (id, invoice_id, shipment_id, shipment_reference, coop_id, account_id, payer_name, payer_email,
+         bank_reference, amount, currency, paid_at, note, receipt_name, receipt_data, status, reviewed_by, reviewed_at, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+       ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status, reviewed_by = EXCLUDED.reviewed_by, reviewed_at = EXCLUDED.reviewed_at`,
+      [p.id, p.invoice_id, p.shipment_id, p.shipment_reference, p.coop_id, p.account_id, p.payer_name, p.payer_email,
+       p.bank_reference, p.amount, p.currency, p.paid_at, p.note, p.receipt_name, p.receipt_data ?? null, p.status, p.reviewed_by, p.reviewed_at, p.created_at]
+    );
+    return p;
+  }
+
+  public async getPaymentProof(id: string): Promise<PaymentProof | undefined> {
+    const result = await this.q("SELECT * FROM payment_proofs WHERE id = $1", [id]);
+    return result.rows[0] ? this.mapProof(result.rows[0]) : undefined;
+  }
+
+  public async listPaymentProofs(filter: { coop_id?: string; account_id?: string; invoice_id?: string }): Promise<PaymentProof[]> {
+    const where: string[] = [];
+    const params: unknown[] = [];
+    for (const key of ["coop_id", "account_id", "invoice_id"] as const) {
+      if (filter[key]) {
+        params.push(filter[key]);
+        where.push(`${key} = $${params.length}`);
+      }
+    }
+    const result = await this.q(
+      `SELECT * FROM payment_proofs ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY created_at DESC`,
+      params
+    );
+    return result.rows.map((row) => this.mapProof(row));
   }
 
   public async flagDemoInvoice(id: string): Promise<boolean> {

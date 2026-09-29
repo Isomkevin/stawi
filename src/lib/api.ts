@@ -14,6 +14,7 @@ import {
   type Invoice,
   type InvoiceDetail,
   type NewDestinationBody,
+  type PaymentProof,
   type Payout,
   type PayoutDestination,
   type WithdrawBody,
@@ -244,6 +245,17 @@ export const api = {
     isMock
       ? Promise.resolve({ sent: recipients.length, failed: 0, results: recipients.map((r) => ({ phone_number: r.phone_number, sent: true })) })
       : request(`/coops/${coopId}/invites/sms`, { method: "POST", body: JSON.stringify({ recipients }) }),
+
+  // GET /coops/{id}/payment-proofs or /accounts/{id}/payment-proofs (live only; see buyerPortal.ts)
+  listPaymentProofs: (path: string): Promise<PaymentProof[]> => request(path),
+
+  // GET /payment-proofs/{id}/receipt
+  getProofReceipt: (id: string): Promise<{ receipt_name: string | null; receipt_data: string | null }> =>
+    request(`/payment-proofs/${id}/receipt`),
+
+  // POST /payment-proofs/{id}/confirm | reject
+  reviewProof: (id: string, action: "confirm" | "reject"): Promise<unknown> =>
+    request(`/payment-proofs/${id}/${action}`, { method: "POST" }),
 
   // TODO(backend): add to contract — co-op invite links (POST /coops/{id}/invites)
   updateMemberShare: (coopId: string, accountId: string, share: number): Promise<void> =>

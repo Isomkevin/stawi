@@ -7,6 +7,7 @@ import {
   CoopMember,
   Invoice,
   Payout,
+  PaymentProof,
   Shipment,
   Transaction,
 } from "./types";
@@ -26,6 +27,7 @@ export class InMemoryStore {
   private otps = new Map<string, { codeHash: string; expiresAt: string; attempts: number }>();
   private sessions = new Map<string, { accountId: string; expiresAt: string }>();
   private shipments = new Map<string, Shipment>();
+  private paymentProofs = new Map<string, PaymentProof>();
   /** Present key means an admin saved this phone. The set may be empty. */
   private explicitTypes = new Map<string, Set<AccountType>>();
 
@@ -303,6 +305,33 @@ export class InMemoryStore {
       }
     }
     return undefined;
+  }
+
+  public async findShipmentByReference(reference: string): Promise<Shipment | undefined> {
+    const key = reference.trim().toLowerCase();
+    for (const shipment of this.shipments.values()) {
+      if (shipment.reference.toLowerCase() === key) {
+        return { ...shipment, farmers: shipment.farmers.map((farmer) => ({ ...farmer })) };
+      }
+    }
+    return undefined;
+  }
+
+  public async savePaymentProof(proof: PaymentProof): Promise<PaymentProof> {
+    this.paymentProofs.set(proof.id, { ...proof });
+    return { ...proof };
+  }
+
+  public async getPaymentProof(id: string): Promise<PaymentProof | undefined> {
+    const proof = this.paymentProofs.get(id);
+    return proof ? { ...proof } : undefined;
+  }
+
+  public async listPaymentProofs(filter: { coop_id?: string; account_id?: string; invoice_id?: string }): Promise<PaymentProof[]> {
+    return Array.from(this.paymentProofs.values())
+      .filter((p) => (!filter.coop_id || p.coop_id === filter.coop_id) && (!filter.account_id || p.account_id === filter.account_id) && (!filter.invoice_id || p.invoice_id === filter.invoice_id))
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .map((p) => ({ ...p }));
   }
 
   // Webhook idempotency

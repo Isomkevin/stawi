@@ -199,3 +199,29 @@ export type Shipment = {
   updated_at: string;
   is_demo?: boolean;
 };
+
+export type PaymentProofStatus = "submitted" | "confirmed" | "rejected";
+
+/** Bank-transfer proof a buyer submits in the buyer portal. `amount` is buyer currency decimal. */
+export type PaymentProof = {
+  id: string;
+  invoice_id: string;
+  shipment_id: string | null;
+  shipment_reference: string;
+  coop_id: string | null;
+  account_id: string | null;
+  payer_name: string;
+  payer_email: string;
+  bank_reference: string;
+  amount: number;
+  currency: string;
+  paid_at: string;
+  note: string | null;
+  receipt_name: string | null;
+  /** data: URL. Omitted from list responses unless requested. */
+  receipt_data?: string | null;
+  status: PaymentProofStatus;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+};
