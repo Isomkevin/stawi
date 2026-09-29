@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Download, Loader2, Upload, UserPlus } from "lucide-react";
+import { Download, Loader2, MessageSquare, Upload, UserPlus } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { CopyLink } from "@/components/stawi/CopyLink";
 import { StatusChip } from "@/components/stawi/StatusChip";
 import { Button } from "@/components/ui/button";
@@ -192,13 +193,13 @@ function Members() {
 
 const COOP_NAME = "Kiambu Highlands Coffee Co-op";
 
-type ImportResult = { added: string[]; updated: string[]; invites: Array<{ name: string; phone: string; share: number; url: string }>; failed: Array<{ name: string; reason: string }> };
+type Invite = { name: string; phone: string; share: number; url: string };
+type ImportResult = { added: string[]; updated: string[]; invites: Invite[]; failed: Array<{ name: string; reason: string }> };
 
 function ImportDialog({
   rows,
   onClose,
   coopId,
-  members,
   currentShares,
 }: {
   rows: MemberCsvRow[];
@@ -209,14 +210,23 @@ function ImportDialog({
 }) {
   const qc = useQueryClient();
   const [result, setResult] = useState<ImportResult | null>(null);
+  const [smsOpen, setSmsOpen] = useState(false);
   const valid = rows.filter((r) => !r.error);
   const invalid = rows.filter((r) => r.error);
 
-  const accByPhone = (phone: string) => mockDb.accounts.find((a) => normalizeKePhone(a.phone_number) === phone);
-  const plan = valid.map((r) => {
-    const acc = accByPhone(r.phone);
-    const member = acc && members.find((m) => m.account_id === acc.id);
-    return { row: r, acc, kind: member ? ("update" as const) : acc ? ("add" as const) : ("invite" as const) };
+  // Ask the server which phones already have a Stawi account.
+  const lookup = useQuery({
+    queryKey: ["coop", coopId, "lookup", valid.map((r) => r.phone).join(",")],
+    queryFn: () => api.lookupPhones(coopId, valid.map((r) => r.phone)),
+    enabled: valid.length > 0,
+    staleTime: 30_000,
+  });
+  const found = lookup.data ?? [];
+  const plan = valid.map((r, i) => {
+    const hit = found[i];
+    const acc = hit?.account_id ? { id: hit.account_id, full_name: hit.full_name ?? r.name } : undefined;
+    const kind = hit?.already_member ? ("update" as const) : acc ? ("add" as const) : ("invite" as const);
+    return { row: r, acc, kind };
   });
   const touched = new Set(plan.filter((p) => p.acc).map((p) => p.acc!.id));
   const projected =
@@ -255,19 +265,22 @@ function ImportDialog({
   const close = () => { setResult(null); onClose(); };
 
   return (
-    <Dialog open={rows.length > 0} onOpenChange={(o) => !o && close()}>
+    <>
+    <Dialog open={rows.length > 0 && !smsOpen} onOpenChange={(o) => !o && close()}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>{result ? "Import finished" : `Import ${rows.length} farmers`}</DialogTitle>
           <DialogDescription>
             {result
-              ? "Farmers already on Stawi were added straight away. New farmers need to open their invite link to set up M-Pesa and a PIN."
+              ? "Farmers already on Stawi were added with their share. New farmers need to open their invite link to set up M-Pesa and a PIN."
               : "Columns: name, phone, share %, and optionally kilos. Farmers already on Stawi are added directly; new ones get an invite link."}
           </DialogDescription>
         </DialogHeader>
 
         {!result ? (
           <>
+            {lookup.isLoading && <p className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="size-3 animate-spin" /> Checking who is already on Stawi…</p>}
+            {lookup.isError && <p className="text-xs text-terracotta">Couldn't check phone numbers. Everyone will get an invite link instead.</p>}
             <ul className="max-h-64 space-y-1 overflow-y-auto text-sm">
               {rows.map((r) => {
                 const p = plan.find((x) => x.row === r);
@@ -279,7 +292,7 @@ function ImportDialog({
                       {r.error ? (
                         <span className="text-terracotta">{r.error}</span>
                       ) : (
-                        <StatusChip status={p?.kind === "invite" ? "pending" : "verified"} label={p?.kind === "invite" ? "Invite" : p?.kind === "update" ? "Update share" : "Add"} />
+                        <StatusChip status={p?.kind === "invite" ? "pending" : "verified"} label={p?.kind === "invite" ? "Invite" : p?.kind === "update" ? "Update share" : "On Stawi · add"} />
                       )}
                     </span>
                   </li>
@@ -291,7 +304,7 @@ function ImportDialog({
               Shares after import: <span className="tabular">{projected}%</span>
               {projected !== 100 && " — adjust shares to reach 100% before the next split."}
             </p>
-            <Button disabled={valid.length === 0 || run.isPending} onClick={() => run.mutate()}>
+            <Button disabled={valid.length === 0 || run.isPending || lookup.isLoading} onClick={() => run.mutate()}>
               {run.isPending && <Loader2 className="size-4 animate-spin" />} Import {valid.length} farmers
             </Button>
           </>
@@ -313,16 +326,99 @@ function ImportDialog({
                 ))}
               </div>
             )}
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               {result.invites.length > 0 && (
-                <Button variant="outline" onClick={() => downloadCsv("stawi-invites.csv", [["name", "phone", "share", "invite_link"], ...result.invites.map((i) => [i.name, i.phone, i.share, i.url])])}>
-                  <Download className="size-4" /> Download invite list
-                </Button>
+                <>
+                  <Button onClick={() => setSmsOpen(true)}>
+                    <MessageSquare className="size-4" /> Text invites
+                  </Button>
+                  <Button variant="outline" onClick={() => downloadCsv("stawi-invites.csv", [["name", "phone", "share", "invite_link"], ...result.invites.map((i) => [i.name, i.phone, i.share, i.url])])}>
+                    <Download className="size-4" /> Download list
+                  </Button>
+                </>
               )}
-              <Button onClick={close}>Done</Button>
+              <Button variant={result.invites.length ? "ghost" : "default"} onClick={close}>Done</Button>
             </div>
           </>
         )}
+      </DialogContent>
+    </Dialog>
+    {result && (
+      <SendInvitesDialog open={smsOpen} onOpenChange={setSmsOpen} coopId={coopId} invites={result.invites} />
+    )}
+    </>
+  );
+}
+
+function SendInvitesDialog({
+  open,
+  onOpenChange,
+  coopId,
+  invites,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  coopId: string;
+  invites: Invite[];
+}) {
+  const [picked, setPicked] = useState<Set<string>>(() => new Set(invites.map((i) => i.phone)));
+  const [status, setStatus] = useState<Record<string, { sent: boolean; error?: string }>>({});
+  useEffect(() => { setPicked(new Set(invites.map((i) => i.phone))); setStatus({}); }, [invites]);
+  const all = picked.size === invites.length;
+  const toggle = (phone: string) =>
+    setPicked((prev) => { const n = new Set(prev); if (n.has(phone)) n.delete(phone); else n.add(phone); return n; });
+
+  const send = useMutation({
+    mutationFn: () =>
+      api.sendInviteSms(
+        coopId,
+        invites.filter((i) => picked.has(i.phone)).map((i) => ({ phone_number: i.phone, full_name: i.name, link: i.url })),
+      ),
+    onSuccess: (r) => {
+      const next: Record<string, { sent: boolean; error?: string }> = {};
+      for (const x of r.results) next[normalizeKePhone(x.phone_number) || x.phone_number] = { sent: x.sent, error: x.error };
+      setStatus(next);
+      if (r.failed === 0) toast.success(`Texted ${r.sent} farmers`);
+      else toast.error(`Texted ${r.sent}, ${r.failed} failed`);
+      // Leave the failed ones ticked so they can be retried.
+      setPicked(new Set(invites.filter((i) => next[i.phone] && !next[i.phone]!.sent).map((i) => i.phone)));
+    },
+    onError: (e) => toast.error(e instanceof ApiError ? e.message : "Couldn't send texts"),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Text invite links</DialogTitle>
+          <DialogDescription>Each farmer gets an SMS with their own link to join your co-op on Stawi. Untick anyone you don't want to text.</DialogDescription>
+        </DialogHeader>
+        <label className="flex items-center gap-2 border-b border-border pb-2 text-sm font-medium">
+          <Checkbox checked={all ? true : picked.size ? "indeterminate" : false} onCheckedChange={() => setPicked(all ? new Set() : new Set(invites.map((i) => i.phone)))} />
+          Select all ({picked.size}/{invites.length})
+        </label>
+        <ul className="max-h-72 space-y-1 overflow-y-auto text-sm">
+          {invites.map((i) => {
+            const st = status[i.phone];
+            return (
+              <li key={i.phone}>
+                <label className="flex cursor-pointer items-center gap-3 rounded-md px-1 py-1.5 hover:bg-muted">
+                  <Checkbox checked={picked.has(i.phone)} onCheckedChange={() => toggle(i.phone)} />
+                  <span className="min-w-0 flex-1 truncate">{i.name}</span>
+                  <span className="tabular text-xs text-muted-foreground">{i.phone}</span>
+                  {st && <StatusChip status={st.sent ? "verified" : "failed"} label={st.sent ? "Sent" : "Failed"} />}
+                </label>
+                {st?.error && <p className="pl-8 text-xs text-terracotta">{st.error}</p>}
+              </li>
+            );
+          })}
+        </ul>
+        <div className="flex gap-2">
+          <Button disabled={picked.size === 0 || send.isPending} onClick={() => send.mutate()}>
+            {send.isPending ? <Loader2 className="size-4 animate-spin" /> : <MessageSquare className="size-4" />} Send {picked.size} texts
+          </Button>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>Close</Button>
+        </div>
       </DialogContent>
     </Dialog>
   );
