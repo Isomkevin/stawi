@@ -16,7 +16,7 @@ const errMsg = (e: unknown) => (e instanceof ApiError ? e.code : "Something went
 export function DestinationManager({ account }: { account: Account | undefined }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [type, setType] = useState<"mpesa" | "bank">("mpesa");
+  const [type, setType] = useState<"mpesa" | "momo" | "bank">("mpesa");
   const [details, setDetails] = useState("");
   const [name, setName] = useState<string | null>(null);
 
@@ -56,7 +56,7 @@ export function DestinationManager({ account }: { account: Account | undefined }
     <>
       {list.map((d) => (
         <div key={d.id} className="flex items-center gap-3 py-1">
-          {d.type === "mpesa" ? <Smartphone className="size-5 text-lime" /> : <Landmark className="size-5 text-sage" />}
+          {d.type !== "bank" ? <Smartphone className="size-5 text-lime" /> : <Landmark className="size-5 text-sage" />}
           <div className="flex-1 text-sm">
             <p className="font-medium">{maskDestination(d.details)}</p>
             <p className="text-xs text-muted-foreground">{d.account_name}</p>
@@ -83,19 +83,19 @@ export function DestinationManager({ account }: { account: Account | undefined }
             <DialogTitle>Add a payout destination</DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-2">
-            {(["mpesa", "bank"] as const).map((t) => (
+            {(["mpesa", "momo", "bank"] as const).map((t) => (
               <Button key={t} variant={type === t ? "default" : "outline"} onClick={() => { setType(t); reset(); }}>
-                {t === "mpesa" ? "M-Pesa" : "Bank"}
+                {t === "mpesa" ? "M-Pesa" : t === "momo" ? "Mobile money" : "Bank"}
               </Button>
             ))}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="dest-details">{type === "mpesa" ? "M-Pesa number" : "Bank account number"}</Label>
+            <Label htmlFor="dest-details">{type === "mpesa" ? "M-Pesa number" : type === "momo" ? "Mobile money number (e.g. Airtel)" : "Bank account number"}</Label>
             <Input
               id="dest-details"
               inputMode="numeric"
               value={details}
-              placeholder={type === "mpesa" ? "+254 7XX XXX XXX" : "0110 0123 4567 00"}
+              placeholder={type !== "bank" ? "+254 7XX XXX XXX" : "0110 0123 4567 00"}
               onChange={(e) => { setDetails(e.target.value); setName(null); }}
             />
           </div>
