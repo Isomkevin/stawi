@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { PaymentProofsPanel } from "@/features/shared/PaymentProofsPanel";
 import { useAccountId } from "@/lib/session";
+import { EXPORTER_ID } from "@/lib/mock";
 
 export const Route = createFileRoute("/direct/payments")({
   head: () => ({
@@ -11,5 +12,5 @@ export const Route = createFileRoute("/direct/payments")({
       { property: "og:description", content: "Confirm buyer bank transfers." },
     ],
   }),
-  component: () => <PaymentProofsPanel accountId={useAccountId()} />,
+  component: () => <PaymentProofsPanel accountId={useAccountId(EXPORTER_ID)} />,
 });
