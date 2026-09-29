@@ -930,6 +930,7 @@ apiRouter.post("/invoices/:id/approve-split", async (req: Request, res: Response
       success: true,
       invoice: result.invoice,
       payouts: result.payouts,
+      transfers: result.transfers ?? [],
     });
   } catch (err) {
     res.status(500).json({ error: String(err) });
