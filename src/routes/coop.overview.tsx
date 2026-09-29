@@ -7,8 +7,9 @@ import { StatusChip } from "@/components/stawi/StatusChip";
 import { Skeleton } from "@/components/ui/skeleton";
 import { NewInvoiceSheet } from "@/features/shared/NewInvoiceSheet";
 import { PageHeader } from "@/features/shared/DashboardShell";
-import { coopMembersOptions, coopMetricsOptions, coopPayoutsOptions, invoicesOptions } from "@/lib/queries";
+import { coopShipmentsOptions, coopMembersOptions, coopMetricsOptions, coopPayoutsOptions, invoicesOptions } from "@/lib/queries";
 import { accountName } from "@/lib/mock";
+import { SHIPMENT_STATUSES, shipmentStatusMeta } from "@/lib/shipments";
 import { useCoopId } from "@/lib/session";
 import { formatDate, formatKesCents, formatKesCompact, relativeTime } from "@/lib/format";
 
@@ -32,6 +33,7 @@ function Overview() {
   const invoices = useQuery(invoicesOptions({ coop_id: coopId }));
   const members = useQuery(coopMembersOptions(coopId));
   const payouts = useQuery(coopPayoutsOptions(coopId));
+  const shipments = useQuery(coopShipmentsOptions(coopId));
 
   const settled = (invoices.data ?? []).filter((i) => i.kes_total_cents).sort((a, b) => +new Date(a.created_at) - +new Date(b.created_at));
   const area = settled.map((i) => ({ d: formatDate(i.created_at), kes: (i.kes_total_cents ?? 0) / 100 }));
@@ -62,6 +64,21 @@ function Overview() {
           [0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-32 rounded-2xl" />)
         )}
       </div>
+
+      <Link to="/coop/shipments" className="mt-6 block rounded-2xl border border-border bg-card p-5 hover:border-lime/50">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="font-medium">Shipments</h2>
+          <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">View all <ArrowRight className="size-4" /></span>
+        </div>
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+          {SHIPMENT_STATUSES.map((st) => (
+            <div key={st} className="rounded-xl bg-secondary/60 p-3">
+              <p className="text-xs text-muted-foreground">{shipmentStatusMeta[st].label}</p>
+              <p className="text-display text-xl tabular">{(shipments.data ?? []).filter((x) => x.status === st).length}</p>
+            </div>
+          ))}
+        </div>
+      </Link>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
         <section className="rounded-2xl border border-border bg-card p-5 lg:col-span-2">
