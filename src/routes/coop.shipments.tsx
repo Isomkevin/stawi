@@ -144,7 +144,11 @@ function ShipmentsPage() {
 
   return (
     <div>
-      <PageHeader title="Shipments" description="Every shipment you're running — what's moving, what's next, and what needs you." />
+      <PageHeader
+        title="Shipments"
+        description="Every shipment you're running — what's moving, what's next, and what needs you."
+        action={<NewShipment onCreated={(sid) => select(sid)} />}
+      />
 
       {/* Pipeline summary: click a stage to filter */}
       <div className="mb-4 grid grid-cols-3 gap-2 sm:grid-cols-6">
