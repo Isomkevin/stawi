@@ -1,6 +1,6 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { COOP_ID, EXPORTER_ID, FARMER_ID, TREASURER_ID } from "./mock";
-import { setSessionToken } from "./api";
+import { api, isMock, setSessionToken } from "./api";
 import type { Role } from "./types";
 
 type Session = {
@@ -9,8 +9,11 @@ type Session = {
   coopId: string | null;
 };
 
+type SignInOptions = { accountId?: string; coopId?: string | null; token?: string };
+
 type SessionContextValue = Session & {
-  signIn: (role: Role, accountId?: string) => void;
+  ready: boolean;
+  signIn: (role: Role, opts?: SignInOptions) => void;
   signOut: () => void;
 };
 
@@ -20,28 +23,57 @@ const roleDefaults: Record<Exclude<Role, "buyer">, Session> = {
   exporter: { role: "exporter", accountId: EXPORTER_ID, coopId: null },
 };
 
+const STORE_KEY = "stawi.session";
+const empty: Session = { role: null, accountId: null, coopId: null };
+
 // Kept on globalThis so a hot reload of this file doesn't create a second, empty context.
 const g = globalThis as { __stawiSessionCtx?: ReturnType<typeof createContext<SessionContextValue | null>> };
 const SessionContext = (g.__stawiSessionCtx ??= createContext<SessionContextValue | null>(null));
 
 export function SessionProvider({ children }: { children: ReactNode }) {
-  // Session lives in memory only; live mode expects an httpOnly cookie alongside it.
-  const [session, setSession] = useState<Session>({ role: null, accountId: null, coopId: null });
+  const [session, setSession] = useState<Session>(empty);
+  const [ready, setReady] = useState(isMock);
+
+  // Live mode: keep the sign-in for this browser tab so a reload doesn't sign you out.
+  useEffect(() => {
+    if (isMock) return;
+    try {
+      const raw = sessionStorage.getItem(STORE_KEY);
+      if (raw) {
+        const saved = JSON.parse(raw) as Session & { token: string };
+        setSessionToken(saved.token);
+        setSession({ role: saved.role, accountId: saved.accountId, coopId: saved.coopId });
+      }
+    } catch {
+      /* ignore */
+    }
+    setReady(true);
+  }, []);
 
   const value = useMemo<SessionContextValue>(
     () => ({
       ...session,
-      signIn: (role, accountId) => {
-        setSessionToken(`demo-token-${role}`);
-        const base = role === "buyer" ? { role, accountId: null, coopId: null } : roleDefaults[role];
-        setSession(accountId ? { ...base, accountId } : base);
+      ready,
+      signIn: (role, opts = {}) => {
+        const base = role === "buyer" ? empty : roleDefaults[role];
+        const next: Session = {
+          role,
+          accountId: opts.accountId ?? base.accountId,
+          coopId: opts.coopId !== undefined ? opts.coopId : base.coopId,
+        };
+        const token = opts.token ?? `demo-token-${role}`;
+        setSessionToken(token);
+        if (!isMock) sessionStorage.setItem(STORE_KEY, JSON.stringify({ ...next, token }));
+        setSession(next);
       },
       signOut: () => {
+        void api.logout().catch(() => undefined);
         setSessionToken(null);
-        setSession({ role: null, accountId: null, coopId: null });
+        if (!isMock) sessionStorage.removeItem(STORE_KEY);
+        setSession(empty);
       },
     }),
-    [session],
+    [session, ready],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
