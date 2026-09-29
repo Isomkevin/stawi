@@ -309,6 +309,75 @@ function DeleteShipment({ s, inv, onDeleted }: { s: Shipment; inv: Invoice | und
     />
   );
 }
+const errText = (e: unknown, fallback: string) => (e instanceof Error && e.message && !/^HTTP|fetch/i.test(e.message) ? e.message : fallback);
+
+function AddFarmer({ s }: { s: Shipment }) {
+  const coopId = useCoopId();
+  const qc = useQueryClient();
+  const members = useQuery(coopMembersOptions(coopId));
+  const [accountId, setAccountId] = useState("");
+  const [kilos, setKilos] = useState("");
+  const used = s.farmers.reduce((a, x) => a + x.kilos, 0);
+  const existing = s.farmers.find((x) => x.account_id === accountId);
+  const left = s.quantity_kg - used + (existing?.kilos ?? 0);
+  const add = useMutation({
+    mutationFn: () => api.addShipmentFarmer(s.id, accountId, Number(kilos)),
+    onSuccess: () => {
+      toast.success(existing ? "Farmer kilos updated" : "Farmer added to shipment");
+      setAccountId("");
+      setKilos("");
+      void qc.invalidateQueries({ queryKey: ["coop", coopId, "shipments"] });
+    },
+    onError: (e) => toast.error(errText(e, "Couldn't add the farmer.")),
+  });
+  const n = Number(kilos);
+  const valid = accountId && Number.isInteger(n) && n > 0 && n <= left;
+  return (
+    <form
+      className="mt-3 grid grid-cols-1 gap-2 rounded-xl border border-border p-3 sm:grid-cols-[minmax(0,1fr)_7rem_auto]"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (valid) add.mutate();
+      }}
+    >
+      <Select value={accountId} onValueChange={(v) => { setAccountId(v); const ex = s.farmers.find((x) => x.account_id === v); setKilos(ex ? String(ex.kilos) : ""); }}>
+        <SelectTrigger aria-label="Choose a farmer"><SelectValue placeholder={members.isLoading ? "Loading farmers…" : "Choose a co-op farmer"} /></SelectTrigger>
+        <SelectContent>
+          {(members.data ?? []).map((m) => (
+            <SelectItem key={m.account_id} value={m.account_id}>
+              {m.full_name ?? accountName(m.account_id)}{s.farmers.some((x) => x.account_id === m.account_id) ? " (on shipment)" : ""}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Input type="number" inputMode="numeric" min={1} max={left} step={1} placeholder="Kilos" aria-label="Kilos" value={kilos} onChange={(e) => setKilos(e.target.value)} />
+      <Button type="submit" disabled={!valid || add.isPending}>{existing ? "Update" : "Add"}</Button>
+      <p className="text-xs text-muted-foreground sm:col-span-3">{Math.max(left, 0).toLocaleString()} kg left to assign. Kilos must add up to {s.quantity_kg.toLocaleString()} kg before the draft can move on.</p>
+    </form>
+  );
+}
+
+function RemoveFarmer({ s, accountId, name }: { s: Shipment; accountId: string; name: string }) {
+  const coopId = useCoopId();
+  const qc = useQueryClient();
+  return (
+    <ConfirmDelete
+      label={`Remove ${name} from shipment`}
+      title={`Remove ${name} from ${s.reference}?`}
+      description="They won't be paid from this shipment. You can add them back until the split is approved."
+      onConfirm={async () => {
+        try {
+          await api.removeShipmentFarmer(s.id, accountId);
+          toast.success(`${name} removed from ${s.reference}`);
+          await qc.invalidateQueries({ queryKey: ["coop", coopId, "shipments"] });
+        } catch (e) {
+          toast.error(errText(e, "Couldn't remove the farmer."));
+        }
+      }}
+    />
+  );
+}
+
 /** The single most useful next step for a shipment, usable straight from the list. */
 function QuickAction({ s, inv, att, size = "sm" }: { s: Shipment; inv: Invoice | undefined; att: Attention[]; size?: "sm" | "default" }) {
   const coopId = useCoopId();
@@ -395,6 +464,7 @@ function ShipmentDetail({ s, inv, att, payouts, nameOf, onClose }: { s: Shipment
   const stage = SHIPMENT_STATUSES.indexOf(s.status);
   const payLink = inv ? `${typeof window !== "undefined" ? window.location.origin : ""}/pay/${inv.id}` : null;
   const totalKg = s.farmers.reduce((a, x) => a + x.kilos, 0);
+  const locked = s.status === "completed" || !!inv?.split_approved || inv?.status === "completed";
   return (
     <div className="p-5">
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
@@ -472,7 +542,7 @@ function ShipmentDetail({ s, inv, att, payouts, nameOf, onClose }: { s: Shipment
       <section className="mt-5">
         <div className="mb-2 flex items-baseline justify-between">
           <h3 className="text-sm font-medium">Farmers in this shipment</h3>
-          <span className="text-xs text-muted-foreground">{totalKg.toLocaleString()} kg · {inv?.kes_total_cents ? "payout" : "est. payout"}</span>
+          <span className="text-xs text-muted-foreground">{totalKg.toLocaleString()} / {s.quantity_kg.toLocaleString()} kg · {inv?.kes_total_cents ? "payout" : "est. payout"}</span>
         </div>
         {s.farmers.length === 0 ? (
           <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">No farmers added yet.</p>
@@ -489,11 +559,17 @@ function ShipmentDetail({ s, inv, att, payouts, nameOf, onClose }: { s: Shipment
                   <div className="flex items-center gap-2 text-right">
                     <span className="tabular">{formatKesCents(split.get(fm.account_id) ?? 0)}</span>
                     {p ? <StatusChip status={p.status} className="text-[10px]" /> : inv?.status === "completed" ? <Check className="size-4 text-lime" /> : null}
+                    {!locked && <RemoveFarmer s={s} accountId={fm.account_id} name={nameOf(fm.account_id)} />}
                   </div>
                 </li>
               );
             })}
           </ul>
+        )}
+        {locked ? (
+          <p className="mt-2 text-xs text-muted-foreground">Farmers are locked once the split is approved.</p>
+        ) : (
+          <AddFarmer s={s} />
         )}
       </section>
     </div>
