@@ -31,6 +31,7 @@ import { Route as CoopShipmentsRouteImport } from './routes/coop.shipments'
 import { Route as DemoUssdRouteImport } from './routes/demo.ussd'
 import { Route as DirectIndexRouteImport } from './routes/direct.index'
 import { Route as DirectOverviewRouteImport } from './routes/direct.overview'
+import { Route as DirectShipmentsRouteImport } from './routes/direct.shipments'
 import { Route as PayInvoiceIdRouteImport } from './routes/pay.$invoiceId'
 import { Route as CoopInvoicesIndexRouteImport } from './routes/coop.invoices.index'
 import { Route as CoopInvoicesIdRouteImport } from './routes/coop.invoices.$id'
@@ -147,6 +148,11 @@ const DirectOverviewRoute = DirectOverviewRouteImport.update({
   path: '/overview',
   getParentRoute: () => DirectRoute,
 } as any)
+const DirectShipmentsRoute = DirectShipmentsRouteImport.update({
+  id: '/shipments',
+  path: '/shipments',
+  getParentRoute: () => DirectRoute,
+} as any)
 const PayInvoiceIdRoute = PayInvoiceIdRouteImport.update({
   id: '/pay/$invoiceId',
   path: '/pay/$invoiceId',
@@ -193,6 +199,7 @@ export interface FileRoutesByFullPath {
   '/coop/shipments': typeof CoopShipmentsRoute
   '/demo/ussd': typeof DemoUssdRoute
   '/direct/overview': typeof DirectOverviewRoute
+  '/direct/shipments': typeof DirectShipmentsRoute
   '/pay/$invoiceId': typeof PayInvoiceIdRoute
   '/app/': typeof AppIndexRoute
   '/coop/': typeof CoopIndexRoute
@@ -219,6 +226,7 @@ export interface FileRoutesByTo {
   '/coop/shipments': typeof CoopShipmentsRoute
   '/demo/ussd': typeof DemoUssdRoute
   '/direct/overview': typeof DirectOverviewRoute
+  '/direct/shipments': typeof DirectShipmentsRoute
   '/pay/$invoiceId': typeof PayInvoiceIdRoute
   '/app': typeof AppIndexRoute
   '/coop': typeof CoopIndexRoute
@@ -249,6 +257,7 @@ export interface FileRoutesById {
   '/coop/shipments': typeof CoopShipmentsRoute
   '/demo/ussd': typeof DemoUssdRoute
   '/direct/overview': typeof DirectOverviewRoute
+  '/direct/shipments': typeof DirectShipmentsRoute
   '/pay/$invoiceId': typeof PayInvoiceIdRoute
   '/app/': typeof AppIndexRoute
   '/coop/': typeof CoopIndexRoute
@@ -280,6 +289,7 @@ export interface FileRouteTypes {
     | '/coop/shipments'
     | '/demo/ussd'
     | '/direct/overview'
+    | '/direct/shipments'
     | '/pay/$invoiceId'
     | '/app/'
     | '/coop/'
@@ -306,6 +316,7 @@ export interface FileRouteTypes {
     | '/coop/shipments'
     | '/demo/ussd'
     | '/direct/overview'
+    | '/direct/shipments'
     | '/pay/$invoiceId'
     | '/app'
     | '/coop'
@@ -335,6 +346,7 @@ export interface FileRouteTypes {
     | '/coop/shipments'
     | '/demo/ussd'
     | '/direct/overview'
+    | '/direct/shipments'
     | '/pay/$invoiceId'
     | '/app/'
     | '/coop/'
@@ -513,6 +525,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DirectOverviewRouteImport
       parentRoute: typeof DirectRoute
     }
+    '/direct/shipments': {
+      id: '/direct/shipments'
+      path: '/shipments'
+      fullPath: '/direct/shipments'
+      preLoaderRoute: typeof DirectShipmentsRouteImport
+      parentRoute: typeof DirectRoute
+    }
     '/pay/$invoiceId': {
       id: '/pay/$invoiceId'
       path: '/pay/$invoiceId'
@@ -597,6 +616,7 @@ const CoopRouteWithChildren = CoopRoute._addFileChildren(CoopRouteChildren)
 
 interface DirectRouteChildren {
   DirectOverviewRoute: typeof DirectOverviewRoute
+  DirectShipmentsRoute: typeof DirectShipmentsRoute
   DirectIndexRoute: typeof DirectIndexRoute
   DirectInvoicesIdRoute: typeof DirectInvoicesIdRoute
   DirectInvoicesIndexRoute: typeof DirectInvoicesIndexRoute
@@ -604,6 +624,7 @@ interface DirectRouteChildren {
 
 const DirectRouteChildren: DirectRouteChildren = {
   DirectOverviewRoute: DirectOverviewRoute,
+  DirectShipmentsRoute: DirectShipmentsRoute,
   DirectIndexRoute: DirectIndexRoute,
   DirectInvoicesIdRoute: DirectInvoicesIdRoute,
   DirectInvoicesIndexRoute: DirectInvoicesIndexRoute,

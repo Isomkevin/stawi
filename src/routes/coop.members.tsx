@@ -362,7 +362,7 @@ function SendInvitesDialog({
   invites: Invite[];
 }) {
   const [picked, setPicked] = useState<Set<string>>(() => new Set(invites.map((i) => i.phone)));
-  const [status, setStatus] = useState<Record<string, { sent: boolean; error?: string }>>({});
+  const [status, setStatus] = useState<Record<string, { sent: boolean; error?: string | undefined }>>({});
   useEffect(() => { setPicked(new Set(invites.map((i) => i.phone))); setStatus({}); }, [invites]);
   const all = picked.size === invites.length;
   const toggle = (phone: string) =>
@@ -375,7 +375,7 @@ function SendInvitesDialog({
         invites.filter((i) => picked.has(i.phone)).map((i) => ({ phone_number: i.phone, full_name: i.name, link: i.url })),
       ),
     onSuccess: (r) => {
-      const next: Record<string, { sent: boolean; error?: string }> = {};
+      const next: Record<string, { sent: boolean; error?: string | undefined }> = {};
       for (const x of r.results) next[normalizeKePhone(x.phone_number) || x.phone_number] = { sent: x.sent, error: x.error };
       setStatus(next);
       if (r.failed === 0) toast.success(`Texted ${r.sent} farmers`);
