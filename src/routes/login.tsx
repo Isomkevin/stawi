@@ -163,6 +163,7 @@ function LoginPage() {
                 size="lg"
                 className="mt-5 w-full min-h-[48px] text-base"
                 onClick={sendCode}
+                disabled={busy}
               >
                 Send code
                 <ArrowRight className="size-4" strokeWidth={2} />
@@ -174,8 +175,9 @@ function LoginPage() {
             <div className="mt-5">
               <h1 className="text-display text-2xl">Check your messages</h1>
               <p className="mt-2 text-sm text-muted-foreground">
-                We sent a 6-digit code to {phone}. In this demo, use{" "}
-                <span className="tabular text-lime">123456</span>.
+                We sent a 6-digit code to {phone}.
+                {isMock && <> In this demo, use <span className="tabular text-lime">123456</span>.</>}
+                {devCode && <> Test code: <span className="tabular text-lime">{devCode}</span>.</>}
               </p>
               <label className="mt-6 block text-sm font-medium" htmlFor="code">
                 One-time code
@@ -195,7 +197,7 @@ function LoginPage() {
                   {error}
                 </p>
               )}
-              <Button size="lg" className="mt-5 w-full min-h-[48px] text-base" onClick={verify}>
+              <Button size="lg" className="mt-5 w-full min-h-[48px] text-base" onClick={verify} disabled={busy}>
                 Verify code
                 <ArrowRight className="size-4" strokeWidth={2} />
               </Button>
@@ -250,7 +252,7 @@ function LoginPage() {
         </p>
 
         <p className="mt-6 text-center text-xs text-muted-foreground/70">
-          Demo environment · any phone number works with code {DEMO_CODE}
+          {isMock ? `Demo environment · any phone number works with code ${DEMO_CODE}` : "We'll text a code to the number on your Stawi account."}
         </p>
       </div>
     </div>
