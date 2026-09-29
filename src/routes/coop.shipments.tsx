@@ -231,7 +231,7 @@ function useAdvance(coopId: string) {
 }
 
 /** The single most useful next step for a shipment, usable straight from the list. */
-function QuickAction({ s, inv, att, size = "sm" }: { s: Shipment; inv?: Invoice; att: Attention[]; size?: "sm" | "default" }) {
+function QuickAction({ s, inv, att, size = "sm" }: { s: Shipment; inv: Invoice | undefined; att: Attention[]; size?: "sm" | "default" }) {
   const coopId = useCoopId();
   const advance = useAdvance(coopId);
   if (att.some((a) => a.kind === "approve") && inv)
@@ -265,7 +265,7 @@ function QuickAction({ s, inv, att, size = "sm" }: { s: Shipment; inv?: Invoice;
   );
 }
 
-function ShipmentRow({ s, inv, att, active, compact, onOpen }: { s: Shipment; inv?: Invoice; att: Attention[]; active: boolean; compact: boolean; onOpen: () => void }) {
+function ShipmentRow({ s, inv, att, active, compact, onOpen }: { s: Shipment; inv: Invoice | undefined; att: Attention[]; active: boolean; compact: boolean; onOpen: () => void }) {
   return (
     <li>
       <div
@@ -310,7 +310,7 @@ function ShipmentRow({ s, inv, att, active, compact, onOpen }: { s: Shipment; in
   );
 }
 
-function ShipmentDetail({ s, inv, att, payouts, onClose }: { s: Shipment; inv?: Invoice; att: Attention[]; payouts: Payout[]; onClose?: () => void }) {
+function ShipmentDetail({ s, inv, att, payouts, onClose }: { s: Shipment; inv: Invoice | undefined; att: Attention[]; payouts: Payout[]; onClose?: () => void }) {
   const split = farmerSplit(s, inv);
   const stage = SHIPMENT_STATUSES.indexOf(s.status);
   const payLink = inv ? `${typeof window !== "undefined" ? window.location.origin : ""}/pay/${inv.id}` : null;
