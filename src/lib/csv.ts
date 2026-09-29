@@ -69,8 +69,10 @@ export function parseMembersCsv(text: string): MemberCsvRow[] {
   }
   const seen = new Set<string>();
   return lines.map(({ i, cells }) => {
-    const name = cells[idx.name] ?? "";
-    const phone = normalizeKePhone(cells[idx.phone] ?? "");
+    let name = cells[idx.name] ?? "";
+    let phone = normalizeKePhone(cells[idx.phone] ?? "");
+    const asPhone = normalizeKePhone(name);
+    if (!/^\+254\d{9}$/.test(phone) && /^\+254\d{9}$/.test(asPhone)) { phone = asPhone; name = cells[idx.phone] ?? ""; }
     const shareRaw = (cells[idx.share] ?? "").replace("%", "");
     const share = Number(shareRaw);
     const kilosRaw = idx.kilos >= 0 ? cells[idx.kilos] : undefined;
