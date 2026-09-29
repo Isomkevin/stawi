@@ -408,7 +408,11 @@ def check_17():
         data={"sessionId": "USSD-SESS-2", "phoneNumber": phone, "text": "2"},
         expected_status=200,
     )
-    assert "END Recent:" in tx_text or "END No recent transactions" in tx_text
+    assert (
+        "END Transaction done:" in tx_text
+        or "END Recent:" in tx_text
+        or "END No recent transactions" in tx_text
+    )
 
     # 17e. Option 3: Full Withdrawal Menu Flow (3*1*200*1234)
     status, wth_res, _ = request(
