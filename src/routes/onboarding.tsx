@@ -17,6 +17,7 @@ const search = z.object({
   coop: z.string().optional(),
   share: z.coerce.number().optional(),
   phone: z.string().optional(),
+  name: z.string().optional(),
 });
 
 export const Route = createFileRoute("/onboarding")({
@@ -41,7 +42,7 @@ function Onboarding() {
   const { signIn } = useSession();
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
-  const [name, setName] = useState("");
+  const [name, setName] = useState(invite.name ?? "");
   const [idNo, setIdNo] = useState("");
   const [phone, setPhone] = useState(invite.phone ?? "+2547");
   const [destType, setDestType] = useState<"mpesa" | "bank">("mpesa");
