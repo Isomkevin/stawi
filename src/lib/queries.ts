@@ -1,6 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
 import { api } from "./api";
-import { shipmentsApi } from "./shipments";
 
 export const accountOptions = (accountId: string) =>
   queryOptions({ queryKey: ["account", accountId], queryFn: () => api.getAccount(accountId) });
@@ -46,4 +45,4 @@ export const coopPayoutsOptions = (coopId: string) =>
   queryOptions({ queryKey: ["coop", coopId, "payouts"], queryFn: () => api.listCoopPayouts(coopId) });
 
 export const coopShipmentsOptions = (coopId: string) =>
-  queryOptions({ queryKey: ["coop", coopId, "shipments"], queryFn: () => shipmentsApi.list(coopId) });
+  queryOptions({ queryKey: ["coop", coopId, "shipments"], queryFn: () => api.listShipments(coopId), refetchInterval: 10000 });

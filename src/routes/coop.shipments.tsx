@@ -13,7 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { PageHeader } from "@/features/shared/DashboardShell";
 import { attentionFor, canClose, farmerSplit, type Attention } from "@/features/coop/shipmentLogic";
 import { coopPayoutsOptions, coopShipmentsOptions, invoicesOptions } from "@/lib/queries";
-import { SHIPMENT_STATUSES, shipmentStatusMeta, shipmentsApi, type Shipment, type ShipmentStatus } from "@/lib/shipments";
+import { SHIPMENT_STATUSES, shipmentStatusMeta, type Shipment, type ShipmentStatus } from "@/lib/shipments";
+import { api } from "@/lib/api";
 import { accountName } from "@/lib/mock";
 import { useCoopId } from "@/lib/session";
 import { formatCurrency, formatDate, formatKesCents } from "@/lib/format";
@@ -64,6 +65,22 @@ function ShipmentsPage() {
   const [filter, setFilter] = useState<Filter>("all");
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<Sort>("ship_date");
+  const [farmer, setFarmer] = useState("all");
+  const [dest, setDest] = useState("all");
+
+  const farmerOptions = useMemo(() => {
+    const ids = new Set<string>();
+    (shipments.data ?? []).forEach((s) => s.farmers.forEach((x) => ids.add(x.account_id)));
+    return [...ids].map((id) => ({ id, name: accountName(id) })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [shipments.data]);
+  const destOptions = useMemo(() => [...new Set((shipments.data ?? []).map((s) => s.destination))].sort(), [shipments.data]);
+  const extraFilters = farmer !== "all" || dest !== "all" || filter !== "all" || q !== "";
+  const clearFilters = () => {
+    setFarmer("all");
+    setDest("all");
+    setFilter("all");
+    setQ("");
+  };
 
   const invById = useMemo(() => new Map((invoices.data ?? []).map((i) => [i.id, i])), [invoices.data]);
   const rows = useMemo(
@@ -91,6 +108,8 @@ function ShipmentsPage() {
       .filter((r) =>
         filter === "all" ? true : filter === "attention" ? r.att.length > 0 : filter === "active" ? r.s.status !== "completed" : r.s.status === filter,
       )
+      .filter((r) => farmer === "all" || r.s.farmers.some((x) => x.account_id === farmer))
+      .filter((r) => dest === "all" || r.s.destination === dest)
       .filter((r) => {
         if (!term) return true;
         const farmers = r.s.farmers.map((x) => accountName(x.account_id)).join(" ");
@@ -102,7 +121,7 @@ function ShipmentsPage() {
         // upcoming first, then most recent past
         return Math.abs(+new Date(a.s.ship_date) - Date.now()) - Math.abs(+new Date(b.s.ship_date) - Date.now());
       });
-  }, [rows, filter, q, sort]);
+  }, [rows, filter, q, sort, farmer, dest]);
 
   const selected = rows.find((r) => r.s.id === id);
   const select = (sid?: string) => void navigate({ search: sid ? { id: sid } : {}, replace: true, resetScroll: false });
@@ -138,7 +157,7 @@ function ShipmentsPage() {
         ))}
       </div>
 
-      {attentionRows.length > 0 && filter === "all" && !q && (
+      {attentionRows.length > 0 && !extraFilters && (
         <section className="mb-4 rounded-2xl border border-amber/40 bg-amber/10 p-4">
           <div className="mb-2 flex items-center gap-2 text-sm font-medium">
             <AlertTriangle className="size-4 text-amber" /> {attentionRows.length} shipments need your attention
@@ -171,6 +190,31 @@ function ShipmentsPage() {
           </SelectContent>
         </Select>
       </div>
+      <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]">
+        <Select value={filter} onValueChange={(v) => setFilter(v as Filter)}>
+          <SelectTrigger aria-label="Filter by status"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {filters.map((fl) => (
+              <SelectItem key={fl.key} value={fl.key}>{fl.key === "all" ? "All statuses" : fl.label} ({counts[fl.key] ?? 0})</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={farmer} onValueChange={setFarmer}>
+          <SelectTrigger aria-label="Filter by farmer"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All farmers</SelectItem>
+            {farmerOptions.map((f) => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={dest} onValueChange={setDest}>
+          <SelectTrigger aria-label="Filter by destination"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All destinations</SelectItem>
+            {destOptions.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Button variant="ghost" onClick={clearFilters} disabled={!extraFilters}>Clear</Button>
+      </div>
       <div className="mb-4 flex gap-1.5 overflow-x-auto pb-1">
         {filters.map((fl) => (
           <button
@@ -191,6 +235,10 @@ function ShipmentsPage() {
         <div className="min-w-0">
           {shipments.isLoading ? (
             <div className="space-y-2">{[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-24 rounded-2xl" />)}</div>
+          ) : shipments.isError ? (
+            <div role="alert" className="rounded-2xl border border-terracotta/40 bg-terracotta/10 p-4 text-sm">
+              Couldn't load shipments. <Button variant="link" className="h-auto p-0" onClick={() => void shipments.refetch()}>Try again</Button>
+            </div>
           ) : visible.length === 0 ? (
             <EmptyState icon={Package} title="No shipments match" description="Try a different filter or search." />
           ) : (
@@ -222,11 +270,12 @@ function ShipmentsPage() {
 function useAdvance(coopId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (sid: string) => shipmentsApi.advance(sid),
+    mutationFn: (sid: string) => api.advanceShipment(sid),
     onSuccess: (s) => {
       void qc.invalidateQueries({ queryKey: ["coop", coopId, "shipments"] });
       toast.success(`${s.reference} is now ${shipmentStatusMeta[s.status].label.toLowerCase()}`);
     },
+    onError: () => toast.error("Couldn't update the shipment. Please try again."),
   });
 }
 
