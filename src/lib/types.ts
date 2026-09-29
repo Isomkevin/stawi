@@ -227,3 +227,48 @@ export class ApiError extends Error {
     this.attemptsLeft = attemptsLeft;
   }
 }
+
+export type PaymentProofStatus = "submitted" | "confirmed" | "rejected";
+
+export type PaymentProof = {
+  id: string;
+  invoice_id: string;
+  shipment_id: string | null;
+  shipment_reference: string;
+  coop_id: string | null;
+  account_id: string | null;
+  payer_name: string;
+  payer_email?: string;
+  bank_reference: string;
+  amount: number;
+  currency: string;
+  paid_at: string;
+  note: string | null;
+  receipt_name: string | null;
+  has_receipt?: boolean;
+  status: PaymentProofStatus;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+};
+
+export type BuyerLookup = {
+  shipment: { reference: string; product: string; quantity_kg: number; destination: string; ship_date: string; status: ShipmentStatus };
+  invoice: { id: string; reference: string; amount: number; currency: string; description: string; status: InvoiceStatus; buyer_name: string; due_at: string | null };
+  payee_name?: string;
+  proofs: PaymentProof[];
+};
+
+export type NewPaymentProofBody = {
+  access_code: string;
+  shipment_reference: string;
+  payer_name: string;
+  payer_email: string;
+  bank_reference: string;
+  amount: number;
+  currency: string;
+  paid_at: string;
+  note?: string;
+  receipt_name?: string;
+  receipt_data?: string;
+};
