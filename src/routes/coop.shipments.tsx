@@ -158,7 +158,24 @@ function ShipmentsPage() {
       </div>
 
       {attentionRows.length > 0 && !extraFilters && (
-...
+        <section className="mb-4 rounded-2xl border border-amber/40 bg-amber/10 p-4">
+          <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+            <AlertTriangle className="size-4 text-amber" /> {attentionRows.length} shipments need your attention
+          </div>
+          <ul className="grid gap-2 sm:grid-cols-2">
+            {attentionRows.slice(0, 4).map((r) => (
+              <li key={r.s.id}>
+                <button type="button" onClick={() => select(r.s.id)} className="flex min-h-11 w-full items-center gap-2 rounded-xl bg-card px-3 py-2 text-left text-sm hover:bg-secondary">
+                  <span className="shrink-0 font-medium tabular">{r.s.reference}</span>
+                  <span className="min-w-0 flex-1 truncate text-muted-foreground">{r.att[0]!.text}</span>
+                  <ChevronRight className="size-4 shrink-0" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
