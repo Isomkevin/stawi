@@ -50,5 +50,8 @@ export const coopMetricsOptions = (coopId: string) =>
 export const coopPayoutsOptions = (coopId: string) =>
   queryOptions({ queryKey: ["coop", coopId, "payouts"], queryFn: () => api.listCoopPayouts(coopId) });
 
+export const accountShipmentsOptions = (accountId: string) =>
+  queryOptions({ queryKey: ["account", accountId, "shipments"], queryFn: () => api.listAccountShipments(accountId), refetchInterval: 10000 });
+
 export const coopShipmentsOptions = (coopId: string) =>
   queryOptions({ queryKey: ["coop", coopId, "shipments"], queryFn: () => api.listShipments(coopId), refetchInterval: 10000 });

@@ -102,9 +102,9 @@ function WithdrawTab() {
                 }}
                 className="flex min-h-16 w-full items-center gap-3 rounded-2xl border border-border bg-card px-4 text-left hover:border-lime"
               >
-                {d.type === "mpesa" ? <Smartphone className="size-5 text-lime" /> : <Landmark className="size-5 text-sage" />}
+                {d.type !== "bank" ? <Smartphone className="size-5 text-lime" /> : <Landmark className="size-5 text-sage" />}
                 <span className="flex-1">
-                  <span className="block text-sm font-medium">{d.type === "mpesa" ? "M-Pesa" : "Bank"} · {maskDestination(d.details)}</span>
+                  <span className="block text-sm font-medium">{d.type === "mpesa" ? "M-Pesa" : d.type === "momo" ? "Mobile money" : "Bank"} · {maskDestination(d.details)}</span>
                   <span className="text-xs text-muted-foreground">{d.account_name}{!d.is_verified && " · not verified yet"}</span>
                 </span>
               </button>
@@ -159,7 +159,7 @@ function WithdrawTab() {
             <h1 className="text-display text-2xl">{t("withdraw.review")}</h1>
             <div className="space-y-3 rounded-2xl border border-border bg-card p-5 text-sm">
               <Line k="Amount" v={formatKesCents(cents)} strong />
-              <Line k="To" v={`${dest.type === "mpesa" ? "M-Pesa" : "Bank"} ${maskDestination(dest.details)}`} />
+              <Line k="To" v={`${dest.type === "mpesa" ? "M-Pesa" : dest.type === "momo" ? "Mobile money" : "Bank"} ${maskDestination(dest.details)}`} />
               <Line k="Name" v={dest.account_name} />
               <Line k="Fee" v="Free" />
               <Line k="Arrives" v="Within minutes" />

@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { api } from "@/lib/api";
-import { coopMembersOptions, coopShipmentsOptions } from "@/lib/queries";
+import { coopMembersOptions } from "@/lib/queries";
 import { FEE_RATE, fxFor, accountName } from "@/lib/mock";
 import { formatKesCents } from "@/lib/format";
 import type { Invoice } from "@/lib/types";
@@ -23,7 +23,6 @@ const schema = z.object({
   amount: z.coerce.number().positive("Enter an amount"),
   currency: z.enum(["USD", "EUR"]),
   description: z.string().min(3, "Describe the goods"),
-  shipment_id: z.string().optional(),
 });
 type Values = z.infer<typeof schema>;
 
@@ -41,33 +40,20 @@ export function NewInvoiceSheet({
   const [open, setOpen] = useState(false);
   const [created, setCreated] = useState<Invoice | null>(null);
   const qc = useQueryClient();
-  const shipments = useQuery({ ...coopShipmentsOptions(coopId ?? ""), enabled: type === "coop" && open && !!coopId });
-  const members = useQuery({ ...coopMembersOptions(coopId ?? ""), enabled: type === "coop" && open && !!coopId });
-  const memberName = (accountId: string) => members.data?.find((member) => member.account_id === accountId)?.full_name ?? accountName(accountId);
+  const members = useQuery({ ...coopMembersOptions(coopId ?? ""), enabled: type === "coop" && !!coopId });
   const form = useForm<Values>({
     resolver: zodResolver(schema),
-    defaultValues: { buyer_name: "", buyer_email: "", amount: 0, currency: "USD", description: "", shipment_id: "" },
+    defaultValues: { buyer_name: "", buyer_email: "", amount: 0, currency: "USD", description: "" },
   });
   const amount = Number(form.watch("amount")) || 0;
   const currency = form.watch("currency");
-  const shipmentId = form.watch("shipment_id") ?? "";
-  const openLots = (shipments.data ?? []).filter((shipment) => !shipment.invoice_id);
-  const selectedLot = openLots.find((shipment) => shipment.id === shipmentId);
-  const selectedKg = selectedLot?.farmers.reduce((sum, farmer) => sum + farmer.kilos, 0) ?? 0;
 
   const create = useMutation({
     mutationFn: (v: Values) =>
-      api.createInvoice({
-        ...v,
-        type,
-        coop_id: coopId,
-        account_id: accountId,
-        shipment_id: v.shipment_id || undefined,
-      }),
+      api.createInvoice({ ...v, type, coop_id: coopId, account_id: accountId }),
     onSuccess: (inv) => {
       setCreated(inv);
       void qc.invalidateQueries({ queryKey: ["invoices"] });
-      if (coopId) void qc.invalidateQueries({ queryKey: ["coop", coopId, "shipments"] });
     },
   });
 
@@ -128,37 +114,20 @@ export function NewInvoiceSheet({
             <F label="What's being sold" error={form.formState.errors.description?.message}>
               <Textarea {...form.register("description")} rows={2} />
             </F>
-            {type === "coop" && (
-              <F label="Shipment">
-                <select {...form.register("shipment_id")} className="h-11 w-full rounded-md border border-input bg-transparent px-3 text-sm">
-                  <option value="">New shipment</option>
-                  {openLots.map((shipment) => (
-                    <option key={shipment.id} value={shipment.id}>
-                      {shipment.reference} · {shipment.product} · {shipment.quantity_kg.toLocaleString()} kg
-                    </option>
-                  ))}
-                </select>
-              </F>
-            )}
 
             {amount > 0 && (
               <div className="rounded-2xl border border-border bg-card p-4 text-sm">
                 <p className="mb-2 text-xs tracking-wide text-amber uppercase">Estimate — final rate set at payment</p>
                 <div className="flex justify-between"><span className="text-muted-foreground">You receive about</span><span className="tabular text-lime">{formatKesCents(netPreview)}</span></div>
-                {type === "coop" && selectedLot && selectedKg > 0 && (
+                {type === "coop" && members.data && (
                   <div className="mt-3 max-h-48 space-y-1 overflow-y-auto border-t border-border pt-3">
-                    {selectedLot.farmers.map((farmer) => (
-                      <div key={farmer.account_id} className="flex justify-between text-xs">
-                        <span>{memberName(farmer.account_id)} · {farmer.kilos} kg</span>
-                        <span className="tabular">{formatKesCents(Math.round((netPreview * farmer.kilos) / selectedKg))}</span>
+                    {members.data.map((m) => (
+                      <div key={m.account_id} className="flex justify-between text-xs">
+                        <span>{m.full_name ?? accountName(m.account_id)} · {m.contribution_share}%</span>
+                        <span className="tabular">{formatKesCents(Math.round((netPreview * m.contribution_share) / 100))}</span>
                       </div>
                     ))}
                   </div>
-                )}
-                {type === "coop" && (!selectedLot || selectedKg === 0) && (
-                  <p className="mt-3 border-t border-border pt-3 text-xs text-muted-foreground">
-                    Add the farmers on the shipment. Only they are paid when this invoice is split.
-                  </p>
                 )}
               </div>
             )}

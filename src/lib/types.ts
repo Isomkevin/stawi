@@ -4,7 +4,7 @@
 
 export type PayoutDestination = {
   id: string;
-  type: "mpesa" | "bank";
+  type: "mpesa" | "momo" | "bank";
   details: string;
   account_name: string;
   is_verified: boolean;
@@ -175,7 +175,6 @@ export type CreateInvoiceBody = {
   description: string;
   reference?: string | undefined;
   due_at?: string | null | undefined;
-  shipment_id?: string | undefined;
 };
 
 export type WithdrawBody = {
@@ -185,7 +184,7 @@ export type WithdrawBody = {
   idempotency_key: string;
 };
 
-export type NewDestinationBody = { type: "mpesa" | "bank"; details: string; account_name: string };
+export type NewDestinationBody = { type: "mpesa" | "momo" | "bank"; details: string; account_name: string };
 
 export type ShipmentStatus = "draft" | "preparing" | "ready" | "in_transit" | "delivered" | "completed";
 

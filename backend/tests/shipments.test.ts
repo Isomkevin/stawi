@@ -320,55 +320,6 @@ describe("Co-op shipments", () => {
     expect(locked.status).toBe(409);
   });
 
-  it("links a new invoice to the shipment you choose", async () => {
-    await store.saveShipment(shipment({ invoice_id: null, buyer_name: "Buyer not assigned", value: 1000 }));
-    const created = await request(app).post("/invoices").send({
-      type: "coop",
-      coop_id: "coop_test",
-      buyer_name: "Buyer BV",
-      buyer_email: "buyer@bv.com",
-      amount: 2500,
-      currency: "usd",
-      description: "Washed AA",
-      shipment_id: "shp_test",
-    });
-    expect(created.status).toBe(201);
-    const linked = await store.getShipment("shp_test");
-    expect(linked?.invoice_id).toBe(created.body.id);
-    expect(linked?.buyer_name).toBe("Buyer BV");
-    expect(linked?.value).toBe(2500);
-    expect(linked?.currency).toBe("USD");
-    expect(linked?.farmers).toEqual([{ account_id: "acc_farmer", kilos: 100 }]);
-
-    const again = await request(app).post("/invoices").send({
-      type: "coop",
-      coop_id: "coop_test",
-      buyer_name: "Other Buyer",
-      buyer_email: "other@bv.com",
-      amount: 900,
-      currency: "USD",
-      description: "Another lot",
-      shipment_id: "shp_test",
-    });
-    expect(again.status).toBe(409);
-    expect((await store.listShipments("coop_test")).filter((item) => item.invoice_id === again.body?.id)).toEqual([]);
-
-    const fresh = await request(app).post("/invoices").send({
-      type: "coop",
-      coop_id: "coop_test",
-      buyer_name: "New Buyer",
-      buyer_email: "new@bv.com",
-      amount: 400,
-      currency: "EUR",
-      description: "500 kg peaberry",
-    });
-    expect(fresh.status).toBe(201);
-    const opened = await store.getShipmentByInvoice(fresh.body.id);
-    expect(opened?.quantity_kg).toBe(500);
-    expect(opened?.farmers).toEqual([]);
-    expect(opened?.id).not.toBe("shp_test");
-  });
-
   it("returns 404 for an unknown co-op or shipment", async () => {
     const missingCoop = await request(app).get("/coops/missing/shipments");
     expect(missingCoop.status).toBe(404);

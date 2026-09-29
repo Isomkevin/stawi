@@ -109,7 +109,7 @@ Left sidebar, top bar with co-op name, quick "New invoice" button, notification 
 
 **Overview**: KPI row (Total collected, Paid out to farmers, Fees paid, Avg time-to-payout, Farmers paid this month) with sparklines; area chart of collections over time; bar chart of payouts per farmer; donut of contribution shares; "Needs your attention" panel (invoices awaiting split approval, farmers missing payout details, failed payouts); recent activity feed. Transparent fee card: "You paid KES X in fees vs an estimated KES Y typically lost to bank spreads", labelled as an estimate with an editable assumption.
 
-**Invoices**: table with status chips, search, filters (status, date, buyer), sorting; "New invoice" side sheet: buyer name/email/phone, currency, amount, description, shipment reference, due date. Creating a co-op invoice opens a draft shipment for that invoice (1000 kg, or the kg amount written in the description), unless the form sends `shipment_id` for a shipment that does not already have an invoice. The shipment picker lists those open lots. The split pays only the farmers on that shipment, in proportion to their kilos. On the shipment detail, an **Add farmer** button posts `{ account_id, kilos }` to `POST /shipments/{id}/farmers` and a remove control calls `DELETE /shipments/{id}/farmers/{accountId}`. Hide both once the linked invoice split is approved. Live preview of the split table comes from `split_preview`: `share` is an integer percent of those kilos and the percents sum to 100. On create, show the payment link with copy/share (WhatsApp, email) and a QR code.
+**Invoices**: table with status chips, search, filters (status, date, buyer), sorting; "New invoice" side sheet: buyer name/email/phone, currency, amount, description, shipment reference, due date. Creating a co-op invoice opens a draft shipment for that invoice (1000 kg, or the kg amount written in the description). The split pays only the farmers on that shipment, in proportion to their kilos. On the shipment detail, let the treasurer add a co-op member with whole kilos (`POST /shipments/{id}/farmers` `{ account_id, kilos }`) and remove one (`DELETE /shipments/{id}/farmers/{accountId}`). Live preview of the split table comes from `split_preview`: `share` is an integer percent of those kilos and the percents sum to 100. On create, show the payment link with copy/share (WhatsApp, email) and a QR code.
 
 **Invoice detail**: header with status and buyer; horizontal payment timeline (Created → Sent → Paid → Converted → Split approved → Paid out); **Split review panel**: table of each farmer, share %, kilos (optional), gross KES, fee, net KES, destination masked, status; validation that shares sum to 100% with a clear warning; **Approve & release** button opens a confirm dialog and PIN step; after approval, rows update live with per-farmer status. Buyer payment details, FX rate applied, fee breakdown, downloadable PDF-style receipt view.
 
@@ -184,9 +184,8 @@ POST /accounts/{id}/withdraw            { destination_id, amount_kes_cents, pin,
 POST /coops                             POST /coops/{id}/members { account_id, contribution_share, kilos? }
 GET  /coops/{id}/members                GET /coops/{id}/metrics -> { invoices, total_collected_kes_cents, fee_taken_kes_cents, total_split_kes_cents, live, demo? }
                                         `live` is live invoices only. `demo` is included only while Demo Data is on. Top-level totals match what the viewer can see.
-GET  /invoices?coop_id=&account_id=     POST /invoices { type, account_id|coop_id, buyer_name, buyer_email, amount, currency, description, reference?, shipment_id? }
-                                        Without shipment_id, a co-op invoice opens a draft shipment linked to it, with no farmers yet.
-                                        shipment_id links that existing shipment. 409 if it already has an invoice.
+GET  /invoices?coop_id=&account_id=     POST /invoices { type, account_id|coop_id, buyer_name, buyer_email, amount, currency, description, reference? }
+                                        A co-op invoice also opens a draft shipment linked to it, with no farmers yet.
 GET  /invoices/{id}                     -> { invoice, transactions, split_preview: SplitLine[] | null, payee_name, farmer_count }
                                         Public. payee_name is the co-op or exporter name. farmer_count is the member count, or null on a direct invoice.
                                         The pay page reads these. It does not call GET /coops/{id}, GET /coops/{id}/members, or GET /accounts/{id}.
@@ -247,3 +246,11 @@ When `VITE_API_MODE=live`, ignore this mock and read the backend. That ledger is
 **Phase 5 — Direct + USSD simulator:** "Build the Direct dashboard and the USSD simulator with the request/response inspector, wired to the same mock API."
 
 **Phase 6 — Polish pass:** "Audit every screen for loading/empty/error states, motion, contrast, tap targets, responsive breakpoints and copy clarity. Fix anything that looks generic. Then wire `VITE_API_MODE=live` and list every endpoint the backend must implement."
+
+### §8 additions (2026-09-29)
+
+- `GET /accounts/{id}/shipments` → `Shipment[]` — a Direct exporter's own shipments (`account_id` set, `coop_id` empty). Every direct invoice opens one; advance with `PATCH /shipments/{id}`.
+- `POST /coops/{id}/members/lookup` `{ phones: string[] }` → `[{ phone_number, account_id|null, full_name|null, already_member, other_coop }]` (treasurer only).
+- `POST /coops/{id}/invites/sms` `{ recipients: [{ phone_number, full_name, link }] }` → `{ sent, failed, results: [{ phone_number, sent, error? }] }`. Link must be an `https://…/onboarding?` URL.
+- `POST /invoices/{id}/approve-split` now also returns `transfers: Payout[]`: after the split each farmer's share is sent through Payaza to their first verified M-Pesa / mobile money (`momo`) / bank destination. Status `sent` until the payout webhook confirms, `confirmed` in mock mode, `failed` leaves the money in the Stawi balance. Farmers with no verified destination keep it in balance.
+- `PayoutDestination.type` adds `"momo"`; set `PAYAZA_MOMO_BANK_CODE` for non-Safaricom wallets.

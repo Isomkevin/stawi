@@ -73,7 +73,7 @@ function id(prefix: string, n: number | string) {
 
 const dest = (
   n: string,
-  type: "mpesa" | "bank",
+  type: "mpesa" | "momo" | "bank",
   details: string,
   account_name: string,
   is_verified = true,
@@ -575,6 +575,20 @@ export const mockApi = {
     return structuredClone(row);
   },
 
+  async lookupPhones(coopId: string, phones: string[]) {
+    const norm = (p: string) => p.replace(/[^\d]/g, "").replace(/^0/, "254").replace(/^(?!254)/, "254");
+    return phones.map((phone) => {
+      const acc = mockDb.accounts.find((a) => norm(a.phone_number) === norm(phone));
+      return {
+        phone_number: phone,
+        account_id: acc?.id ?? null,
+        full_name: acc?.full_name ?? null,
+        already_member: acc ? mockDb.members.some((m) => m.coop_id === coopId && m.account_id === acc.id) : false,
+        other_coop: false,
+      };
+    });
+  },
+
   async updateMemberShare(accountId: string, share: number): Promise<void> {
     await latency(200);
     const member = members.find((m) => m.account_id === accountId);
@@ -665,13 +679,6 @@ export const mockApi = {
       due_at: body.due_at ?? daysAhead(14),
     };
     invoices.unshift(invoice);
-    try {
-      const { shipmentsApi } = await import("./shipments");
-      shipmentsApi.attachInvoice(invoice, body.shipment_id);
-    } catch (err) {
-      invoices.splice(invoices.indexOf(invoice), 1);
-      throw err;
-    }
     return structuredClone(invoice);
   },
 
@@ -749,7 +756,7 @@ export const mockApi = {
 
   async addDestination(
     accountId: string,
-    body: { type: "mpesa" | "bank"; details: string; account_name: string },
+    body: { type: "mpesa" | "momo" | "bank"; details: string; account_name: string },
   ): Promise<PayoutDestination> {
     await latency(500);
     const account = accounts.find((a) => a.id === accountId);
@@ -770,7 +777,7 @@ export const mockApi = {
     account.payout_destinations = account.payout_destinations.filter((d) => d.id !== destId);
   },
 
-  async resolveAccountName(type: "mpesa" | "bank", details: string): Promise<string> {
+  async resolveAccountName(type: "mpesa" | "momo" | "bank", details: string): Promise<string> {
     await latency(900);
     if (details.replace(/\D/g, "").length < 6) throw new ApiError(400, "Could not resolve this account");
     return type === "mpesa" ? "WANJIKU M MWANGI" : "KIAMBU HIGHLANDS LTD";
