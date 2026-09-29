@@ -186,7 +186,7 @@ function LoginPage() {
               <Input
                 id="code"
                 inputMode="numeric"
-                maxLength={6}
+                maxLength={10}
                 placeholder="••••••"
                 value={code}
                 onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
