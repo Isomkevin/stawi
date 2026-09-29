@@ -1,5 +1,5 @@
 import { store } from "../store";
-import { Invoice, Payout, SplitLine, Transaction } from "../types";
+import { FarmerShareConfirmation, Invoice, Payout, SplitLine, Transaction, Shipment } from "../types";
 import {
   allocateWithdrawal,
   applyWithdrawal,
@@ -243,6 +243,38 @@ export class PipelineService {
     const platformFeeCents = invoice.fee_kes_cents !== null ? invoice.fee_kes_cents : feeCents(grossKesCents, 0.8);
 
     return splitByKilos(grossKesCents, platformFeeCents, farmers);
+  }
+
+  /**
+   * Confirms the share just saved on a shipment.
+   * A live invoice with a verified M-Pesa number is paid by Payaza when the treasurer approves the split.
+   * Sample invoices stay on the sample balance. Payaza is not called for them outside mock mode.
+   */
+  public async describeFarmerShare(shipment: Shipment, accountId: string): Promise<FarmerShareConfirmation> {
+    const farmer = shipment.farmers.find((row) => row.account_id === accountId);
+    const account = await store.getAccount(accountId);
+    const destination = account?.payout_destinations.find(
+      (dest) => dest.is_verified && (dest.type === "mpesa" || dest.type === "momo")
+    );
+    const invoice = shipment.invoice_id ? await store.getInvoice(shipment.invoice_id) : undefined;
+    const lines = invoice?.type === "coop" ? await this.getSplitPreview(invoice.id) : null;
+    const line = lines?.find((row) => row.account_id === accountId);
+    const buyerPaid = invoice != null && invoice.status !== "pending" && invoice.status !== "failed";
+    const sample = invoice?.is_demo === true && payaza.getMode() !== "mock";
+    let payout: FarmerShareConfirmation["payout"] = "awaiting_payment";
+    if (!destination) payout = "balance";
+    else if (!buyerPaid) payout = "awaiting_payment";
+    else if (sample) payout = "sample_balance";
+    else payout = "mpesa_on_approval";
+
+    return {
+      account_id: accountId,
+      kilos: farmer?.kilos ?? 0,
+      share: line?.share ?? null,
+      net_kes_cents: line?.net_kes_cents ?? null,
+      mpesa: destination ? maskMobile(destination.details) : null,
+      payout,
+    };
   }
 
   /**
@@ -800,6 +832,11 @@ export class PipelineService {
       ],
     };
   }
+}
+
+function maskMobile(details: string): string {
+  const digits = details.replace(/\D/g, "");
+  return `•••• ${digits.slice(-4)}`;
 }
 
 function bankCodeFor(destination: { type: string; bank_code?: string }): string {

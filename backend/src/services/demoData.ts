@@ -8,12 +8,12 @@ import { PayazaMode } from "./payaza";
 export const DEMO_DATA_EFFECT =
   "Shows sample records, labelled Demo, alongside live transactions. It does not switch Payaza mode, block live payments, or mark new invoices as sample. Turning it off hides sample records and keeps them stored. Live balance is what sandbox and live payouts can send. Sample balance stays separate, and it can be withdrawn only while Payaza is in mock mode.";
 
-/** Env default when the account has no saved override. Production hides sample rows unless DEMO_DATA_ENABLED=true. */
+/** Env default when the account has no saved override. Hidden only when DEMO_DATA_ENABLED is explicitly false. */
 export function demoDataDefault(): boolean {
   const raw = (process.env.DEMO_DATA_ENABLED ?? "").trim().toLowerCase();
-  if (raw === "true" || raw === "1" || raw === "on") return true;
   if (raw === "false" || raw === "0" || raw === "off") return false;
-  return process.env.NODE_ENV !== "production";
+  if (raw === "true" || raw === "1" || raw === "on") return true;
+  return true;
 }
 
 /** Saved account value wins. Null or a missing account follows the env default. */

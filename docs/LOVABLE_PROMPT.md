@@ -196,9 +196,13 @@ POST /invoices/{id}/approve-split       { treasurer_id, pin } -> { success, invo
 POST /dev/simulate-payment/{invoiceId}  -> { success, invoice, transactions, payouts } (mock backend only)
 GET  /coops/{id}                        GET /coops/{id}/payouts -> Payout[] (members' payouts for this co-op's invoices, newest first)
 GET  /coops/{id}/shipments              -> Shipment[]
-POST /shipments/{id}/farmers            { account_id, kilos } -> Shipment
+POST /shipments/{id}/farmers            { account_id, kilos, mpesa? } -> Shipment & { confirmation }
+                                        confirmation: { account_id, kilos, share, net_kes_cents, mpesa, payout }
+                                        payout is "mpesa_on_approval" | "sample_balance" | "balance" | "awaiting_payment"
+                                        mpesa on the confirmation is masked. Optional mpesa in the body is saved when the farmer has no verified mobile number.
+                                        A live invoice pays that M-Pesa through Payaza when the treasurer approves the split. Sample invoices do not call Payaza.
                                         201 the first time that farmer is added, 200 when their kilos change.
-                                        400 if they are not a co-op member, kilos are not a positive integer, or the total would exceed quantity_kg.
+                                        400 if they are not a co-op member, kilos are not a positive integer, the M-Pesa number is not Kenyan, or the total would exceed quantity_kg.
                                         409 once the linked invoice split is approved.
 DELETE /shipments/{id}/farmers/{accountId} -> Shipment. 404 if they are not on it. Same 409 lock.
                                         While the linked invoice is settling, adding or removing a farmer rewrites incoming balances.

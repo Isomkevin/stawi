@@ -283,9 +283,28 @@ describe("Co-op shipments", () => {
     const stranger = await request(app).post("/shipments/shp_test/farmers").send({ account_id: "acc_missing", kilos: 10 });
     expect(stranger.status).toBe(400);
 
-    const added = await request(app).post("/shipments/shp_test/farmers").send({ account_id: "acc_farmer", kilos: 60 });
+    const badPhone = await request(app).post("/shipments/shp_test/farmers").send({ account_id: "acc_farmer", kilos: 60, mpesa: "123" });
+    expect(badPhone.status).toBe(400);
+    expect((await store.getShipment("shp_test"))?.farmers).toEqual([]);
+
+    const added = await request(app).post("/shipments/shp_test/farmers").send({
+      account_id: "acc_farmer",
+      kilos: 60,
+      mpesa: "0712004501",
+    });
     expect(added.status).toBe(201);
     expect(added.body.farmers).toEqual([{ account_id: "acc_farmer", kilos: 60 }]);
+    expect(added.body.confirmation).toMatchObject({
+      account_id: "acc_farmer",
+      kilos: 60,
+      share: 100,
+      net_kes_cents: 1_279_680,
+      payout: "mpesa_on_approval",
+    });
+    expect(added.body.confirmation.mpesa).toBe("•••• 4501");
+    const savedDest = (await store.getAccount("acc_farmer"))?.payout_destinations.find((dest) => dest.type === "mpesa");
+    expect(savedDest?.details).toBe("+254712004501");
+    expect(savedDest?.is_verified).toBe(true);
 
     const updated = await request(app).post("/shipments/shp_test/farmers").send({ account_id: "acc_farmer", kilos: 40 });
     expect(updated.status).toBe(200);

@@ -103,6 +103,27 @@ describe("demo data alongside live transactions", () => {
     expect(reset.body.demo_data_visible).toBe(reset.body.demo_data_default);
   });
 
+  it("keeps sample rows visible in production unless the account or env turns them off", async () => {
+    const previousEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    process.env.AUTH_REQUIRED = "false";
+    try {
+      const { id } = await signup();
+      await store.saveInvoice(sampleInvoice(id));
+      const shown = await request(app).get("/invoices").query({ account_id: id });
+      expect(shown.body.map((row: Invoice) => row.id)).toContain("inv_sample_1");
+
+      process.env.DEMO_DATA_ENABLED = "false";
+      const hidden = await request(app).get("/invoices").query({ account_id: id });
+      expect(hidden.body.map((row: Invoice) => row.id)).toEqual([]);
+    } finally {
+      if (previousEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = previousEnv;
+      delete process.env.DEMO_DATA_ENABLED;
+      delete process.env.AUTH_REQUIRED;
+    }
+  });
+
   it("refuses to send sample invoices or sample balances through live Payaza", async () => {
     const { id, destinationId } = await signup();
     const account = await store.getAccount(id);

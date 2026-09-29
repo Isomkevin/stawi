@@ -1,5 +1,6 @@
 import { mockDemoVisible } from "./mock";
-import type { Shipment, ShipmentFarmer, ShipmentStatus } from "./types";
+import type { FarmerShareConfirmation, Shipment, ShipmentFarmer, ShipmentStatus } from "./types";
+import { ApiError } from "./types";
 
 // Mock shipments for VITE_API_MODE=mock. Live mode reads GET /coops/{id}/shipments
 // and advances with PATCH /shipments/{id} { action: "advance" }.
@@ -58,5 +59,40 @@ export const shipmentsApi = {
     await wait();
     const i = shipments.findIndex((x) => x.id === id);
     if (i >= 0) shipments.splice(i, 1);
+  },
+  addFarmer: async (
+    shipmentId: string,
+    accountId: string,
+    kilos: number,
+    mpesa?: string,
+  ): Promise<Shipment & { confirmation: FarmerShareConfirmation }> => {
+    await wait();
+    const s = shipments.find((x) => x.id === shipmentId);
+    if (!s) throw new ApiError(404, "Shipment not found");
+    if (!Number.isInteger(kilos) || kilos <= 0) throw new ApiError(400, "Kilos must be a whole number greater than zero");
+    const others = s.farmers.filter((farmer) => farmer.account_id !== accountId);
+    const used = others.reduce((sum, farmer) => sum + farmer.kilos, 0);
+    if (used + kilos > s.quantity_kg) throw new ApiError(400, "Farmer kilos would exceed the shipment quantity");
+    s.farmers = [...others, { account_id: accountId, kilos }].sort((a, b) => a.account_id.localeCompare(b.account_id));
+    s.updated_at = new Date().toISOString();
+    const total = s.farmers.reduce((sum, farmer) => sum + farmer.kilos, 0);
+    const confirmation: FarmerShareConfirmation = {
+      account_id: accountId,
+      kilos,
+      share: total > 0 ? Math.round((kilos / total) * 100) : null,
+      net_kes_cents: null,
+      mpesa: mpesa ? `•••• ${mpesa.replace(/\D/g, "").slice(-4)}` : null,
+      payout: mpesa ? "awaiting_payment" : "balance",
+    };
+    return { ...s, farmers: [...s.farmers], confirmation };
+  },
+  removeFarmer: async (shipmentId: string, accountId: string): Promise<Shipment> => {
+    await wait();
+    const s = shipments.find((x) => x.id === shipmentId);
+    if (!s) throw new ApiError(404, "Shipment not found");
+    if (!s.farmers.some((farmer) => farmer.account_id === accountId)) throw new ApiError(404, "Farmer is not on this shipment");
+    s.farmers = s.farmers.filter((farmer) => farmer.account_id !== accountId);
+    s.updated_at = new Date().toISOString();
+    return { ...s, farmers: [...s.farmers] };
   },
 };

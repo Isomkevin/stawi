@@ -1,4 +1,5 @@
 import { store } from "../store";
+import { requireKenyanPhone } from "./phone";
 import { Invoice, SHIPMENT_STATUSES, Shipment, ShipmentFarmer } from "../types";
 
 /** A new co-op invoice opens an empty draft shipment. The treasurer adds the farmers who will be paid. */
@@ -80,10 +81,43 @@ function withFarmer(shipment: Shipment, accountId: string, kilos: number): Shipm
   return [...others, { account_id: accountId, kilos }].sort((a, b) => a.account_id.localeCompare(b.account_id));
 }
 
+/** Saves a verified M-Pesa number when the farmer does not already have one. Payaza pays this number on split approval. */
+async function attachMpesa(accountId: string, raw: string | undefined): Promise<{ ok: false; error: string } | { ok: true }> {
+  if (!raw || !raw.trim()) return { ok: true };
+  let phone: string;
+  try {
+    phone = requireKenyanPhone(raw);
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Enter a Kenyan M-Pesa number" };
+  }
+  const account = await store.getAccount(accountId);
+  if (!account) return { ok: false, error: "Farmer account not found" };
+  const hasMobile = account.payout_destinations.some(
+    (dest) => dest.is_verified && (dest.type === "mpesa" || dest.type === "momo")
+  );
+  if (hasMobile) return { ok: true };
+  if (account.payout_destinations.some((dest) => dest.type === "mpesa" && dest.details === phone)) {
+    const existing = account.payout_destinations.find((dest) => dest.type === "mpesa" && dest.details === phone);
+    if (existing && !existing.is_verified) existing.is_verified = true;
+    await store.saveAccount(account);
+    return { ok: true };
+  }
+  account.payout_destinations.push({
+    id: `dest_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`,
+    type: "mpesa",
+    details: phone,
+    account_name: account.full_name,
+    is_verified: true,
+  });
+  await store.saveAccount(account);
+  return { ok: true };
+}
+
 export async function addShipmentFarmer(
   shipmentId: string,
   accountId: string,
-  kilos: number
+  kilos: number,
+  mpesa?: string
 ): Promise<{ ok: true; shipment: Shipment; created: boolean } | { ok: false; status: number; error: string }> {
   const current = await store.getShipment(shipmentId);
   if (!current) return { ok: false, status: 404, error: "Shipment not found" };
@@ -104,6 +138,9 @@ export async function addShipmentFarmer(
   if (used + kilos > current.quantity_kg) {
     return { ok: false, status: 400, error: "Farmer kilos would exceed the shipment quantity" };
   }
+
+  const mobile = await attachMpesa(accountId, mpesa);
+  if (!mobile.ok) return { ok: false, status: 400, error: mobile.error };
 
   const shipment: Shipment = {
     ...current,

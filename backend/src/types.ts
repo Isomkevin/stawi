@@ -29,7 +29,7 @@ export type Account = {
   /** Seeded sample account. Live signups are false. */
   is_demo?: boolean;
   /**
-   * Saved Demo Data switch. Null follows DEMO_DATA_ENABLED, or the non-production default.
+   * Saved Demo Data switch. Null follows DEMO_DATA_ENABLED. Unset means sample rows stay visible.
    * This does not change PAYAZA_MODE.
    */
   demo_data_enabled?: boolean | null;
@@ -175,6 +175,27 @@ export type ShipmentStatus = (typeof SHIPMENT_STATUSES)[number];
 export type ShipmentFarmer = {
   account_id: string;
   kilos: number;
+};
+
+/**
+ * Returned when a farmer is added or their kilos change.
+ * The payout itself still waits for the treasurer PIN on approve-split, which calls Payaza.
+ */
+export type FarmerShareConfirmation = {
+  account_id: string;
+  kilos: number;
+  /** Integer percent of this shipment's kilos. Null when there is no co-op invoice to price. */
+  share: number | null;
+  net_kes_cents: number | null;
+  /** Masked verified M-Pesa or mobile-money number, when one is saved. */
+  mpesa: string | null;
+  /**
+   * mpesa_on_approval: a live invoice will send this share through Payaza on approve.
+   * sample_balance: the invoice is sample data, so Payaza is not called.
+   * balance: no verified mobile number, so the share stays in the Stawi balance.
+   * awaiting_payment: the buyer has not paid yet.
+   */
+  payout: "mpesa_on_approval" | "sample_balance" | "balance" | "awaiting_payment";
 };
 
 /** Buyer-currency `value` is a decimal, same as invoice `amount`. Kilos are whole kilograms. */

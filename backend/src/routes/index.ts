@@ -654,13 +654,15 @@ apiRouter.post("/shipments/:id/farmers", async (req: Request, res: Response) => 
     res.status(400).json({ error: "account_id and a whole number of kilos are required" });
     return;
   }
-  const result = await addShipmentFarmer(getParam(req.params.id), String(accountId), kilos);
+  const mpesa = typeof req.body?.mpesa === "string" ? req.body.mpesa : undefined;
+  const result = await addShipmentFarmer(getParam(req.params.id), String(accountId), kilos, mpesa);
   if (!result.ok) {
     res.status(result.status).json({ error: result.error });
     return;
   }
   await refreshIncomingIfSettling(result.shipment);
-  res.status(result.created ? 201 : 200).json(result.shipment);
+  const confirmation = await pipeline.describeFarmerShare(result.shipment, String(accountId));
+  res.status(result.created ? 201 : 200).json({ ...result.shipment, confirmation });
 });
 
 apiRouter.delete("/shipments/:id/farmers/:accountId", async (req: Request, res: Response) => {

@@ -16,6 +16,7 @@ import {
   type PaymentReceipt,
   type NewDestinationBody,
   type PaymentProof,
+  type FarmerShareConfirmation,
   type Payout,
   type PayoutDestination,
   type WithdrawBody,
@@ -198,6 +199,26 @@ export const api = {
   // GET /coops/{id}/shipments
   listShipments: (coopId: string): Promise<Shipment[]> =>
     isMock ? shipmentsApi.list(coopId) : request(`/coops/${coopId}/shipments`),
+
+  // POST /shipments/{id}/farmers { account_id, kilos, mpesa? } → Shipment & { confirmation }
+  addShipmentFarmer: (
+    shipmentId: string,
+    accountId: string,
+    kilos: number,
+    mpesa?: string,
+  ): Promise<Shipment & { confirmation: FarmerShareConfirmation }> =>
+    isMock
+      ? shipmentsApi.addFarmer(shipmentId, accountId, kilos, mpesa)
+      : request(`/shipments/${shipmentId}/farmers`, {
+          method: "POST",
+          body: JSON.stringify({ account_id: accountId, kilos, ...(mpesa ? { mpesa } : {}) }),
+        }),
+
+  // DELETE /shipments/{id}/farmers/{accountId} → Shipment
+  removeShipmentFarmer: (shipmentId: string, accountId: string): Promise<Shipment> =>
+    isMock
+      ? shipmentsApi.removeFarmer(shipmentId, accountId)
+      : request(`/shipments/${shipmentId}/farmers/${accountId}`, { method: "DELETE" }),
 
   // PATCH /shipments/{id} { action: "advance" } → Shipment
   advanceShipment: (shipmentId: string): Promise<Shipment> =>

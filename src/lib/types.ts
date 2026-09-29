@@ -211,6 +211,15 @@ export type ShipmentStatus = "draft" | "preparing" | "ready" | "in_transit" | "d
 
 export type ShipmentFarmer = { account_id: string; kilos: number };
 
+export type FarmerShareConfirmation = {
+  account_id: string;
+  kilos: number;
+  share: number | null;
+  net_kes_cents: number | null;
+  mpesa: string | null;
+  payout: "mpesa_on_approval" | "sample_balance" | "balance" | "awaiting_payment";
+};
+
 export type Shipment = {
   id: string;
   reference: string;

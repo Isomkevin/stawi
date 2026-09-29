@@ -1,26 +1,28 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, ArrowRight, Check, ChevronRight, Copy, MapPin, Package, Search, Ship, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, ChevronRight, Copy, Loader2, MapPin, Package, Plus, Search, Ship, X } from "lucide-react";
 import { toast } from "sonner";
 import { DemoBadge } from "@/components/stawi/DemoDataControl";
+import { PinPad } from "@/components/stawi/PinPad";
 import { StatusChip } from "@/components/stawi/StatusChip";
 import { EmptyState } from "@/components/stawi/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PageHeader } from "@/features/shared/DashboardShell";
 import { attentionFor, canClose, farmerSplit, type Attention } from "@/features/coop/shipmentLogic";
-import { coopMembersOptions, coopPayoutsOptions, coopShipmentsOptions, invoicesOptions } from "@/lib/queries";
+import { accountOptions, coopMembersOptions, coopPayoutsOptions, coopShipmentsOptions, invoicesOptions } from "@/lib/queries";
 import { SHIPMENT_STATUSES, shipmentStatusMeta, type Shipment, type ShipmentStatus } from "@/lib/shipments";
 import { api, ApiError } from "@/lib/api";
 import { ConfirmDelete } from "@/components/stawi/ConfirmDelete";
 import { accountName } from "@/lib/mock";
-import { useCoopId } from "@/lib/session";
+import { useAccountId, useCoopId } from "@/lib/session";
 import { formatCurrency, formatDate, formatKesCents } from "@/lib/format";
-import type { Invoice, Payout } from "@/lib/types";
+import type { CoopMember, FarmerShareConfirmation, Invoice, Payout } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/coop/shipments")({
@@ -259,7 +261,7 @@ function ShipmentsPage() {
 
         {selected && desktop && (
           <aside className="sticky top-4 max-h-[calc(100vh-2rem)] self-start overflow-y-auto rounded-2xl border border-border bg-card">
-            <ShipmentDetail s={selected.s} inv={selected.inv} att={selected.att} payouts={payouts.data ?? []} nameOf={nameOf} onClose={() => select()} />
+            <ShipmentDetail s={selected.s} inv={selected.inv} att={selected.att} payouts={payouts.data ?? []} members={members.data ?? []} nameOf={nameOf} onClose={() => select()} />
           </aside>
         )}
       </div>
@@ -267,7 +269,7 @@ function ShipmentsPage() {
       <Sheet open={!!selected && !desktop} onOpenChange={(o) => !o && select()}>
         <SheetContent side="bottom" className="max-h-[92vh] overflow-y-auto rounded-t-2xl p-0">
           <SheetTitle className="sr-only">Shipment details</SheetTitle>
-          {selected && <ShipmentDetail s={selected.s} inv={selected.inv} att={selected.att} payouts={payouts.data ?? []} nameOf={nameOf} />}
+          {selected && <ShipmentDetail s={selected.s} inv={selected.inv} att={selected.att} payouts={payouts.data ?? []} members={members.data ?? []} nameOf={nameOf} />}
         </SheetContent>
       </Sheet>
     </div>
@@ -390,7 +392,7 @@ function ShipmentRow({ s, inv, att, active, compact, onOpen }: { s: Shipment; in
   );
 }
 
-function ShipmentDetail({ s, inv, att, payouts, nameOf, onClose }: { s: Shipment; inv: Invoice | undefined; att: Attention[]; payouts: Payout[]; nameOf: (accountId: string) => string; onClose?: () => void }) {
+function ShipmentDetail({ s, inv, att, payouts, members, nameOf, onClose }: { s: Shipment; inv: Invoice | undefined; att: Attention[]; payouts: Payout[]; members: CoopMember[]; nameOf: (accountId: string) => string; onClose?: () => void }) {
   const split = farmerSplit(s, inv);
   const stage = SHIPMENT_STATUSES.indexOf(s.status);
   const payLink = inv ? `${typeof window !== "undefined" ? window.location.origin : ""}/pay/${inv.id}` : null;
@@ -469,34 +471,267 @@ function ShipmentDetail({ s, inv, att, payouts, nameOf, onClose }: { s: Shipment
         )}
       </section>
 
-      <section className="mt-5">
-        <div className="mb-2 flex items-baseline justify-between">
-          <h3 className="text-sm font-medium">Farmers in this shipment</h3>
-          <span className="text-xs text-muted-foreground">{totalKg.toLocaleString()} kg · {inv?.kes_total_cents ? "payout" : "est. payout"}</span>
-        </div>
-        {s.farmers.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">No farmers added yet.</p>
-        ) : (
-          <ul className="divide-y divide-border rounded-xl border border-border">
-            {s.farmers.map((fm) => {
-              const p = inv ? payouts.find((x) => x.invoice_id === inv.id && x.account_id === fm.account_id) : undefined;
-              return (
-                <li key={fm.account_id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-2.5 text-sm">
-                  <div className="min-w-0">
-                    <p className="truncate">{nameOf(fm.account_id)}</p>
-                    <p className="text-xs text-muted-foreground">{fm.kilos} kg · {Math.round((fm.kilos / totalKg) * 100)}%</p>
-                  </div>
-                  <div className="flex items-center gap-2 text-right">
-                    <span className="tabular">{formatKesCents(split.get(fm.account_id) ?? 0)}</span>
-                    {p ? <StatusChip status={p.status} className="text-[10px]" /> : inv?.status === "completed" ? <Check className="size-4 text-lime" /> : null}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
+      <FarmerRoster s={s} inv={inv} payouts={payouts} members={members} nameOf={nameOf} split={split} totalKg={totalKg} />
     </div>
+  );
+}
+
+function confirmCopy(confirmation: FarmerShareConfirmation): string {
+  const share = confirmation.share != null ? `${confirmation.share}% confirmed` : "Share confirmed";
+  const amount = confirmation.net_kes_cents != null ? ` · ${formatKesCents(confirmation.net_kes_cents)}` : "";
+  if (confirmation.payout === "mpesa_on_approval") {
+    return `${share}${amount}. Payaza sends it to ${confirmation.mpesa} when you approve the split.`;
+  }
+  if (confirmation.payout === "sample_balance") {
+    return `${share}${amount}. This is sample money, so it stays in the sample balance. A live invoice pays ${confirmation.mpesa ?? "M-Pesa"} through Payaza.`;
+  }
+  if (confirmation.payout === "balance") {
+    return `${share}${amount}. Add an M-Pesa number, or this share stays in their Stawi balance.`;
+  }
+  return `${share}${amount}. It goes to ${confirmation.mpesa ?? "their M-Pesa"} after the buyer pays and you approve.`;
+}
+
+function FarmerRoster({
+  s,
+  inv,
+  payouts,
+  members,
+  nameOf,
+  split,
+  totalKg,
+}: {
+  s: Shipment;
+  inv: Invoice | undefined;
+  payouts: Payout[];
+  members: CoopMember[];
+  nameOf: (accountId: string) => string;
+  split: Map<string, number>;
+  totalKg: number;
+}) {
+  const qc = useQueryClient();
+  const treasurerId = useAccountId();
+  const locked = Boolean(inv && (inv.split_approved || inv.status === "completed"));
+  const remaining = s.quantity_kg - totalKg;
+  const choices = members.filter((member) => !s.farmers.some((farmer) => farmer.account_id === member.account_id));
+  const [adding, setAdding] = useState(false);
+  const [accountId, setAccountId] = useState("");
+  const [kilos, setKilos] = useState(remaining > 0 ? String(remaining) : "");
+  const [mpesa, setMpesa] = useState("");
+  const [payOpen, setPayOpen] = useState(false);
+  const [pin, setPin] = useState("");
+  const [pinErr, setPinErr] = useState<string | null>(null);
+  const selected = useQuery({ ...accountOptions(accountId), enabled: accountId.length > 0 });
+  const savedMobile = selected.data?.payout_destinations.find(
+    (dest) => dest.is_verified && (dest.type === "mpesa" || dest.type === "momo"),
+  );
+
+  const refresh = async () => {
+    await qc.invalidateQueries({ queryKey: ["coop", s.coop_id, "shipments"] });
+    await qc.invalidateQueries({ queryKey: ["invoices"] });
+    await qc.invalidateQueries({ queryKey: ["coop", s.coop_id, "payouts"] });
+    if (accountId) await qc.invalidateQueries({ queryKey: ["account", accountId] });
+  };
+
+  const add = useMutation({
+    mutationFn: () => api.addShipmentFarmer(s.id, accountId, Number(kilos), savedMobile ? undefined : mpesa),
+    onSuccess: async (shipment) => {
+      toast.success(shipment.confirmation ? confirmCopy(shipment.confirmation) : "Share confirmed");
+      setAdding(false);
+      setAccountId("");
+      setMpesa("");
+      await refresh();
+    },
+    onError: (err) => {
+      toast.error(err instanceof ApiError ? err.message : "Couldn't add this farmer.");
+    },
+  });
+
+  const remove = useMutation({
+    mutationFn: (id: string) => api.removeShipmentFarmer(s.id, id),
+    onSuccess: async () => {
+      toast.success("Farmer removed");
+      await refresh();
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't remove this farmer."),
+  });
+
+  const approve = useMutation({
+    mutationFn: (nextPin: string) => api.approveSplit(inv!.id, treasurerId, nextPin),
+    onSuccess: async () => {
+      setPayOpen(false);
+      setPin("");
+      toast.success(inv?.is_demo ? "Sample split approved" : "Payaza is sending each share to M-Pesa");
+      await refresh();
+    },
+    onError: (err) => {
+      setPin("");
+      setPinErr(err instanceof ApiError && err.code === "wrong" ? "Wrong PIN. Try again." : "Couldn't send the payout. Try again.");
+    },
+  });
+
+  const canPay = Boolean(inv && inv.status === "settling" && !inv.split_approved && s.farmers.length > 0);
+
+  return (
+    <section className="mt-5">
+      <div className="mb-2 flex items-baseline justify-between gap-2">
+        <h3 className="text-sm font-medium">Farmers in this shipment</h3>
+        <span className="text-xs text-muted-foreground">{totalKg.toLocaleString()} kg · {inv?.kes_total_cents ? "payout" : "est. payout"}</span>
+      </div>
+      {s.farmers.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">No farmers added yet.</p>
+      ) : (
+        <ul className="divide-y divide-border rounded-xl border border-border">
+          {s.farmers.map((fm) => {
+            const p = inv ? payouts.find((x) => x.invoice_id === inv.id && x.account_id === fm.account_id && x.kind === "withdrawal") : undefined;
+            return (
+              <li key={fm.account_id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-2.5 text-sm">
+                <div className="min-w-0">
+                  <p className="truncate">{nameOf(fm.account_id)}</p>
+                  <p className="text-xs text-muted-foreground">{fm.kilos} kg · {totalKg > 0 ? Math.round((fm.kilos / totalKg) * 100) : 0}%</p>
+                </div>
+                <div className="flex items-center gap-2 text-right">
+                  <span className="tabular">{formatKesCents(split.get(fm.account_id) ?? 0)}</span>
+                  {p ? <StatusChip status={p.status} className="text-[10px]" /> : inv?.status === "completed" ? <Check className="size-4 text-lime" /> : null}
+                  {!locked && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8"
+                      aria-label={`Remove ${nameOf(fm.account_id)}`}
+                      disabled={remove.isPending}
+                      onClick={() => remove.mutate(fm.account_id)}
+                    >
+                      <X className="size-3.5" />
+                    </Button>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {!locked && !adding && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-3"
+          onClick={() => {
+            setKilos(remaining > 0 ? String(remaining) : "");
+            setAccountId("");
+            setMpesa("");
+            setAdding(true);
+          }}
+          disabled={choices.length === 0 || remaining <= 0}
+        >
+          <Plus className="size-3.5" /> Add farmer
+        </Button>
+      )}
+      {!locked && choices.length === 0 && s.farmers.length > 0 && (
+        <p className="mt-2 text-xs text-muted-foreground">Every co-op member is already on this shipment.</p>
+      )}
+
+      {adding && (
+        <form
+          className="mt-3 space-y-3 rounded-xl border border-border p-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const kg = Number(kilos);
+            if (!accountId) {
+              toast.error("Choose a farmer");
+              return;
+            }
+            if (selected.isLoading) {
+              toast.error("Still checking their M-Pesa number");
+              return;
+            }
+            if (!Number.isInteger(kg) || kg <= 0) {
+              toast.error("Enter whole kilos");
+              return;
+            }
+            if (!savedMobile && mpesa.trim().length < 9) {
+              toast.error("Enter their M-Pesa number so Payaza can pay them");
+              return;
+            }
+            add.mutate();
+          }}
+        >
+          <Select value={accountId} onValueChange={setAccountId}>
+            <SelectTrigger className="w-full" aria-label="Farmer">
+              <SelectValue placeholder="Choose a co-op member" />
+            </SelectTrigger>
+            <SelectContent>
+              {choices.map((member) => (
+                <SelectItem key={member.account_id} value={member.account_id}>
+                  {member.full_name ?? nameOf(member.account_id)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Input
+            inputMode="numeric"
+            value={kilos}
+            onChange={(event) => setKilos(event.target.value.replace(/[^\d]/g, ""))}
+            placeholder={`Kilos, up to ${remaining.toLocaleString()}`}
+            aria-label="Kilos"
+          />
+          {accountId && selected.isSuccess && !savedMobile && (
+            <Input
+              value={mpesa}
+              onChange={(event) => setMpesa(event.target.value)}
+              placeholder="M-Pesa number, 07… or +254…"
+              aria-label="M-Pesa number"
+            />
+          )}
+          {savedMobile && (
+            <p className="text-xs text-muted-foreground">Pays {savedMobile.details} through Payaza when the split is approved.</p>
+          )}
+          <div className="flex gap-2">
+            <Button type="submit" size="sm" disabled={add.isPending}>
+              {add.isPending && <Loader2 className="size-3.5 animate-spin" />} Confirm share
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => setAdding(false)}>Cancel</Button>
+          </div>
+        </form>
+      )}
+
+      {canPay && (
+        <div className="mt-3">
+          <Button size="sm" onClick={() => { setPin(""); setPinErr(null); setPayOpen(true); }}>
+            {inv?.is_demo ? "Approve sample split" : "Send shares to M-Pesa"}
+          </Button>
+          <p className="mt-2 text-xs text-muted-foreground">
+            {inv?.is_demo
+              ? "Sample money stays in Stawi. A live invoice sends each confirmed share to M-Pesa through Payaza."
+              : "Approving pays every farmer on this shipment. Payaza sends each share to their M-Pesa number."}
+          </p>
+        </div>
+      )}
+
+      <Dialog open={payOpen} onOpenChange={setPayOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Confirm with your PIN</DialogTitle>
+            <DialogDescription>
+              {inv?.is_demo
+                ? "Approves the sample split. Payaza is not called for sample money."
+                : `Sends ${inv?.kes_total_cents ? formatKesCents(inv.kes_total_cents) : "the confirmed shares"} to ${s.farmers.length} M-Pesa ${s.farmers.length === 1 ? "number" : "numbers"} through Payaza.`}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-center py-2">
+            <PinPad
+              value={pin}
+              error={pinErr}
+              onChange={(next) => {
+                setPinErr(null);
+                setPin(next);
+                if (next.length === 4 && inv) approve.mutate(next);
+              }}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+    </section>
   );
 }
 
