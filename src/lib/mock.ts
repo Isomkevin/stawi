@@ -494,6 +494,20 @@ export const mockApi = {
     if (member) member.contribution_share = share;
   },
 
+  async removeCoopMember(coopId: string, accountId: string): Promise<void> {
+    await latency(300);
+    const i = members.findIndex((m) => m.coop_id === coopId && m.account_id === accountId);
+    if (i >= 0) members.splice(i, 1);
+  },
+
+  async deleteInvoice(invoiceId: string): Promise<void> {
+    await latency(300);
+    const i = invoices.findIndex((x) => x.id === invoiceId);
+    if (i < 0) return;
+    if (invoices[i]!.status !== "pending") throw new ApiError(409, "Only unpaid invoices can be deleted");
+    invoices.splice(i, 1);
+  },
+
   async getCoopMetrics(coopId: string): Promise<CoopMetrics> {
     await latency(300);
     const rows = invoices.filter((i) => i.coop_id === coopId);
