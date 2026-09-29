@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import { SEED_IDS } from "../data/seed";
 import { feeCents, toKesCents } from "../services/money";
-import { enforceAuth, hashToken, readToken, requestOtp, sessionCookie, verifyOtp } from "../services/auth";
+import { clearSessionCookie, enforceAuth, hashToken, issueSession, requestOtp, requestTokens, sessionCookie, verifyOtp } from "../services/auth";
 import { classifyPayazaWebhook, payaza } from "../services/payaza";
 import { hashPin } from "../services/pin";
 import { pipeline } from "../services/pipeline";
@@ -67,9 +67,8 @@ apiRouter.post("/auth/verify", async (req: Request, res: Response) => {
 });
 
 apiRouter.post("/auth/logout", async (req: Request, res: Response) => {
-  const token = readToken(req);
-  if (token) await store.deleteSession(hashToken(token));
-  res.setHeader("Set-Cookie", "stawi_session=; HttpOnly; Path=/; Max-Age=0");
+  for (const token of requestTokens(req)) await store.deleteSession(hashToken(token));
+  res.setHeader("Set-Cookie", clearSessionCookie());
   res.status(204).end();
 });
 
@@ -132,7 +131,9 @@ apiRouter.post("/accounts", async (req: Request, res: Response) => {
     };
 
     await store.saveAccount(newAccount);
-    res.status(201).json(toPublicAccount(newAccount));
+    const session = await issueSession(newAccount);
+    res.setHeader("Set-Cookie", sessionCookie(session.token));
+    res.status(201).json({ ...toPublicAccount(newAccount), token: session.token, role: session.role });
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }

@@ -45,7 +45,7 @@ function codesMatch(entered: string, expected: string): boolean {
   return crypto.timingSafeEqual(a, b);
 }
 
-async function issueSession(account: Account): Promise<{
+export async function issueSession(account: Account): Promise<{
   token: string;
   account: Account;
   role: "farmer" | "exporter" | "treasurer";
@@ -63,19 +63,34 @@ async function issueSession(account: Account): Promise<{
   return { token, account, role };
 }
 
-export function readToken(req: Request): string | null {
+export function requestTokens(req: Request): string[] {
+  const tokens: string[] = [];
   const header = req.headers.authorization;
-  if (typeof header === "string" && header.startsWith("Bearer ")) return header.slice(7).trim();
+  if (typeof header === "string" && header.startsWith("Bearer ")) {
+    const token = header.slice(7).trim();
+    if (token) tokens.push(token);
+  }
   const cookie = req.headers.cookie || "";
   const match = cookie.match(/(?:^|;\s*)stawi_session=([^;]+)/);
-  return match ? decodeURIComponent(match[1]) : null;
+  if (match) {
+    const token = decodeURIComponent(match[1]);
+    if (token && !tokens.includes(token)) tokens.push(token);
+  }
+  return tokens;
+}
+
+export function readToken(req: Request): string | null {
+  return requestTokens(req)[0] ?? null;
 }
 
 export async function attachAccount(req: Request): Promise<void> {
-  const token = readToken(req);
-  if (!token) return;
-  const account = await store.getSessionAccount(hashToken(token));
-  if (account) req.account = account;
+  for (const token of requestTokens(req)) {
+    const account = await store.getSessionAccount(hashToken(token));
+    if (account) {
+      req.account = account;
+      return;
+    }
+  }
 }
 
 export async function requestOtp(
@@ -147,6 +162,11 @@ export async function verifyOtp(
 export function sessionCookie(token: string): string {
   const secure = process.env.NODE_ENV === "production" ? "; Secure; SameSite=None" : "; SameSite=Lax";
   return `stawi_session=${encodeURIComponent(token)}; HttpOnly; Path=/; Max-Age=${SESSION_TTL_MS / 1000}${secure}`;
+}
+
+export function clearSessionCookie(): string {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure; SameSite=None" : "; SameSite=Lax";
+  return `stawi_session=; HttpOnly; Path=/; Max-Age=0${secure}`;
 }
 
 export async function ownsAccount(actor: Account, accountId: string, write: boolean): Promise<boolean> {

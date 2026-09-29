@@ -185,7 +185,8 @@ POST /auth/verify                       { phone_number, code } -> { token, accou
 POST /auth/logout
 
 POST /accounts                          { full_name, phone_number, id_number, pin, destination?: { type, details, account_name }, ussd?, coop_id? }
-                                        -> 201 public Account (no pin fields)
+                                        -> 201 public Account plus { token, role } and a stawi_session cookie.
+                                        Signup uses that token on the next request. No pin fields.
 GET  /accounts/{id}
 GET  /accounts/{id}/balance             -> { balance_kes_cents, incoming_kes_cents }
 GET  /accounts/{id}/transactions?limit  -> Payout[]

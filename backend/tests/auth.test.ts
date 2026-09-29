@@ -130,4 +130,35 @@ describe("Phone OTP sessions", () => {
     expect(created.status).toBe(201);
     expect(created.body.payout_destinations[0].account_name).toBe("New Farmer");
   });
+
+  it("returns a session from signup so the home screen can load the account", async () => {
+    const created = await request(app).post("/accounts").send({
+      full_name: "New Farmer",
+      phone_number: "+254799000222",
+      id_number: "ID903",
+      pin: "1234",
+    });
+    expect(created.status).toBe(201);
+    expect(created.body.token).toMatch(/^[a-f0-9]{64}$/);
+    expect(created.body.pin_hash).toBeUndefined();
+
+    const denied = await request(app).get(`/accounts/${created.body.id}`);
+    expect(denied.status).toBe(401);
+
+    const allowed = await request(app)
+      .get(`/accounts/${created.body.id}/balance`)
+      .set("Authorization", `Bearer ${created.body.token}`);
+    expect(allowed.status).toBe(200);
+
+    const setCookie = created.headers["set-cookie"];
+    const cookie = (Array.isArray(setCookie) ? setCookie : [setCookie]).find((value) =>
+      String(value).startsWith("stawi_session="),
+    );
+    const withPlaceholder = await request(app)
+      .get(`/accounts/${created.body.id}`)
+      .set("Authorization", "Bearer demo-token-farmer")
+      .set("Cookie", String(cookie).split(";")[0]);
+    expect(withPlaceholder.status).toBe(200);
+    expect(withPlaceholder.body.id).toBe(created.body.id);
+  });
 });

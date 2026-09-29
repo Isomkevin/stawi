@@ -57,7 +57,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   // POST /accounts
-  createAccount: (body: CreateAccountBody): Promise<Account> =>
+  createAccount: (body: CreateAccountBody): Promise<Account & { token?: string; role?: "farmer" | "exporter" | "treasurer" }> =>
     isMock ? mockApi.createAccount(body) : request("/accounts", { method: "POST", body: JSON.stringify(body) }),
 
   // GET /accounts/{id}

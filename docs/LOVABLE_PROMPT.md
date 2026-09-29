@@ -167,6 +167,7 @@ POST /auth/verify                      { phone_number, code } -> { token, accoun
 POST /auth/logout                      clears the session cookie
 Authorization: Bearer <token> is required on every route except health, account creation, name enquiry, OTP, buyer invoice view, checkout, Payaza webhooks, and USSD, whenever the API is in production or PAYAZA_MODE is sandbox/live.
 POST /accounts                          body: { full_name, phone_number, id_number, pin(4 digits), destination:{type,details,account_name}, ussd:boolean, coop_id? }
+                                        -> 201 Account plus { token, role } and a stawi_session cookie. Pass token into signIn. A missing token falls back to a demo token and live account reads return 401.
 GET  /accounts/{id}                     GET /accounts/{id}/balance -> { balance_kes_cents, incoming_kes_cents }
 GET  /accounts/{id}/transactions?limit  -> Payout[] (credits and withdrawals, newest first)
 POST /accounts/{id}/withdraw            { destination_id, amount_kes_cents, pin, idempotency_key }  403 { error:"wrong"|"locked", attemptsLeft? }
