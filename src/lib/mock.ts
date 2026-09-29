@@ -665,6 +665,13 @@ export const mockApi = {
       due_at: body.due_at ?? daysAhead(14),
     };
     invoices.unshift(invoice);
+    try {
+      const { shipmentsApi } = await import("./shipments");
+      shipmentsApi.attachInvoice(invoice, body.shipment_id);
+    } catch (err) {
+      invoices.splice(invoices.indexOf(invoice), 1);
+      throw err;
+    }
     return structuredClone(invoice);
   },
 

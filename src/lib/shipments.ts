@@ -1,5 +1,5 @@
 import { mockDemoVisible } from "./mock";
-import type { Shipment, ShipmentFarmer, ShipmentStatus } from "./types";
+import { ApiError, type Shipment, type ShipmentFarmer, type ShipmentStatus } from "./types";
 
 // Mock shipments for VITE_API_MODE=mock. Live mode reads GET /coops/{id}/shipments
 // and advances with PATCH /shipments/{id} { action: "advance" }.
@@ -58,5 +58,74 @@ export const shipmentsApi = {
     await wait();
     const i = shipments.findIndex((x) => x.id === id);
     if (i >= 0) shipments.splice(i, 1);
+  },
+  addFarmer: async (id: string, accountId: string, kilos: number): Promise<Shipment> => {
+    await wait();
+    const shipment = shipments.find((item) => item.id === id);
+    if (!shipment) throw new ApiError(404, "Shipment not found");
+    if (!Number.isInteger(kilos) || kilos <= 0) throw new ApiError(400, "Kilos must be a whole number greater than zero");
+    const already = shipment.farmers.find((farmer) => farmer.account_id === accountId);
+    const used = shipment.farmers.reduce((sum, farmer) => sum + farmer.kilos, 0) - (already?.kilos ?? 0);
+    if (used + kilos > shipment.quantity_kg) throw new ApiError(400, "Farmer kilos would exceed the shipment quantity");
+    shipment.farmers = [...shipment.farmers.filter((farmer) => farmer.account_id !== accountId), { account_id: accountId, kilos }]
+      .sort((a, b) => a.account_id.localeCompare(b.account_id));
+    shipment.updated_at = new Date().toISOString();
+    return { ...shipment, farmers: [...shipment.farmers] };
+  },
+  removeFarmer: async (id: string, accountId: string): Promise<Shipment> => {
+    await wait();
+    const shipment = shipments.find((item) => item.id === id);
+    if (!shipment) throw new ApiError(404, "Shipment not found");
+    if (!shipment.farmers.some((farmer) => farmer.account_id === accountId)) {
+      throw new ApiError(404, "Farmer is not on this shipment");
+    }
+    shipment.farmers = shipment.farmers.filter((farmer) => farmer.account_id !== accountId);
+    shipment.updated_at = new Date().toISOString();
+    return { ...shipment, farmers: [...shipment.farmers] };
+  },
+  attachInvoice: (invoice: {
+    id: string;
+    coop_id: string | null;
+    buyer_name: string;
+    amount: number;
+    currency: string;
+    description: string;
+    reference: string;
+    created_at: string;
+    due_at: string | null;
+    is_demo?: boolean;
+  }, shipmentId?: string): void => {
+    if (!invoice.coop_id) return;
+    if (shipmentId) {
+      const shipment = shipments.find((item) => item.id === shipmentId && item.coop_id === invoice.coop_id);
+      if (!shipment) throw new ApiError(400, "Choose a shipment from this co-op");
+      if (shipment.invoice_id) throw new ApiError(409, "This shipment already has an invoice");
+      shipment.invoice_id = invoice.id;
+      shipment.buyer_name = invoice.buyer_name;
+      shipment.value = invoice.amount;
+      shipment.currency = invoice.currency;
+      shipment.updated_at = new Date().toISOString();
+      return;
+    }
+    const match = invoice.description.match(/(\d+)\s*kg/i);
+    const parsed = match ? Number(match[1]) : 1000;
+    shipments.unshift({
+      id: `shp_${invoice.id}`,
+      reference: invoice.reference,
+      coop_id: invoice.coop_id,
+      buyer_name: invoice.buyer_name,
+      product: invoice.description.slice(0, 255) || "Export lot",
+      quantity_kg: parsed > 0 ? parsed : 1000,
+      destination: "TBD",
+      value: invoice.amount,
+      currency: invoice.currency,
+      ship_date: invoice.due_at || invoice.created_at,
+      shipped_at: null,
+      status: "draft",
+      invoice_id: invoice.id,
+      farmers: [],
+      is_demo: invoice.is_demo === true,
+      updated_at: invoice.created_at,
+    });
   },
 };

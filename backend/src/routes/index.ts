@@ -5,7 +5,7 @@ import { clearSessionCookie, enforceAuth, hashToken, issueSession, requestOtp, r
 import { classifyPayazaWebhook, payaza } from "../services/payaza";
 import { hashPin } from "../services/pin";
 import { pipeline } from "../services/pipeline";
-import { addShipmentFarmer, advanceShipment, openShipmentForInvoice, removeShipmentFarmer } from "../services/shipments";
+import { addShipmentFarmer, advanceShipment, linkInvoiceToShipment, openShipmentForInvoice, removeShipmentFarmer } from "../services/shipments";
 import { store } from "../store";
 import { Account, CoopMetrics, CoopMetricsBucket, CoopMember, DemoDataSettings, Invoice, PublicAccount, UNRESOLVED_ACCOUNT_NAME } from "../types";
 import { DEMO_DATA_EFFECT, demoDataDefault, demoDataVisible, includeInView, isDemo, parseDemoDataEnabled } from "../services/demoData";
@@ -706,6 +706,7 @@ apiRouter.post("/invoices", async (req: Request, res: Response) => {
     description,
     reference,
     due_at,
+    shipment_id,
   } = req.body;
 
   if (!type || !buyer_name || !buyer_email || amount === undefined || !currency) {
@@ -721,6 +722,22 @@ apiRouter.post("/invoices", async (req: Request, res: Response) => {
   if (type === "coop" && !coop_id) {
     res.status(400).json({ error: "Co-op invoices require coop_id" });
     return;
+  }
+
+  const chosenShipmentId = typeof shipment_id === "string" ? shipment_id.trim() : "";
+  if (type === "coop" && chosenShipmentId) {
+    const shipment = await store.getShipment(chosenShipmentId);
+    if (!shipment || shipment.coop_id !== coop_id) {
+      res.status(400).json({ error: "Choose a shipment from this co-op" });
+      return;
+    }
+    if (shipment.invoice_id) {
+      const existing = await store.getInvoice(shipment.invoice_id);
+      if (existing) {
+        res.status(409).json({ error: "This shipment already has an invoice" });
+        return;
+      }
+    }
   }
 
   const invoiceId = `inv_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
@@ -750,7 +767,18 @@ apiRouter.post("/invoices", async (req: Request, res: Response) => {
   };
 
   await store.saveInvoice(invoice);
-  if (invoice.type === "coop" && invoice.coop_id) await openShipmentForInvoice(invoice);
+  if (invoice.type === "coop" && invoice.coop_id) {
+    if (chosenShipmentId) {
+      const linked = await linkInvoiceToShipment(chosenShipmentId, invoice);
+      if (!linked.ok) {
+        await store.deleteInvoice(invoice.id);
+        res.status(linked.status).json({ error: linked.error });
+        return;
+      }
+    } else {
+      await openShipmentForInvoice(invoice);
+    }
+  }
   res.status(201).json(invoice);
 });
 

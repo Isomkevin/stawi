@@ -238,8 +238,10 @@ POST /name-enquiry                      { type, details } -> { account_name }
                                         POST /accounts stores full_name when destination.account_name is that placeholder.
 
 GET  /invoices?coop_id=&account_id=
-POST /invoices                          { type, account_id | coop_id, buyer_name, buyer_email, buyer_phone?, amount, currency, description?, reference?, due_at? }
-                                        A co-op invoice also opens a draft shipment with this invoice_id and no farmers.
+POST /invoices                          { type, account_id | coop_id, buyer_name, buyer_email, buyer_phone?, amount, currency, description?, reference?, due_at?, shipment_id? }
+                                        Without shipment_id, a co-op invoice opens a draft shipment with this invoice_id and no farmers.
+                                        With shipment_id, that shipment is linked instead. 400 if it is not this co-op's shipment. 409 if it already has an invoice.
+                                        The shipment's buyer, value, and currency are updated to match the invoice.
 GET  /invoices/{id}                     -> { invoice, transactions, split_preview: SplitLine[] | null, payee_name, farmer_count }
                                         Public. payee_name is the co-op name or the exporter's full name.
                                         farmer_count is the member count for a co-op invoice, and null for a direct invoice.

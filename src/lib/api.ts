@@ -185,6 +185,21 @@ export const api = {
   listShipments: (coopId: string): Promise<Shipment[]> =>
     isMock ? shipmentsApi.list(coopId) : request(`/coops/${coopId}/shipments`),
 
+  // POST /shipments/{id}/farmers { account_id, kilos } → Shipment
+  addShipmentFarmer: (shipmentId: string, accountId: string, kilos: number): Promise<Shipment> =>
+    isMock
+      ? shipmentsApi.addFarmer(shipmentId, accountId, kilos)
+      : request(`/shipments/${shipmentId}/farmers`, {
+          method: "POST",
+          body: JSON.stringify({ account_id: accountId, kilos }),
+        }),
+
+  // DELETE /shipments/{id}/farmers/{accountId} → Shipment
+  removeShipmentFarmer: (shipmentId: string, accountId: string): Promise<Shipment> =>
+    isMock
+      ? shipmentsApi.removeFarmer(shipmentId, accountId)
+      : request(`/shipments/${shipmentId}/farmers/${accountId}`, { method: "DELETE" }),
+
   // PATCH /shipments/{id} { action: "advance" } → Shipment
   advanceShipment: (shipmentId: string): Promise<Shipment> =>
     isMock

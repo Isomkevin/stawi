@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, ArrowRight, Check, ChevronRight, Copy, MapPin, Package, Search, Ship, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, ChevronRight, Copy, Loader2, MapPin, Package, Plus, Search, Ship, X } from "lucide-react";
 import { toast } from "sonner";
 import { DemoBadge } from "@/components/stawi/DemoDataControl";
 import { StatusChip } from "@/components/stawi/StatusChip";
@@ -20,7 +20,7 @@ import { ConfirmDelete } from "@/components/stawi/ConfirmDelete";
 import { accountName } from "@/lib/mock";
 import { useCoopId } from "@/lib/session";
 import { formatCurrency, formatDate, formatKesCents } from "@/lib/format";
-import type { Invoice, Payout } from "@/lib/types";
+import type { CoopMember, Invoice, Payout } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/coop/shipments")({
@@ -259,7 +259,7 @@ function ShipmentsPage() {
 
         {selected && desktop && (
           <aside className="sticky top-4 max-h-[calc(100vh-2rem)] self-start overflow-y-auto rounded-2xl border border-border bg-card">
-            <ShipmentDetail s={selected.s} inv={selected.inv} att={selected.att} payouts={payouts.data ?? []} nameOf={nameOf} onClose={() => select()} />
+            <ShipmentDetail s={selected.s} inv={selected.inv} att={selected.att} payouts={payouts.data ?? []} members={members.data ?? []} nameOf={nameOf} onClose={() => select()} />
           </aside>
         )}
       </div>
@@ -267,7 +267,7 @@ function ShipmentsPage() {
       <Sheet open={!!selected && !desktop} onOpenChange={(o) => !o && select()}>
         <SheetContent side="bottom" className="max-h-[92vh] overflow-y-auto rounded-t-2xl p-0">
           <SheetTitle className="sr-only">Shipment details</SheetTitle>
-          {selected && <ShipmentDetail s={selected.s} inv={selected.inv} att={selected.att} payouts={payouts.data ?? []} nameOf={nameOf} />}
+          {selected && <ShipmentDetail s={selected.s} inv={selected.inv} att={selected.att} payouts={payouts.data ?? []} members={members.data ?? []} nameOf={nameOf} />}
         </SheetContent>
       </Sheet>
     </div>
@@ -390,7 +390,7 @@ function ShipmentRow({ s, inv, att, active, compact, onOpen }: { s: Shipment; in
   );
 }
 
-function ShipmentDetail({ s, inv, att, payouts, nameOf, onClose }: { s: Shipment; inv: Invoice | undefined; att: Attention[]; payouts: Payout[]; nameOf: (accountId: string) => string; onClose?: () => void }) {
+function ShipmentDetail({ s, inv, att, payouts, members, nameOf, onClose }: { s: Shipment; inv: Invoice | undefined; att: Attention[]; payouts: Payout[]; members: CoopMember[]; nameOf: (accountId: string) => string; onClose?: () => void }) {
   const split = farmerSplit(s, inv);
   const stage = SHIPMENT_STATUSES.indexOf(s.status);
   const payLink = inv ? `${typeof window !== "undefined" ? window.location.origin : ""}/pay/${inv.id}` : null;
@@ -469,34 +469,147 @@ function ShipmentDetail({ s, inv, att, payouts, nameOf, onClose }: { s: Shipment
         )}
       </section>
 
-      <section className="mt-5">
-        <div className="mb-2 flex items-baseline justify-between">
-          <h3 className="text-sm font-medium">Farmers in this shipment</h3>
-          <span className="text-xs text-muted-foreground">{totalKg.toLocaleString()} kg · {inv?.kes_total_cents ? "payout" : "est. payout"}</span>
-        </div>
-        {s.farmers.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">No farmers added yet.</p>
-        ) : (
-          <ul className="divide-y divide-border rounded-xl border border-border">
-            {s.farmers.map((fm) => {
-              const p = inv ? payouts.find((x) => x.invoice_id === inv.id && x.account_id === fm.account_id) : undefined;
-              return (
-                <li key={fm.account_id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-2.5 text-sm">
-                  <div className="min-w-0">
-                    <p className="truncate">{nameOf(fm.account_id)}</p>
-                    <p className="text-xs text-muted-foreground">{fm.kilos} kg · {Math.round((fm.kilos / totalKg) * 100)}%</p>
-                  </div>
-                  <div className="flex items-center gap-2 text-right">
-                    <span className="tabular">{formatKesCents(split.get(fm.account_id) ?? 0)}</span>
-                    {p ? <StatusChip status={p.status} className="text-[10px]" /> : inv?.status === "completed" ? <Check className="size-4 text-lime" /> : null}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
+      <FarmerRoster s={s} inv={inv} payouts={payouts} members={members} nameOf={nameOf} split={split} totalKg={totalKg} />
     </div>
+  );
+}
+
+function FarmerRoster({
+  s,
+  inv,
+  payouts,
+  members,
+  nameOf,
+  split,
+  totalKg,
+}: {
+  s: Shipment;
+  inv: Invoice | undefined;
+  payouts: Payout[];
+  members: CoopMember[];
+  nameOf: (accountId: string) => string;
+  split: Map<string, number>;
+  totalKg: number;
+}) {
+  const qc = useQueryClient();
+  const locked = Boolean(inv && (inv.split_approved || inv.status === "completed"));
+  const remaining = s.quantity_kg - totalKg;
+  const choices = members.filter((member) => !s.farmers.some((farmer) => farmer.account_id === member.account_id));
+  const [adding, setAdding] = useState(false);
+  const [accountId, setAccountId] = useState("");
+  const [kilos, setKilos] = useState("");
+  const parsedKilos = Number(kilos);
+  const kilosOk = Number.isInteger(parsedKilos) && parsedKilos > 0 && parsedKilos <= remaining;
+
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: ["coop", s.coop_id, "shipments"] });
+    if (inv) void qc.invalidateQueries({ queryKey: ["invoice", inv.id] });
+  };
+
+  const add = useMutation({
+    mutationFn: () => api.addShipmentFarmer(s.id, accountId, parsedKilos),
+    onSuccess: () => {
+      toast.success(`${nameOf(accountId)} added to this shipment`);
+      setAdding(false);
+      setAccountId("");
+      setKilos("");
+      refresh();
+    },
+    onError: (e) => toast.error(e instanceof ApiError ? e.message : "Couldn't add this farmer"),
+  });
+
+  const remove = useMutation({
+    mutationFn: (id: string) => api.removeShipmentFarmer(s.id, id),
+    onSuccess: (_shipment, id) => {
+      toast.success(`${nameOf(id)} removed from this shipment`);
+      refresh();
+    },
+    onError: (e) => toast.error(e instanceof ApiError ? e.message : "Couldn't remove this farmer"),
+  });
+
+  return (
+    <section className="mt-5">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h3 className="text-sm font-medium">Farmers in this shipment</h3>
+        <span className="text-xs text-muted-foreground">{totalKg.toLocaleString()} kg · {inv?.kes_total_cents ? "payout" : "est. payout"}</span>
+      </div>
+      {s.farmers.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">No farmers added yet.</p>
+      ) : (
+        <ul className="divide-y divide-border rounded-xl border border-border">
+          {s.farmers.map((fm) => {
+            const p = inv ? payouts.find((x) => x.invoice_id === inv.id && x.account_id === fm.account_id) : undefined;
+            return (
+              <li key={fm.account_id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-2.5 text-sm">
+                <div className="min-w-0">
+                  <p className="truncate">{nameOf(fm.account_id)}</p>
+                  <p className="text-xs text-muted-foreground">{fm.kilos} kg · {Math.round((fm.kilos / totalKg) * 100)}%</p>
+                </div>
+                <div className="flex items-center gap-2 text-right">
+                  <span className="tabular">{formatKesCents(split.get(fm.account_id) ?? 0)}</span>
+                  {p ? <StatusChip status={p.status} className="text-[10px]" /> : inv?.status === "completed" ? <Check className="size-4 text-lime" /> : null}
+                  {!locked && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="size-8"
+                      aria-label={`Remove ${nameOf(fm.account_id)}`}
+                      disabled={remove.isPending}
+                      onClick={() => remove.mutate(fm.account_id)}
+                    >
+                      <X className="size-3.5" />
+                    </Button>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {!locked && !adding && (
+        <Button type="button" variant="outline" size="sm" className="mt-3" disabled={remaining <= 0 || choices.length === 0} onClick={() => setAdding(true)}>
+          <Plus className="size-3.5" /> Add farmer
+        </Button>
+      )}
+      {!locked && remaining <= 0 && <p className="mt-2 text-xs text-muted-foreground">This shipment is already at {s.quantity_kg.toLocaleString()} kg.</p>}
+      {!locked && remaining > 0 && members.length > 0 && choices.length === 0 && (
+        <p className="mt-2 text-xs text-muted-foreground">Every co-op member is already on this shipment.</p>
+      )}
+      {adding && (
+        <form
+          className="mt-3 space-y-3 rounded-xl border border-border p-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!accountId || !kilosOk) return;
+            add.mutate();
+          }}
+        >
+          <Select value={accountId || undefined} onValueChange={setAccountId}>
+            <SelectTrigger aria-label="Farmer" className="h-11"><SelectValue placeholder="Choose a farmer" /></SelectTrigger>
+            <SelectContent>
+              {choices.map((member) => (
+                <SelectItem key={member.account_id} value={member.account_id}>{member.full_name ?? nameOf(member.account_id)}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Input
+            inputMode="numeric"
+            value={kilos}
+            onChange={(e) => setKilos(e.target.value)}
+            placeholder={`Kilos, up to ${remaining.toLocaleString()}`}
+            aria-label="Kilos"
+            className="h-11 tabular"
+          />
+          <div className="flex gap-2">
+            <Button type="submit" size="sm" disabled={!accountId || !kilosOk || add.isPending}>
+              {add.isPending && <Loader2 className="size-3.5 animate-spin" />} Add to shipment
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => { setAdding(false); setAccountId(""); setKilos(""); }}>Cancel</Button>
+          </div>
+        </form>
+      )}
+    </section>
   );
 }
 

@@ -175,6 +175,7 @@ export type CreateInvoiceBody = {
   description: string;
   reference?: string | undefined;
   due_at?: string | null | undefined;
+  shipment_id?: string | undefined;
 };
 
 export type WithdrawBody = {
