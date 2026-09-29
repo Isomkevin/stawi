@@ -196,8 +196,8 @@ export function AskStawiChat() {
           className={cn(
             "flex max-h-none max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden border-border bg-background p-0 shadow-lift [&>button]:hidden",
             isMobile || maximized
-              ? "inset-0 h-dvh w-screen rounded-none"
-              : "bottom-5 left-auto right-5 top-auto h-[min(740px,calc(100vh-2.5rem))] w-[min(460px,calc(100vw-2.5rem))] rounded-lg",
+              ? "!inset-0 !h-dvh !w-screen !max-w-none !translate-x-0 !translate-y-0 rounded-none"
+              : "!bottom-5 !left-auto !right-5 !top-auto h-[min(740px,calc(100vh-2.5rem))] w-[min(460px,calc(100vw-2.5rem))] !max-w-none !translate-x-0 !translate-y-0 rounded-lg",
           )}
         >
           <header className="flex shrink-0 items-center justify-between border-b border-border bg-card px-4 py-3">
