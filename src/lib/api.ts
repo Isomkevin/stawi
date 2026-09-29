@@ -1,5 +1,5 @@
 import { mockApi } from "./mock";
-import { shipmentsApi, type Shipment } from "./shipments";
+import { shipmentsApi, type NewShipmentInput, type Shipment } from "./shipments";
 import {
   ApiError,
   type Account,
@@ -199,6 +199,10 @@ export const api = {
   // GET /coops/{id}/shipments
   listShipments: (coopId: string): Promise<Shipment[]> =>
     isMock ? shipmentsApi.list(coopId) : request(`/coops/${coopId}/shipments`),
+
+  // POST /coops/{id}/shipments { buyer_name, product, quantity_kg, destination, value, currency, ship_date } → Shipment (draft)
+  createShipment: (coopId: string, input: NewShipmentInput): Promise<Shipment> =>
+    isMock ? shipmentsApi.create(coopId, input) : request(`/coops/${coopId}/shipments`, { method: "POST", body: JSON.stringify(input) }),
 
   // POST /shipments/{id}/farmers { account_id, kilos, mpesa? } → Shipment & { confirmation }
   addShipmentFarmer: (

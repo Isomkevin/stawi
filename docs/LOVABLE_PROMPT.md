@@ -196,6 +196,7 @@ POST /invoices/{id}/approve-split       { treasurer_id, pin } -> { success, invo
 POST /dev/simulate-payment/{invoiceId}  -> { success, invoice, transactions, payouts } (mock backend only)
 GET  /coops/{id}                        GET /coops/{id}/payouts -> Payout[] (members' payouts for this co-op's invoices, newest first)
 GET  /coops/{id}/shipments              -> Shipment[]
+POST /coops/{id}/shipments              { buyer_name, product, quantity_kg, destination?, value?, currency?, ship_date? } -> Shipment (draft, no invoice)
 POST /shipments/{id}/farmers            { account_id, kilos, mpesa? } -> Shipment & { confirmation }
                                         confirmation: { account_id, kilos, share, net_kes_cents, mpesa, payout }
                                         payout is "mpesa_on_approval" | "sample_balance" | "balance" | "awaiting_payment"

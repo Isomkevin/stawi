@@ -38,7 +38,35 @@ for (const shipment of shipments) shipment.is_demo = true;
 
 const wait = (ms = 250) => new Promise((r) => setTimeout(r, ms));
 
+export type NewShipmentInput = {
+  buyer_name: string;
+  product: string;
+  quantity_kg: number;
+  destination: string;
+  value: number;
+  currency: "USD" | "EUR" | "GBP";
+  ship_date: string;
+};
+
 export const shipmentsApi = {
+  create: async (coopId: string, input: NewShipmentInput): Promise<Shipment> => {
+    await wait();
+    const n = shipments.length + 101;
+    const s: Shipment = {
+      id: `shp_${n}_${Date.now().toString(36)}`,
+      reference: `KHC-S-${n}`,
+      coop_id: coopId,
+      ...input,
+      ship_date: new Date(input.ship_date).toISOString(),
+      shipped_at: null,
+      status: "draft",
+      invoice_id: null,
+      farmers: [],
+      updated_at: new Date().toISOString(),
+    };
+    shipments.unshift(s);
+    return { ...s, farmers: [] };
+  },
   list: async (coopId: string): Promise<Shipment[]> => {
     await wait();
     return shipments

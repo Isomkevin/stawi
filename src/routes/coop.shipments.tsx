@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, ArrowRight, Check, ChevronRight, Copy, Loader2, MapPin, Package, Search, Ship, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, ChevronRight, Copy, Loader2, MapPin, Package, Plus, Search, Ship, X } from "lucide-react";
 import { toast } from "sonner";
 import { DemoBadge } from "@/components/stawi/DemoDataControl";
 import { PinPad } from "@/components/stawi/PinPad";
@@ -146,7 +146,11 @@ function ShipmentsPage() {
 
   return (
     <div>
-      <PageHeader title="Shipments" description="Every shipment you're running — what's moving, what's next, and what needs you." />
+      <PageHeader
+        title="Shipments"
+        description="Every shipment you're running — what's moving, what's next, and what needs you."
+        action={<NewShipment onCreated={(sid) => select(sid)} />}
+      />
 
       {/* Pipeline summary: click a stage to filter */}
       <div className="mb-4 grid grid-cols-3 gap-2 sm:grid-cols-6">
@@ -286,6 +290,88 @@ function useAdvance(coopId: string) {
     },
     onError: () => toast.error("Couldn't update the shipment. Please try again."),
   });
+}
+
+function NewShipment({ onCreated }: { onCreated: (id: string) => void }) {
+  const coopId = useCoopId();
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const blank = { buyer_name: "", product: "", quantity_kg: "", destination: "", value: "", currency: "USD" as "USD" | "EUR" | "GBP", ship_date: new Date(Date.now() + 14 * 86_400_000).toISOString().slice(0, 10) };
+  const [f, setF] = useState(blank);
+  const set = (k: keyof typeof blank) => (e: React.ChangeEvent<HTMLInputElement>) => setF((p) => ({ ...p, [k]: e.target.value }));
+  const qty = Number(f.quantity_kg);
+  const valid = f.buyer_name.trim() && f.product.trim() && Number.isInteger(qty) && qty > 0;
+  const create = useMutation({
+    mutationFn: () =>
+      api.createShipment(coopId, {
+        buyer_name: f.buyer_name.trim(),
+        product: f.product.trim(),
+        quantity_kg: qty,
+        destination: f.destination.trim() || "TBD",
+        value: Number(f.value) || 0,
+        currency: f.currency,
+        ship_date: f.ship_date,
+      }),
+    onSuccess: async (s) => {
+      await qc.invalidateQueries({ queryKey: coopShipmentsOptions(coopId).queryKey });
+      toast.success(`Draft ${s.reference} created — now add farmers`);
+      setOpen(false);
+      setF(blank);
+      onCreated(s.id);
+    },
+    onError: (e) => toast.error(e instanceof ApiError ? e.message : "Couldn't create the shipment"),
+  });
+  return (
+    <>
+      <Button onClick={() => setOpen(true)}>
+        <Plus className="size-4" /> New shipment
+      </Button>
+      <Sheet open={open} onOpenChange={setOpen}>
+        <SheetContent className="w-full overflow-y-auto sm:max-w-md">
+          <SheetTitle>New draft shipment</SheetTitle>
+          <p className="mt-1 text-sm text-muted-foreground">Start the shipment now. You'll add farmers and their kilos next.</p>
+          <form
+            className="mt-5 space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (valid) create.mutate();
+            }}
+          >
+            <Field label="Buyer"><Input required value={f.buyer_name} onChange={set("buyer_name")} placeholder="Hansen Kaffee GmbH" /></Field>
+            <Field label="Product"><Input required value={f.product} onChange={set("product")} placeholder="Washed AA green coffee" /></Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Quantity (kg)"><Input required inputMode="numeric" value={f.quantity_kg} onChange={set("quantity_kg")} placeholder="1000" /></Field>
+              <Field label="Ship date"><Input type="date" value={f.ship_date} onChange={set("ship_date")} /></Field>
+            </div>
+            <Field label="Destination"><Input value={f.destination} onChange={set("destination")} placeholder="Hamburg, DE" /></Field>
+            <div className="grid grid-cols-[1fr_7rem] gap-3">
+              <Field label="Value"><Input inputMode="decimal" value={f.value} onChange={set("value")} placeholder="0" /></Field>
+              <Field label="Currency">
+                <Select value={f.currency} onValueChange={(v) => setF((p) => ({ ...p, currency: v as typeof p.currency }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {["USD", "EUR", "GBP"].map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </Field>
+            </div>
+            <Button type="submit" className="w-full" disabled={!valid || create.isPending}>
+              {create.isPending ? "Creating…" : "Create draft"}
+            </Button>
+          </form>
+        </SheetContent>
+      </Sheet>
+    </>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block space-y-1.5 text-sm font-medium">
+      <span>{label}</span>
+      {children}
+    </label>
+  );
 }
 
 function DeleteShipment({ s, inv, onDeleted }: { s: Shipment; inv: Invoice | undefined; onDeleted?: (() => void) | undefined }) {
