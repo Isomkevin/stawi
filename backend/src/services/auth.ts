@@ -232,10 +232,17 @@ export async function enforceAuth(req: Request, res: Response, next: NextFunctio
         res.status(404).json({ error: "Shipment not found" });
         return;
       }
-      const coop = await store.getCoop(shipment.coop_id);
-      if (!coop || coop.treasurer_account_id !== req.account.id) {
-        res.status(403).json({ error: "Only the co-op treasurer can do this" });
-        return;
+      if (shipment.account_id) {
+        if (shipment.account_id !== req.account.id) {
+          res.status(403).json({ error: "Only the exporter can do this" });
+          return;
+        }
+      } else {
+        const coop = await store.getCoop(shipment.coop_id);
+        if (!coop || coop.treasurer_account_id !== req.account.id) {
+          res.status(403).json({ error: "Only the co-op treasurer can do this" });
+          return;
+        }
       }
     }
 

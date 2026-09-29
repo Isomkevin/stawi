@@ -3,7 +3,8 @@ export const UNRESOLVED_ACCOUNT_NAME = "Pending name check";
 
 export type PayoutDestination = {
   id: string;
-  type: "mpesa" | "bank";
+  /** momo = other mobile money (Airtel Money). Sent as Payaza mobile_money. */
+  type: "mpesa" | "momo" | "bank";
   details: string;
   account_name: string;
   is_verified: boolean;
@@ -180,7 +181,10 @@ export type ShipmentFarmer = {
 export type Shipment = {
   id: string;
   reference: string;
+  /** Empty for exporter shipments. */
   coop_id: string;
+  /** Set for a Direct exporter's own shipment. */
+  account_id?: string | null;
   buyer_name: string;
   product: string;
   quantity_kg: number;

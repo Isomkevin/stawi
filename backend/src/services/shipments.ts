@@ -8,7 +8,8 @@ export async function openShipmentForInvoice(invoice: Invoice): Promise<Shipment
   const shipment: Shipment = {
     id: `shp_${invoice.id}`,
     reference: invoice.reference,
-    coop_id: invoice.coop_id || "",
+    coop_id: invoice.type === "coop" ? invoice.coop_id || "" : "",
+    account_id: invoice.type === "direct" ? invoice.account_id : null,
     buyer_name: invoice.buyer_name,
     product: invoice.description.slice(0, 255) || "Export lot",
     quantity_kg: parsed > 0 ? parsed : 1000,
@@ -38,7 +39,7 @@ export async function advanceShipment(
     return { ok: false, status: 400, error: "Shipment is already completed" };
   }
 
-  if (current.status === "draft") {
+  if (current.status === "draft" && !current.account_id) {
     const kilos = current.farmers.reduce((sum, farmer) => sum + farmer.kilos, 0);
     if (current.farmers.length === 0 || kilos !== current.quantity_kg) {
       return { ok: false, status: 400, error: "Add farmers whose kilos add up to the shipment quantity" };

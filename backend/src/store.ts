@@ -289,6 +289,13 @@ export class InMemoryStore {
       .map((shipment) => ({ ...shipment, farmers: shipment.farmers.map((farmer) => ({ ...farmer })) }));
   }
 
+  public async listAccountShipments(accountId: string): Promise<Shipment[]> {
+    return Array.from(this.shipments.values())
+      .filter((shipment) => shipment.account_id === accountId)
+      .sort((a, b) => b.ship_date.localeCompare(a.ship_date))
+      .map((shipment) => ({ ...shipment, farmers: shipment.farmers.map((farmer) => ({ ...farmer })) }));
+  }
+
   public async getShipmentByInvoice(invoiceId: string): Promise<Shipment | undefined> {
     for (const shipment of this.shipments.values()) {
       if (shipment.invoice_id === invoiceId) {

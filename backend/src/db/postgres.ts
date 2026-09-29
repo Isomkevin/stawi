@@ -223,7 +223,8 @@ export class PostgresStore extends InMemoryStore {
       id: row.id,
       type: row.type,
       account_id: row.account_id,
-      coop_id: row.coop_id,
+      coop_id: row.coop_id ?? "",
+      account_id: row.account_id ?? null,
       buyer_name: row.buyer_name,
       buyer_email: row.buyer_email,
       buyer_phone: row.buyer_phone ?? undefined,
@@ -547,8 +548,8 @@ export class PostgresStore extends InMemoryStore {
     await this.q(
       `INSERT INTO shipments (
          id, reference, coop_id, buyer_name, product, quantity_kg, destination, value, currency,
-         ship_date, shipped_at, status, invoice_id, is_demo, updated_at
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+         ship_date, shipped_at, status, invoice_id, is_demo, updated_at, account_id
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
        ON CONFLICT (id) DO UPDATE SET
          reference = EXCLUDED.reference,
          coop_id = EXCLUDED.coop_id,
@@ -563,11 +564,12 @@ export class PostgresStore extends InMemoryStore {
          status = EXCLUDED.status,
          invoice_id = EXCLUDED.invoice_id,
          is_demo = EXCLUDED.is_demo,
-         updated_at = EXCLUDED.updated_at`,
+         updated_at = EXCLUDED.updated_at,
+         account_id = EXCLUDED.account_id`,
       [
         shipment.id,
         shipment.reference,
-        shipment.coop_id,
+        shipment.coop_id || null,
         shipment.buyer_name,
         shipment.product,
         shipment.quantity_kg,
@@ -580,6 +582,7 @@ export class PostgresStore extends InMemoryStore {
         shipment.invoice_id,
         shipment.is_demo === true,
         shipment.updated_at,
+        shipment.account_id ?? null,
       ]
     );
     await this.q("DELETE FROM shipment_farmers WHERE shipment_id = $1", [shipment.id]);
@@ -606,6 +609,13 @@ export class PostgresStore extends InMemoryStore {
 
   public async listShipments(coopId: string): Promise<Shipment[]> {
     const result = await this.q("SELECT * FROM shipments WHERE coop_id = $1 ORDER BY ship_date DESC", [coopId]);
+    const ids = result.rows.map((row) => row.id as string);
+    const farmers = await this.farmersFor(ids);
+    return result.rows.map((row) => this.mapShipment(row, farmers.get(row.id) || []));
+  }
+
+  public async listAccountShipments(accountId: string): Promise<Shipment[]> {
+    const result = await this.q("SELECT * FROM shipments WHERE account_id = $1 ORDER BY ship_date DESC", [accountId]);
     const ids = result.rows.map((row) => row.id as string);
     const farmers = await this.farmersFor(ids);
     return result.rows.map((row) => this.mapShipment(row, farmers.get(row.id) || []));
