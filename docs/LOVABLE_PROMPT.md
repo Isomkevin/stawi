@@ -163,9 +163,9 @@ type Shipment = { id: string; reference: string; coop_id: string; buyer_name: st
 Endpoints (client methods mirror these 1:1):
 ```
 POST /auth/otp                         { phone_number } -> { sent: true, dev_code? }  (texts a 6-digit code; mock mode and OTP_DEV_CODES=true also return dev_code outside production)
-POST /auth/verify                      { phone_number, code } -> { token, account_id, role, account }
+POST /auth/verify                      { phone_number, code } -> { token, account_id, role, account }  (a server MASTER_LOGIN_CODE, when set, also signs in any existing account; the login page does not change)
 POST /auth/logout                      clears the session cookie
-Authorization: Bearer <token> is required on every route except health, account creation, OTP, buyer invoice view, checkout, Payaza webhooks, and USSD, whenever the API is in production or PAYAZA_MODE is sandbox/live.
+Authorization: Bearer <token> is required on every route except health, account creation, name enquiry, OTP, buyer invoice view, checkout, Payaza webhooks, and USSD, whenever the API is in production or PAYAZA_MODE is sandbox/live.
 POST /accounts                          body: { full_name, phone_number, id_number, pin(4 digits), destination:{type,details,account_name}, ussd:boolean, coop_id? }
 GET  /accounts/{id}                     GET /accounts/{id}/balance -> { balance_kes_cents, incoming_kes_cents }
 GET  /accounts/{id}/transactions?limit  -> Payout[] (credits and withdrawals, newest first)
@@ -184,7 +184,10 @@ DELETE /shipments/{id}                  -> 204  409 if the linked invoice is no 
 DELETE /invoices/{id}                   -> 204  409 unless the invoice is still pending
 DELETE /coops/{id}/members/{accountId}  -> 204
 PATCH /coops/{id}/members/{accountId}   { contribution_share } -> CoopMember
-POST /name-enquiry                      { type, details } -> { account_name }  404 if unknown
+POST /name-enquiry                      { type, details } -> { account_name }
+                                        Public. A known Stawi account returns full_name.
+                                        An unknown number before sign-in returns account_name "Pending name check" (no KES carrier lookup). Treat that as "use the name the person typed", not as a verified carrier name.
+                                        A signed-in caller gets 404 if unknown.
 POST /accounts/{id}/destinations        { type, details, account_name, bank_code? } -> PayoutDestination  409 duplicate
 DELETE /accounts/{id}/destinations/{destId} -> 204  400 if it is the last one
 ```

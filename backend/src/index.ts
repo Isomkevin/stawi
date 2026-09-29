@@ -58,6 +58,7 @@ async function main() {
     console.log(` AT_ENV:        ${process.env.AT_ENV || "sandbox"}`);
     console.log(` Database:      ${process.env.DATABASE_URL ? "postgres" : "memory"}`);
     console.log(` Auth:          ${authRequired() ? "required" : "open (mock/dev only)"}`);
+    console.log(` Master login:  ${process.env.MASTER_LOGIN_CODE?.trim() ? "on" : "off"}`);
     console.log(` USSD Secret:   ${process.env.AT_CALLBACK_SECRET ? "configured" : "none"}`);
     console.log("==================================================");
   });

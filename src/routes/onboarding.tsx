@@ -54,7 +54,7 @@ function Onboarding() {
 
   const nameCheck = useMutation({
     mutationFn: () => api.resolveAccountName(destType, details),
-    onSuccess: (n) => setResolved(n),
+    onSuccess: (n) => setResolved(n === "Pending name check" ? null : n),
   });
 
   const create = useMutation({
@@ -124,6 +124,7 @@ function Onboarding() {
                     onClick={() => {
                       setDestType(t);
                       setResolved(null);
+                      nameCheck.reset();
                     }}
                     className={cn("min-h-11 rounded-xl border text-sm", destType === t ? "border-lime bg-lime/15 text-lime" : "border-border")}
                   >
@@ -138,6 +139,7 @@ function Onboarding() {
                 onChange={(v) => {
                   setDetails(v);
                   setResolved(null);
+                  nameCheck.reset();
                 }}
                 inputMode="numeric"
               />
@@ -150,8 +152,14 @@ function Onboarding() {
                   {nameCheck.isPending && <Loader2 className="size-4 animate-spin" />} Check account name
                 </Button>
               )}
-              {nameCheck.isError && <p role="alert" className="text-sm text-terracotta">We couldn't find that account. Check the number.</p>}
-              <Button className="h-12 w-full" disabled={!resolved} onClick={() => setStep(2)}>That's me — continue</Button>
+              {(nameCheck.isError || (nameCheck.isSuccess && !resolved)) && (
+                <p role="status" className="text-sm text-muted-foreground">
+                  We'll use {name.trim()} for this payout account.
+                </p>
+              )}
+              <Button className="h-12 w-full" disabled={details.replace(/\D/g, "").length < 6} onClick={() => setStep(2)}>
+                {resolved ? "That's me — continue" : "Continue"}
+              </Button>
             </div>
           )}
 

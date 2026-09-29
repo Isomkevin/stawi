@@ -1,3 +1,6 @@
+/** Signup name check when Payaza has no KES carrier lookup and the number is not already a Stawi account. */
+export const UNRESOLVED_ACCOUNT_NAME = "Pending name check";
+
 export type PayoutDestination = {
   id: string;
   type: "mpesa" | "bank";

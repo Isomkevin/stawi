@@ -7,7 +7,7 @@ import { hashPin } from "../services/pin";
 import { pipeline } from "../services/pipeline";
 import { advanceShipment } from "../services/shipments";
 import { store } from "../store";
-import { Account, CoopMember, Invoice, PublicAccount } from "../types";
+import { Account, CoopMember, Invoice, PublicAccount, UNRESOLVED_ACCOUNT_NAME } from "../types";
 import { handleUssdCallback } from "../ussd/handler";
 
 export const apiRouter = Router();
@@ -107,7 +107,10 @@ apiRouter.post("/accounts", async (req: Request, res: Response) => {
             id: `dest_${Date.now()}`,
             type: destination.type || "mpesa",
             details: destination.details || phone_number,
-            account_name: destination.account_name || full_name,
+            account_name:
+              destination.account_name && destination.account_name !== UNRESOLVED_ACCOUNT_NAME
+                ? destination.account_name
+                : full_name,
             is_verified: true,
           },
         ]
@@ -474,6 +477,13 @@ apiRouter.post("/name-enquiry", async (req: Request, res: Response) => {
       ? await store.getAccountByPhone(String(details))
       : accounts.find((a) => a.payout_destinations.some((d) => d.details === details));
   if (!match) {
+    // Signup runs before a session exists, and Payaza has no KES name enquiry.
+    // A signed-in caller still gets 404 so a saved destination is never the placeholder.
+    const digits = String(details).replace(/\D/g, "");
+    if (!req.account && digits.length >= 6) {
+      res.status(200).json({ account_name: UNRESOLVED_ACCOUNT_NAME });
+      return;
+    }
     res.status(404).json({ error: "Account name not found" });
     return;
   }

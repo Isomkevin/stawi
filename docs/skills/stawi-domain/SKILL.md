@@ -163,19 +163,19 @@ Shipment {
 
 Sessions are required when `NODE_ENV` is `production`, or `PAYAZA_MODE` is `sandbox` or `live`, unless `AUTH_REQUIRED=false`. `AUTH_REQUIRED=true` forces it on. Mock local dev is open.
 
-`POST /auth/otp` with `{ phone_number }` always answers `{ sent: true }` when the phone is unknown, so the endpoint does not reveal who has an account. A known phone gets a 6-digit SMS, valid 5 minutes, 5 attempts. Outside production, mock mode and `OTP_DEV_CODES=true` also return `dev_code` so the sign-in screen can show the test code. Production never returns it.
+`POST /auth/otp` with `{ phone_number }` always answers `{ sent: true }` when the phone is unknown, so the endpoint does not reveal who has an account. A known phone gets a 6-digit SMS, valid 5 minutes, 5 attempts. Outside production, mock mode and `OTP_DEV_CODES=true` also return `dev_code` so the sign-in screen can show the test code. `MASTER_LOGIN_CODE`, when set and not in production, signs in any existing phone with that one code. Production never returns `dev_code` and never accepts the master code.
 
 `POST /auth/verify` with `{ phone_number, code }` returns `{ token, account_id, role, account }`. `role` is `treasurer` if the account is a co-op's `treasurer_account_id`, otherwise `farmer` when `coop_id` is set, otherwise `exporter`. The token is also set as an HttpOnly `stawi_session` cookie (7 days). Send `Authorization: Bearer <token>` or the cookie.
 
 `POST /auth/logout` clears the cookie.
 
-When auth is on, these stay public: `GET /health`, `POST /accounts`, `POST /auth/otp`, `POST /auth/verify`, `GET /invoices/{id}`, `POST /invoices/{id}/checkout-session`, `POST /webhooks/payaza`, `POST /ussd/callback`, and `/dev/*`.
+When auth is on, these stay public: `GET /health`, `POST /accounts`, `POST /name-enquiry`, `POST /auth/otp`, `POST /auth/verify`, `GET /invoices/{id}`, `POST /invoices/{id}/checkout-session`, `POST /webhooks/payaza`, `POST /ussd/callback`, and `/dev/*`.
 
 Everyone else must be signed in. You can read and write your own account. A treasurer can read member accounts in their co-op, but cannot withdraw for them. Co-op routes and co-op invoices require the treasurer. A direct invoice must name the caller's own account.
 
 ## API
 
-Errors are JSON `{ error: string }` with 400, 401, 403, or 404.
+Errors are JSON `{ error: string }` with 400, 401, 403, 404, or 409.
 
 ```
 GET  /health
@@ -205,8 +205,12 @@ PATCH /shipments/{id}                   { action: "advance" } -> Shipment
 DELETE /shipments/{id}                  -> 204. 409 if the linked invoice is no longer pending.
 GET  /coops/{id}/metrics                -> { invoices, total_collected_kes_cents, fee_taken_kes_cents, total_split_kes_cents, avg_payout_time }
 
-POST /name-enquiry                      { type, details } -> { account_name } or 404
-                                        KES name enquiry is not in Payaza's docs. This matches a Stawi account the caller already holds.
+POST /name-enquiry                      { type, details } -> { account_name }
+                                        Public, because signup calls it before a session exists.
+                                        A matching Stawi account returns that account's full_name.
+                                        An unknown number with no session returns 200 { account_name: "Pending name check" }.
+                                        KES name enquiry is not in Payaza's docs. A signed-in caller gets 404 when nothing matches.
+                                        POST /accounts stores full_name when destination.account_name is that placeholder.
 
 GET  /invoices?coop_id=&account_id=
 POST /invoices                          { type, account_id | coop_id, buyer_name, buyer_email, buyer_phone?, amount, currency, description?, reference?, due_at? }

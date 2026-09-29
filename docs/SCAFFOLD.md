@@ -47,7 +47,7 @@ The contract, entities, and route list are `docs/skills/stawi-domain/SKILL.md`. 
 
 **Money.** KES is integer cents. A paid invoice is converted at an illustrative rate, then a 0.8% fee is taken. Direct credits the exporter at once. Co-op waits in `settling` until the treasurer approves; `splitByShares` gives each member a net that sums exactly to the invoice net. That credit is the Stawi balance. A withdrawal, with PIN, sends balance to a verified M-Pesa (`SAFKEN`) or bank destination through Payaza. Farmers are not Payaza sub-accounts.
 
-**Auth.** Off in local mock. On in production and when `PAYAZA_MODE` is `sandbox` or `live`. `POST /auth/otp` then `POST /auth/verify`. Send `Authorization: Bearer <token>` or the `stawi_session` cookie. A treasurer can read their members and manage that co-op. They cannot withdraw on a member's behalf. Buyer invoice view, checkout, webhooks, account creation, and USSD stay public.
+**Auth.** Off in local mock. On in production and when `PAYAZA_MODE` is `sandbox` or `live`. `POST /auth/otp` then `POST /auth/verify`. Send `Authorization: Bearer <token>` or the `stawi_session` cookie. If `MASTER_LOGIN_CODE` is set, that one code signs in any existing account; a texted code still works. Leave it empty before real users. A treasurer can read their members and manage that co-op. They cannot withdraw on a member's behalf. Buyer invoice view, checkout, webhooks, account creation, and USSD stay public.
 
 **PIN.** 4 digits, bcrypt. Five failures lock the account for 15 minutes. Web and USSD call the same `withdraw`.
 

@@ -33,6 +33,36 @@ function hashCode(phone: string, code: string): string {
   return crypto.createHash("sha256").update(`${store.normalizePhone(phone)}:${code}`).digest("hex");
 }
 
+function masterLoginCode(): string {
+  if (process.env.NODE_ENV === "production") return "";
+  return (process.env.MASTER_LOGIN_CODE || "").trim();
+}
+
+function codesMatch(entered: string, expected: string): boolean {
+  const a = Buffer.from(entered);
+  const b = Buffer.from(expected);
+  if (a.length === 0 || a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
+async function issueSession(account: Account): Promise<{
+  token: string;
+  account: Account;
+  role: "farmer" | "exporter" | "treasurer";
+}> {
+  const token = crypto.randomBytes(32).toString("hex");
+  const expires = new Date(Date.now() + SESSION_TTL_MS).toISOString();
+  await store.saveSession(hashToken(token), account.id, expires);
+
+  const coops = await store.getAllCoops();
+  const role = coops.some((c) => c.treasurer_account_id === account.id)
+    ? "treasurer"
+    : account.coop_id
+      ? "farmer"
+      : "exporter";
+  return { token, account, role };
+}
+
 export function readToken(req: Request): string | null {
   const header = req.headers.authorization;
   if (typeof header === "string" && header.startsWith("Bearer ")) return header.slice(7).trim();
@@ -82,6 +112,14 @@ export async function verifyOtp(
   | { token: string; account: Account; role: "farmer" | "exporter" | "treasurer" }
   | { error: string; status: number }
 > {
+  const master = masterLoginCode();
+  if (master && codesMatch(code.trim(), master)) {
+    const account = await store.getAccountByPhone(phone);
+    if (!account) return { error: "Account not found", status: 404 };
+    await store.deleteOtp(phone);
+    return issueSession(account);
+  }
+
   const row = await store.getOtp(phone);
   if (!row || new Date(row.expiresAt).getTime() <= Date.now()) {
     return { error: "Code expired. Request a new one.", status: 401 };
@@ -103,18 +141,7 @@ export async function verifyOtp(
   const account = await store.getAccountByPhone(phone);
   if (!account) return { error: "Account not found", status: 404 };
   await store.deleteOtp(phone);
-
-  const token = crypto.randomBytes(32).toString("hex");
-  const expires = new Date(Date.now() + SESSION_TTL_MS).toISOString();
-  await store.saveSession(hashToken(token), account.id, expires);
-
-  const coops = await store.getAllCoops();
-  const role = coops.some((c) => c.treasurer_account_id === account.id)
-    ? "treasurer"
-    : account.coop_id
-      ? "farmer"
-      : "exporter";
-  return { token, account, role };
+  return issueSession(account);
 }
 
 export function sessionCookie(token: string): string {
@@ -135,6 +162,7 @@ export async function ownsAccount(actor: Account, accountId: string, write: bool
 export function isPublicRoute(method: string, path: string): boolean {
   if (method === "GET" && path === "/health") return true;
   if (method === "POST" && path === "/accounts") return true;
+  if (method === "POST" && path === "/name-enquiry") return true;
   if (method === "POST" && (path === "/auth/otp" || path === "/auth/verify")) return true;
   if (method === "GET" && /^\/invoices\/[^/]+$/.test(path)) return true;
   if (method === "POST" && /^\/invoices\/[^/]+\/checkout-session$/.test(path)) return true;

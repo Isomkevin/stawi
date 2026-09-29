@@ -100,6 +100,128 @@ describe("Co-op shipments", () => {
     expect(done.status).toBe(400);
   });
 
+  it("deletes a shipment with no paid invoice and refuses one that has been paid", async () => {
+    await store.saveInvoice({
+      id: "inv_open",
+      type: "coop",
+      account_id: null,
+      coop_id: "coop_test",
+      buyer_name: "Buyer",
+      buyer_email: "buyer@example.com",
+      amount: 1000,
+      currency: "USD",
+      description: "Lot",
+      reference: "INV-OPEN",
+      status: "pending",
+      split_approved: false,
+      fx_rate: null,
+      fee_kes_cents: null,
+      kes_total_cents: null,
+      payaza_checkout_reference: null,
+      created_at: new Date().toISOString(),
+      due_at: null,
+    });
+    await store.saveShipment(shipment({ invoice_id: "inv_open" }));
+
+    const removed = await request(app).delete("/shipments/shp_test");
+    expect(removed.status).toBe(204);
+    expect(await store.getShipment("shp_test")).toBeUndefined();
+
+    await store.saveInvoice({
+      ...(await store.getInvoice("inv_open"))!,
+      status: "completed",
+      split_approved: true,
+    });
+    await store.saveShipment(shipment({ id: "shp_paid", reference: "TEST-S-2", invoice_id: "inv_open", status: "delivered" }));
+    const blocked = await request(app).delete("/shipments/shp_paid");
+    expect(blocked.status).toBe(409);
+    expect(await store.getShipment("shp_paid")).toBeDefined();
+  });
+
+  it("deletes only a pending invoice and drops the shipment link", async () => {
+    await store.saveInvoice({
+      id: "inv_open",
+      type: "coop",
+      account_id: null,
+      coop_id: "coop_test",
+      buyer_name: "Buyer",
+      buyer_email: "buyer@example.com",
+      amount: 500,
+      currency: "USD",
+      description: "Lot",
+      reference: "INV-OPEN-2",
+      status: "pending",
+      split_approved: false,
+      fx_rate: null,
+      fee_kes_cents: null,
+      kes_total_cents: null,
+      payaza_checkout_reference: null,
+      created_at: new Date().toISOString(),
+      due_at: null,
+    });
+    await store.saveShipment(shipment({ invoice_id: "inv_open" }));
+
+    const deleted = await request(app).delete("/invoices/inv_open");
+    expect(deleted.status).toBe(204);
+    expect(await store.getInvoice("inv_open")).toBeUndefined();
+    expect((await store.getShipment("shp_test"))?.invoice_id).toBeNull();
+
+    await store.saveInvoice({
+      id: "inv_paid",
+      type: "coop",
+      account_id: null,
+      coop_id: "coop_test",
+      buyer_name: "Buyer",
+      buyer_email: "buyer@example.com",
+      amount: 500,
+      currency: "USD",
+      description: "Lot",
+      reference: "INV-PAID",
+      status: "settling",
+      split_approved: false,
+      fx_rate: 129,
+      fee_kes_cents: 100,
+      kes_total_cents: 1000,
+      payaza_checkout_reference: null,
+      created_at: new Date().toISOString(),
+      due_at: null,
+    });
+    const blocked = await request(app).delete("/invoices/inv_paid");
+    expect(blocked.status).toBe(409);
+    expect(await store.getInvoice("inv_paid")).toBeDefined();
+  });
+
+  it("removes a farmer from the co-op and keeps their account", async () => {
+    await store.saveAccount({
+      id: "acc_farmer",
+      full_name: "Wanjiku Mwangi",
+      phone_number: "+254712000001",
+      id_number: "ID2",
+      payout_destinations: [],
+      coop_id: "coop_test",
+      channel_capability: "webapp",
+      balance_kes_cents: 5000,
+      incoming_kes_cents: 0,
+    });
+    await store.addCoopMember({
+      coop_id: "coop_test",
+      account_id: "acc_farmer",
+      full_name: "Wanjiku Mwangi",
+      contribution_share: 15,
+      kilos: 100,
+    });
+
+    const removed = await request(app).delete("/coops/coop_test/members/acc_farmer");
+    expect(removed.status).toBe(204);
+    expect(await store.getCoopMembers("coop_test")).toEqual([]);
+    const account = await store.getAccount("acc_farmer");
+    expect(account?.coop_id).toBeNull();
+    expect(account?.balance_kes_cents).toBe(5000);
+
+    const again = await request(app).delete("/coops/coop_test/members/acc_farmer");
+    expect(again.status).toBe(404);
+  });
+
   it("returns 404 for an unknown co-op or shipment", async () => {
     const missingCoop = await request(app).get("/coops/missing/shipments");
     expect(missingCoop.status).toBe(404);
