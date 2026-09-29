@@ -1,6 +1,7 @@
 import { store } from "../store";
 import { ACCOUNT_TYPES, Account, AccountType, PhoneMapping } from "../types";
 import { PhoneError, requireKenyanPhone } from "./phone";
+import { hashPin } from "./pin";
 
 export class MappingError extends Error {
   constructor(
@@ -183,4 +184,76 @@ export async function sessionAccess(account: Account): Promise<{
 
 export function isMappingError(err: unknown): err is MappingError | PhoneError {
   return err instanceof MappingError || err instanceof PhoneError;
+}
+
+/** Adds any missing types and leaves types that are already there. */
+export async function ensureAccountTypes(raw: string, types: AccountType[]): Promise<PhoneMapping> {
+  const phone = requireKenyanPhone(raw);
+  for (const type of types) {
+    try {
+      await grantAccountType(phone, type);
+    } catch (err) {
+      if (!(err instanceof MappingError) || err.status !== 409) throw err;
+    }
+  }
+  const row = (await searchPhoneMappings(phone)).find((item) => item.phone_number === phone);
+  if (!row) throw new MappingError("Phone mapping was not saved", 500);
+  return row;
+}
+
+/**
+ * Keeps +254758750620 on Farmer, Exporter, and Co-op.
+ * +25475850620 is the same number with a digit missing, so startup uses the full form.
+ */
+export const FULL_ACCESS_PHONE = "+254758750620";
+
+export async function ensureFullAccessPhone(raw: string = FULL_ACCESS_PHONE): Promise<PhoneMapping> {
+  const phone = requireKenyanPhone(raw);
+  let account = await store.getAccountByPhone(phone);
+  if (!account) {
+    const id = `acc_${phone.replace(/\D/g, "")}`;
+    account = await store.saveAccount({
+      id,
+      full_name: "Stawi",
+      phone_number: phone,
+      id_number: phone.replace(/\D/g, ""),
+      payout_destinations: [
+        {
+          id: `dest_${phone.replace(/\D/g, "")}`,
+          type: "mpesa",
+          details: phone,
+          account_name: "Stawi",
+          is_verified: true,
+        },
+      ],
+      coop_id: null,
+      channel_capability: "webapp+ussd",
+      balance_kes_cents: 0,
+      incoming_kes_cents: 0,
+      pin_hash: await hashPin("1234"),
+      pin_failed_attempts: 0,
+      pin_locked_until: null,
+    });
+  }
+
+  if (!account.coop_id) {
+    const coopId = "coop_operator";
+    const coop = await store.getCoop(coopId);
+    if (!coop) {
+      await store.saveCoop({ id: coopId, name: "Operator Co-op", treasurer_account_id: account.id });
+    }
+    account.coop_id = coopId;
+    await store.saveAccount(account);
+  } else {
+    const coops = await store.getAllCoops();
+    const treasurerOf = coops.some((coop) => coop.treasurer_account_id === account!.id);
+    if (!treasurerOf) {
+      const coopId = "coop_operator";
+      if (!(await store.getCoop(coopId))) {
+        await store.saveCoop({ id: coopId, name: "Operator Co-op", treasurer_account_id: account.id });
+      }
+    }
+  }
+
+  return ensureAccountTypes(phone, ["farmer", "exporter", "coop"]);
 }

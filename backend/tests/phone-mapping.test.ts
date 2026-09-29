@@ -1,5 +1,6 @@
 import request from "supertest";
 import { createApp } from "../src/app";
+import { ensureFullAccessPhone } from "../src/services/phoneMappings";
 import { store } from "../src/store";
 
 describe("Phone account-type mappings", () => {
@@ -126,6 +127,18 @@ describe("Phone account-type mappings", () => {
     expect(page.status).toBe(200);
     expect(page.text).toContain("+254712000111");
     expect(page.text).toContain("None");
+  });
+
+  it("maps +254758750620 to farmer, exporter, and co-op together", async () => {
+    const mapped = await ensureFullAccessPhone("0758750620");
+    expect(mapped.phone_number).toBe("+254758750620");
+    expect(mapped.account_types).toEqual(["farmer", "exporter", "coop"]);
+    expect(mapped.multiple).toBe(true);
+    expect(mapped.account_id).toBeTruthy();
+
+    const again = await ensureFullAccessPhone("+254758750620");
+    expect(again.account_types).toEqual(["farmer", "exporter", "coop"]);
+    expect(again.account_id).toBe(mapped.account_id);
   });
 
   it("requires the admin secret", async () => {

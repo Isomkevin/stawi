@@ -4,6 +4,7 @@ import { CANONICAL } from "./data/catalog";
 import { seedDatabase, seedShipments, tagLegacyDemoLedger } from "./data/seed";
 import { demoDataDefault } from "./services/demoData";
 import { authRequired } from "./services/auth";
+import { ensureFullAccessPhone } from "./services/phoneMappings";
 import { setStore, store } from "./store";
 
 const PORT = parseInt(process.env.PORT || "4100", 10);
@@ -50,6 +51,8 @@ async function main() {
   }
 
   await tagLegacyDemoLedger();
+  const fullAccess = await ensureFullAccessPhone();
+  console.log(`[Map] ${fullAccess.phone_number} -> ${fullAccess.account_types.join(", ")}`);
 
   const app = createApp();
 
