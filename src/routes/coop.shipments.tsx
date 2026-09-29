@@ -14,7 +14,8 @@ import { PageHeader } from "@/features/shared/DashboardShell";
 import { attentionFor, canClose, farmerSplit, type Attention } from "@/features/coop/shipmentLogic";
 import { coopMembersOptions, coopPayoutsOptions, coopShipmentsOptions, invoicesOptions } from "@/lib/queries";
 import { SHIPMENT_STATUSES, shipmentStatusMeta, type Shipment, type ShipmentStatus } from "@/lib/shipments";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
+import { ConfirmDelete } from "@/components/stawi/ConfirmDelete";
 import { accountName } from "@/lib/mock";
 import { useCoopId } from "@/lib/session";
 import { formatCurrency, formatDate, formatKesCents } from "@/lib/format";
@@ -284,6 +285,29 @@ function useAdvance(coopId: string) {
   });
 }
 
+function DeleteShipment({ s, inv, onDeleted }: { s: Shipment; inv: Invoice | undefined; onDeleted?: () => void }) {
+  const coopId = useCoopId();
+  const qc = useQueryClient();
+  const blocked = inv && inv.status !== "pending" ? "Shipments with a paid invoice can't be deleted" : undefined;
+  return (
+    <ConfirmDelete
+      label={`Delete shipment ${s.reference}`}
+      title={`Delete shipment ${s.reference}?`}
+      description={`${s.buyer_name} · ${s.product}. This removes it from your shipments list and can't be undone.`}
+      disabledReason={blocked}
+      onConfirm={async () => {
+        try {
+          await api.deleteShipment(s.id);
+          toast.success(`Shipment ${s.reference} deleted`);
+          onDeleted?.();
+          await qc.invalidateQueries({ queryKey: ["coop", coopId, "shipments"] });
+        } catch (e) {
+          toast.error(e instanceof ApiError && e.status === 404 ? "The server can't delete shipments yet." : "Couldn't delete the shipment.");
+        }
+      }}
+    />
+  );
+}
 /** The single most useful next step for a shipment, usable straight from the list. */
 function QuickAction({ s, inv, att, size = "sm" }: { s: Shipment; inv: Invoice | undefined; att: Attention[]; size?: "sm" | "default" }) {
   const coopId = useCoopId();
@@ -377,9 +401,12 @@ function ShipmentDetail({ s, inv, att, payouts, nameOf, onClose }: { s: Shipment
           <h2 className="text-display truncate text-2xl">{s.buyer_name}</h2>
           <p className="text-sm text-muted-foreground">{s.product}</p>
         </div>
-        {onClose && (
-          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close details"><X className="size-4" /></Button>
-        )}
+        <div className="flex items-center">
+          <DeleteShipment s={s} inv={inv} onDeleted={onClose} />
+          {onClose && (
+            <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close details"><X className="size-4" /></Button>
+          )}
+        </div>
       </div>
 
       {/* Stage tracker */}
