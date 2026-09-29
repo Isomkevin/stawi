@@ -17,6 +17,7 @@ Leave the block above unchanged. Lovable may rewrite the text between `LOVABLE:B
 - Invoice UI shared between co-op and direct dashboards lives in src/features/shared (table, new-invoice sheet, detail view) to avoid drift.
 - All reads go through queryOptions in src/lib/queries.ts so keys stay consistent across screens.
 - Co-op shipments list from GET /coops/{id}/shipments and advance with PATCH /shipments/{id}. Mock mode still uses src/lib/shipments.ts. /coop/shipments is a list + side detail (bottom sheet on mobile) keyed by ?id= so context is never lost.
+- Live mode is set in root .env (VITE_API_MODE=live, VITE_API_BASE_URL); sign-in uses the server's phone-code login and the session is kept per browser tab.
 - Lovable edits the frontend only. Do not edit `backend/` or `docs/`.
 
 ## Other coding agents (backend and docs)
