@@ -41,7 +41,7 @@ export function PaymentProofsPanel({ coopId, accountId }: { coopId?: string; acc
         return;
       }
       const w = window.open();
-      if (w) w.document.write(`<title>${r.receipt_name ?? "Receipt"}</title><iframe src="${r.receipt_data}" style="border:0;width:100%;height:100vh"></iframe>`);
+      if (w) w.document.write(`<title>${(r.receipt_name ?? "Receipt").replace(/[<>&"]/g, "")}</title><iframe src="${r.receipt_data}" style="border:0;width:100%;height:100vh"></iframe>`);
     } catch (e) {
       toast.error((e as Error).message);
     }
