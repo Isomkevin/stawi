@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Loader2, Upload, UserPlus } from "lucide-react";
+import { Download, Loader2, Upload, UserPlus } from "lucide-react";
 import { CopyLink } from "@/components/stawi/CopyLink";
 import { StatusChip } from "@/components/stawi/StatusChip";
 import { Button } from "@/components/ui/button";
@@ -14,8 +14,9 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { PageHeader } from "@/features/shared/DashboardShell";
 import { api, ApiError } from "@/lib/api";
 import { ConfirmDelete } from "@/components/stawi/ConfirmDelete";
-import { parseMembersCsv } from "@/lib/csv";
+import { downloadCsv, normalizeKePhone, parseMembersCsv, type MemberCsvRow } from "@/lib/csv";
 import { accountName, mockDb } from "@/lib/mock";
+import type { CoopMember } from "@/lib/types";
 import { coopMembersOptions } from "@/lib/queries";
 import { useCoopId } from "@/lib/session";
 import { cn } from "@/lib/utils";
@@ -178,20 +179,151 @@ function Members() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={csvRows.length > 0} onOpenChange={(o) => !o && setCsvRows([])}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Import {csvRows.length} farmers</DialogTitle>
-            <DialogDescription>Columns: name, phone, share. Each will get an invite link.</DialogDescription>
-          </DialogHeader>
-          <ul className="max-h-64 space-y-1 overflow-y-auto text-sm">
-            {csvRows.map((r, i) => (
-              <li key={i} className="flex justify-between border-b border-border py-1"><span>{r.name}</span><span className="tabular text-muted-foreground">{r.phone} · {r.share}%</span></li>
-            ))}
-          </ul>
-          <Button onClick={() => { toast.success(`${csvRows.length} invites queued`); setCsvRows([]); }}>Send invites</Button>
-        </DialogContent>
-      </Dialog>
+      <ImportDialog
+        rows={csvRows}
+        onClose={() => setCsvRows([])}
+        coopId={coopId}
+        members={members.data ?? []}
+        currentShares={shares}
+      />
     </div>
+  );
+}
+
+const COOP_NAME = "Kiambu Highlands Coffee Co-op";
+
+type ImportResult = { added: string[]; updated: string[]; invites: Array<{ name: string; phone: string; share: number; url: string }>; failed: Array<{ name: string; reason: string }> };
+
+function ImportDialog({
+  rows,
+  onClose,
+  coopId,
+  members,
+  currentShares,
+}: {
+  rows: MemberCsvRow[];
+  onClose: () => void;
+  coopId: string;
+  members: CoopMember[];
+  currentShares: Record<string, number>;
+}) {
+  const qc = useQueryClient();
+  const [result, setResult] = useState<ImportResult | null>(null);
+  const valid = rows.filter((r) => !r.error);
+  const invalid = rows.filter((r) => r.error);
+
+  const accByPhone = (phone: string) => mockDb.accounts.find((a) => normalizeKePhone(a.phone_number) === phone);
+  const plan = valid.map((r) => {
+    const acc = accByPhone(r.phone);
+    const member = acc && members.find((m) => m.account_id === acc.id);
+    return { row: r, acc, kind: member ? ("update" as const) : acc ? ("add" as const) : ("invite" as const) };
+  });
+  const touched = new Set(plan.filter((p) => p.acc).map((p) => p.acc!.id));
+  const projected =
+    Object.entries(currentShares).filter(([id]) => !touched.has(id)).reduce((s, [, v]) => s + (Number(v) || 0), 0) +
+    valid.reduce((s, r) => s + r.share, 0);
+
+  const run = useMutation({
+    mutationFn: async () => {
+      const out: ImportResult = { added: [], updated: [], invites: [], failed: [] };
+      const origin = typeof window !== "undefined" ? window.location.origin : "";
+      for (const p of plan) {
+        try {
+          if (p.kind === "update") {
+            await api.updateMemberShare(coopId, p.acc!.id, p.row.share);
+            out.updated.push(p.row.name);
+          } else if (p.kind === "add") {
+            await api.addCoopMember(coopId, { account_id: p.acc!.id, full_name: p.acc!.full_name, contribution_share: p.row.share, kilos: p.row.kilos });
+            out.added.push(p.row.name);
+          } else {
+            const q = new URLSearchParams({ coop: COOP_NAME, share: String(p.row.share), phone: p.row.phone, name: p.row.name });
+            out.invites.push({ name: p.row.name, phone: p.row.phone, share: p.row.share, url: `${origin}/onboarding?${q.toString()}` });
+          }
+        } catch (e) {
+          out.failed.push({ name: p.row.name, reason: e instanceof ApiError ? e.message : "Couldn't save" });
+        }
+      }
+      return out;
+    },
+    onSuccess: (out) => {
+      setResult(out);
+      void qc.invalidateQueries({ queryKey: ["coop", coopId] });
+      toast.success(`Imported ${out.added.length + out.updated.length} farmers, ${out.invites.length} invites ready`);
+    },
+  });
+
+  const close = () => { setResult(null); onClose(); };
+
+  return (
+    <Dialog open={rows.length > 0} onOpenChange={(o) => !o && close()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{result ? "Import finished" : `Import ${rows.length} farmers`}</DialogTitle>
+          <DialogDescription>
+            {result
+              ? "Farmers already on Stawi were added straight away. New farmers need to open their invite link to set up M-Pesa and a PIN."
+              : "Columns: name, phone, share %, and optionally kilos. Farmers already on Stawi are added directly; new ones get an invite link."}
+          </DialogDescription>
+        </DialogHeader>
+
+        {!result ? (
+          <>
+            <ul className="max-h-64 space-y-1 overflow-y-auto text-sm">
+              {rows.map((r) => {
+                const p = plan.find((x) => x.row === r);
+                return (
+                  <li key={r.line} className="flex items-center justify-between gap-2 border-b border-border py-1.5">
+                    <span className="min-w-0 truncate">{r.name || <em className="text-muted-foreground">Row {r.line}</em>}</span>
+                    <span className="flex shrink-0 items-center gap-2 tabular text-xs text-muted-foreground">
+                      {r.phone} · {r.share}%
+                      {r.error ? (
+                        <span className="text-terracotta">{r.error}</span>
+                      ) : (
+                        <StatusChip status={p?.kind === "invite" ? "pending" : "verified"} label={p?.kind === "invite" ? "Invite" : p?.kind === "update" ? "Update share" : "Add"} />
+                      )}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+            {invalid.length > 0 && <p className="text-xs text-terracotta">{invalid.length} row(s) will be skipped. Fix them in the file and import again.</p>}
+            <p className={cn("text-xs", projected === 100 ? "text-muted-foreground" : "text-terracotta")}>
+              Shares after import: <span className="tabular">{projected}%</span>
+              {projected !== 100 && " — adjust shares to reach 100% before the next split."}
+            </p>
+            <Button disabled={valid.length === 0 || run.isPending} onClick={() => run.mutate()}>
+              {run.isPending && <Loader2 className="size-4 animate-spin" />} Import {valid.length} farmers
+            </Button>
+          </>
+        ) : (
+          <>
+            <ul className="space-y-1 text-sm">
+              <li>Added to co-op: <strong className="tabular">{result.added.length}</strong></li>
+              <li>Shares updated: <strong className="tabular">{result.updated.length}</strong></li>
+              <li>Invites to send: <strong className="tabular">{result.invites.length}</strong></li>
+              {result.failed.length > 0 && <li className="text-terracotta">Failed: {result.failed.map((f) => `${f.name} (${f.reason})`).join(", ")}</li>}
+            </ul>
+            {result.invites.length > 0 && (
+              <div className="max-h-48 space-y-2 overflow-y-auto">
+                {result.invites.map((i) => (
+                  <div key={i.phone}>
+                    <p className="mb-1 text-xs text-muted-foreground">{i.name} · {i.phone}</p>
+                    <CopyLink url={i.url} subject="Join our co-op on Stawi" />
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2">
+              {result.invites.length > 0 && (
+                <Button variant="outline" onClick={() => downloadCsv("stawi-invites.csv", [["name", "phone", "share", "invite_link"], ...result.invites.map((i) => [i.name, i.phone, i.share, i.url])])}>
+                  <Download className="size-4" /> Download invite list
+                </Button>
+              )}
+              <Button onClick={close}>Done</Button>
+            </div>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }

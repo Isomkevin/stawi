@@ -11,10 +11,10 @@ type Session = {
 };
 
 type SignInOptions = {
-  accountId?: string;
-  coopId?: string | null;
-  token?: string;
-  roles?: Array<Exclude<Role, "buyer">>;
+  accountId?: string | undefined;
+  coopId?: string | null | undefined;
+  token?: string | undefined;
+  roles?: Array<Exclude<Role, "buyer">> | undefined;
 };
 
 type SessionContextValue = Session & {
