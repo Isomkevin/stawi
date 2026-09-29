@@ -201,6 +201,26 @@ function WithdrawTab() {
               {formatKesCents(cents)} → {dest ? maskDestination(dest.details) : ""}
             </p>
             <p className="mt-1 text-sm text-muted-foreground">You'll get an M-Pesa message shortly.</p>
+            {withdraw.data && (
+              <dl className="mt-6 w-full max-w-sm space-y-2 rounded-2xl border border-border bg-card p-4 text-left text-sm">
+                <div className="flex justify-between gap-4">
+                  <dt className="text-muted-foreground">Receipt</dt>
+                  <dd className="tabular">{withdraw.data.payaza_reference || withdraw.data.id}</dd>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <dt className="text-muted-foreground">Amount</dt>
+                  <dd className="tabular">{formatKesCents(withdraw.data.amount_kes_cents)}</dd>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <dt className="text-muted-foreground">To</dt>
+                  <dd>{dest ? maskDestination(dest.details) : ""}</dd>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <dt className="text-muted-foreground">Status</dt>
+                  <dd>{withdraw.data.status === "confirmed" ? "Paid" : "Sent — waiting for confirmation"}</dd>
+                </div>
+              </dl>
+            )}
             <Link to="/app/home" className="mt-8 inline-flex min-h-12 items-center rounded-full bg-primary px-6 text-sm font-medium text-primary-foreground">
               Done
             </Link>

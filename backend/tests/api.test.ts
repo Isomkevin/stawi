@@ -198,6 +198,35 @@ describe("REST API Endpoints", () => {
     process.env.PAYAZA_MODE = "mock";
   });
 
+  it("issues a payment receipt only after the payment is received", async () => {
+    process.env.PAYAZA_MODE = "mock";
+    const created = await request(app).post("/invoices").send({
+      type: "direct",
+      account_id: "acc_demo",
+      buyer_name: "East Produce Kenya",
+      buyer_email: "ap@eastproduce.example",
+      amount: 1000,
+      currency: "USD",
+      description: "Coffee",
+      reference: "INV-RECEIPT-1",
+    });
+    const early = await request(app).get(`/invoices/${created.body.id}/receipt`);
+    expect(early.status).toBe(409);
+
+    const paid = await request(app).post(`/dev/simulate-payment/${created.body.id}`);
+    expect(paid.status).toBe(200);
+
+    const receipt = await request(app).get(`/invoices/${created.body.id}/receipt`);
+    expect(receipt.status).toBe(200);
+    expect(receipt.body.receipt_number).toBe("RCP-INV-RECEIPT-1");
+    expect(receipt.body.buyer_name).toBe("East Produce Kenya");
+    expect(receipt.body.amount).toBe(1000);
+    expect(receipt.body.currency).toBe("USD");
+    expect(receipt.body.fee_kes_cents).toBeGreaterThan(0);
+    expect(receipt.body.net_kes_cents + receipt.body.fee_kes_cents).toBe(receipt.body.gross_kes_cents);
+    expect(receipt.body.paid_at).toBeTruthy();
+  });
+
   it("checkout session includes the Payaza connection mode", async () => {
     const invoice = await request(app).post("/invoices").send({
       type: "direct",

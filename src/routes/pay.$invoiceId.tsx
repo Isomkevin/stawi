@@ -22,6 +22,7 @@ import { DemoBadge } from "@/components/stawi/DemoDataControl";
 import { StatusChip } from "@/components/stawi/StatusChip";
 import { Timeline, type TimelineStep } from "@/components/stawi/Timeline";
 import { Button } from "@/components/ui/button";
+import { PaymentReceiptCard } from "@/features/shared/PaymentReceiptCard";
 
 export const Route = createFileRoute("/pay/$invoiceId")({
   head: () => ({
@@ -359,6 +360,8 @@ function ReceiptView({
           </p>
         )}
       </motion.section>
+
+      {invoice.status !== "failed" && <PaymentReceiptCard invoiceId={invoice.id} />}
 
       <section className="rounded-2xl border border-border bg-card p-6 shadow-soft">
         <h3 className="text-display text-lg">Live payout tracker</h3>

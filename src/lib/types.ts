@@ -82,6 +82,7 @@ export type Transaction = {
   currency: string;
   fx_rate: number | null;
   fee_kes_cents: number | null;
+  payaza_reference?: string | null;
   is_demo?: boolean;
   created_at: string;
 };
@@ -95,6 +96,7 @@ export type Payout = {
   destination_id: string | null;
   status: "pending" | "sent" | "confirmed" | "failed";
   created_at: string;
+  payaza_reference?: string | null;
   is_demo?: boolean;
 };
 
@@ -132,6 +134,25 @@ export type DemoDataSettings = {
   demo_data_visible: boolean;
   demo_data_default: boolean;
   effect: string;
+};
+
+export type PaymentReceipt = {
+  receipt_number: string;
+  invoice_id: string;
+  invoice_reference: string;
+  paid_at: string;
+  payee_name: string;
+  buyer_name: string;
+  buyer_email: string;
+  description: string;
+  amount: number;
+  currency: string;
+  fx_rate: number | null;
+  gross_kes_cents: number | null;
+  fee_kes_cents: number | null;
+  net_kes_cents: number | null;
+  payaza_reference: string | null;
+  status: InvoiceStatus;
 };
 
 export type InvoiceDetail = {

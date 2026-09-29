@@ -13,6 +13,7 @@ import {
   type CreateInvoiceBody,
   type Invoice,
   type InvoiceDetail,
+  type PaymentReceipt,
   type NewDestinationBody,
   type PaymentProof,
   type Payout,
@@ -141,6 +142,10 @@ export const api = {
   // GET /invoices/{id}
   getInvoice: (invoiceId: string): Promise<InvoiceDetail> =>
     isMock ? mockApi.getInvoice(invoiceId) : request(`/invoices/${invoiceId}`),
+
+  // GET /invoices/{id}/receipt — only after the payment is recorded
+  getPaymentReceipt: (invoiceId: string): Promise<PaymentReceipt> =>
+    isMock ? mockApi.getPaymentReceipt(invoiceId) : request(`/invoices/${invoiceId}/receipt`),
 
   // POST /invoices/{id}/checkout-session
   createCheckoutSession: (invoiceId: string): Promise<CheckoutSession> =>

@@ -12,6 +12,7 @@ import {
   type CreateInvoiceBody,
   type Invoice,
   type InvoiceDetail,
+  type PaymentReceipt,
   type Payout,
   type PayoutDestination,
   type SplitLine,
@@ -640,6 +641,35 @@ export const mockApi = {
         )
         .sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at)),
     );
+  },
+
+  async getPaymentReceipt(invoiceId: string): Promise<PaymentReceipt> {
+    const detail = await this.getInvoice(invoiceId);
+    const collection = detail.transactions.find((tx) => tx.type === "collection" && tx.status === "completed");
+    const invoice = detail.invoice;
+    if (!collection || invoice.status === "pending" || invoice.status === "failed") {
+      throw new ApiError(409, "A receipt is issued after the payment is received");
+    }
+    const fee = invoice.fee_kes_cents;
+    const net = invoice.kes_total_cents;
+    return {
+      receipt_number: `RCP-${invoice.reference}`,
+      invoice_id: invoice.id,
+      invoice_reference: invoice.reference,
+      paid_at: collection.created_at,
+      payee_name: detail.payee_name || "Stawi seller",
+      buyer_name: invoice.buyer_name,
+      buyer_email: invoice.buyer_email,
+      description: invoice.description,
+      amount: collection.amount,
+      currency: collection.currency,
+      fx_rate: invoice.fx_rate,
+      gross_kes_cents: fee != null && net != null ? fee + net : null,
+      fee_kes_cents: fee,
+      net_kes_cents: net,
+      payaza_reference: collection.payaza_reference ?? invoice.payaza_checkout_reference,
+      status: invoice.status,
+    };
   },
 
   async getInvoice(invoiceId: string): Promise<InvoiceDetail> {

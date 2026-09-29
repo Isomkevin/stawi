@@ -254,6 +254,7 @@ When `VITE_API_MODE=live`, ignore this mock and read the backend. That ledger is
 - `POST /coops/{id}/invites/sms` `{ recipients: [{ phone_number, full_name, link }] }` → `{ sent, failed, results: [{ phone_number, sent, error? }] }`. Link must be an `https://…/onboarding?` URL.
 - `POST /invoices/{id}/approve-split` now also returns `transfers: Payout[]`: after the split each farmer's share is sent through Payaza to their first verified M-Pesa / mobile money (`momo`) / bank destination. Status `sent` until the payout webhook confirms, `confirmed` in mock mode, `failed` leaves the money in the Stawi balance. Farmers with no verified destination keep it in balance.
 - `PayoutDestination.type` adds `"momo"`; set `PAYAZA_MOMO_BANK_CODE` for non-Safaricom wallets.
+- `GET /invoices/{id}/receipt` (public) → payment receipt after the buyer has paid. 409 while the invoice is still unpaid or failed. Show it on the pay page and the invoice detail, with a print or save action.
 
 ### Buyer portal and payment proofs (added)
 - `POST /buyer/lookup` (public) `{ access_code, shipment_reference }` → `{ shipment, invoice, payee_name, proofs }`. Code is `BUYER_PORTAL_CODE` env, default `STAWI-BUYER-2026`.

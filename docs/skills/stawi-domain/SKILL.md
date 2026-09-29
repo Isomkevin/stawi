@@ -240,6 +240,7 @@ POST /name-enquiry                      { type, details } -> { account_name }
 GET  /invoices?coop_id=&account_id=
 POST /invoices                          { type, account_id | coop_id, buyer_name, buyer_email, buyer_phone?, amount, currency, description?, reference?, due_at? }
                                         A co-op invoice also opens a draft shipment with this invoice_id and no farmers.
+GET  /invoices/{id}/receipt              -> PaymentReceipt. Public. 409 until a collection has completed. 404 if missing.
 GET  /invoices/{id}                     -> { invoice, transactions, split_preview: SplitLine[] | null, payee_name, farmer_count }
                                         Public. payee_name is the co-op name or the exporter's full name.
                                         farmer_count is the member count for a co-op invoice, and null for a direct invoice.

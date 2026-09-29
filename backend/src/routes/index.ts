@@ -5,6 +5,7 @@ import { clearSessionCookie, enforceAuth, hashToken, issueSession, requestOtp, r
 import { classifyPayazaWebhook, payaza } from "../services/payaza";
 import { hashPin } from "../services/pin";
 import { pipeline } from "../services/pipeline";
+import { paymentReceipt } from "../services/receipt";
 import { addShipmentFarmer, advanceShipment, openShipmentForInvoice, removeShipmentFarmer } from "../services/shipments";
 import { store } from "../store";
 import { randomUUID } from "crypto";
@@ -863,6 +864,27 @@ apiRouter.get("/invoices/:id", async (req: Request, res: Response) => {
     payee_name: payee.payee_name,
     farmer_count: payee.farmer_count,
   });
+});
+
+apiRouter.get("/invoices/:id/receipt", async (req: Request, res: Response) => {
+  const invoice = await store.getInvoice(getParam(req.params.id));
+  if (!invoice) {
+    res.status(404).json({ error: "Invoice not found" });
+    return;
+  }
+  if (req.account && !seesDemo(req) && isDemo(invoice)) {
+    res.status(404).json({ error: "Invoice not found" });
+    return;
+  }
+
+  const transactions = await store.getTransactions(invoice.id);
+  const payee = await publicPayee(invoice);
+  const receipt = paymentReceipt(invoice, transactions, payee.payee_name);
+  if (!receipt) {
+    res.status(409).json({ error: "A receipt is issued after the payment is received" });
+    return;
+  }
+  res.status(200).json(receipt);
 });
 
 apiRouter.delete("/invoices/:id", async (req: Request, res: Response) => {

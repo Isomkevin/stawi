@@ -187,6 +187,7 @@ export function isPublicRoute(method: string, path: string): boolean {
   if (method === "POST" && path === "/name-enquiry") return true;
   if (method === "POST" && (path === "/auth/otp" || path === "/auth/verify")) return true;
   if (method === "GET" && /^\/invoices\/[^/]+$/.test(path)) return true;
+  if (method === "GET" && /^\/invoices\/[^/]+\/receipt$/.test(path)) return true;
   if (method === "POST" && /^\/invoices\/[^/]+\/checkout-session$/.test(path)) return true;
   if (method === "POST" && (path === "/buyer/lookup" || path === "/buyer/payment-proofs")) return true;
   if (method === "POST" && path === "/webhooks/payaza") return true;

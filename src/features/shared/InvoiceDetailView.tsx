@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { invoiceSteps } from "./invoiceSteps";
+import { PaymentReceiptCard } from "./PaymentReceiptCard";
 import { api, ApiError } from "@/lib/api";
 import { invoiceOptions } from "@/lib/queries";
 import { accountName } from "@/lib/mock";
@@ -159,6 +160,9 @@ export function InvoiceDetailView({ invoiceId, backTo }: { invoiceId: string; ba
               <div className="flex justify-center"><QrCode value={url} /></div>
               <CopyLink url={url} subject={`Invoice ${invoice.reference}`} />
             </section>
+          )}
+          {invoice.status !== "pending" && invoice.status !== "failed" && (
+            <PaymentReceiptCard invoiceId={invoice.id} />
           )}
         </aside>
       </div>
