@@ -21,7 +21,7 @@ import type { Invoice, Payout } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/coop/shipments")({
-  validateSearch: (s: Record<string, unknown>): { id?: string } => (typeof s.id === "string" ? { id: s.id } : {}),
+  validateSearch: (s: Record<string, unknown>): { id?: string } => (typeof s['id'] === "string" ? { id: s['id'] } : {}),
   head: () => ({
     meta: [
       { title: "Shipments — Stawi co-op" },
@@ -79,8 +79,8 @@ function ShipmentsPage() {
     const c: Record<string, number> = { all: rows.length, attention: 0, active: 0 };
     rows.forEach((r) => {
       c[r.s.status] = (c[r.s.status] ?? 0) + 1;
-      if (r.att.length) c.attention!++;
-      if (r.s.status !== "completed") c.active!++;
+      if (r.att.length) c['attention']!++;
+      if (r.s.status !== "completed") c['active']!++;
     });
     return c;
   }, [rows]);
