@@ -1,6 +1,7 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
-import { FileBarChart, FileText, Landmark, LayoutDashboard, MessageCircleQuestion, Settings, Ship, Users, Wallet } from "lucide-react";
+import { FileBarChart, FileText, Landmark, LayoutDashboard, Settings, Ship, Users, Wallet } from "lucide-react";
 import { RoleGate } from "@/components/stawi/RoleGate";
+import { AskStawiChat } from "@/components/stawi/AskStawiChat";
 import { DashboardShell } from "@/features/shared/DashboardShell";
 
 export const Route = createFileRoute("/coop")({
@@ -31,12 +32,12 @@ function CoopLayout() {
           { to: "/coop/payments", label: "Buyer payments", icon: Landmark },
           { to: "/coop/payouts", label: "Payouts", icon: Wallet },
           { to: "/coop/reports", label: "Reports & tax", icon: FileBarChart },
-          { to: "/coop/assistant", label: "Ask Stawi", icon: MessageCircleQuestion },
           { to: "/coop/settings", label: "Settings", icon: Settings },
         ]}
       >
         <Outlet />
       </DashboardShell>
+      <AskStawiChat />
     </RoleGate>
   );
 }
