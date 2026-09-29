@@ -19,6 +19,7 @@ import {
   type Transaction,
   type WithdrawBody,
 } from "./types";
+import { checkoutAmount, defaultPayCurrency } from "./payCurrencies";
 
 export const FX_USD_KES = 129;
 export const FX_EUR_KES = 139;
@@ -712,10 +713,11 @@ export const mockApi = {
     return structuredClone(invoice);
   },
 
-  async createCheckoutSession(invoiceId: string): Promise<CheckoutSession> {
+  async createCheckoutSession(invoiceId: string, currencyCode?: string): Promise<CheckoutSession> {
     await latency(400);
     const invoice = invoices.find((i) => i.id === invoiceId);
     if (!invoice) throw new ApiError(404, "Invoice not found");
+    const currency_code = (currencyCode || defaultPayCurrency(invoice.currency)).toUpperCase();
     const reference = `PZ-${invoiceId.toUpperCase()}-${Math.floor(Math.random() * 999)}`;
     invoice.payaza_checkout_reference = reference;
     return {
@@ -725,6 +727,8 @@ export const mockApi = {
       transaction_reference: reference,
       link_id: null,
       connection_mode: "Test",
+      checkout_amount: checkoutAmount(invoice.amount, invoice.currency, currency_code),
+      currency_code,
     };
   },
 

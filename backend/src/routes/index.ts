@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
 import { SEED_IDS } from "../data/seed";
-import { feeCents, toKesCents } from "../services/money";
+import { feeCents, isPayCurrency, toKesCents } from "../services/money";
 import { clearSessionCookie, enforceAuth, hashToken, issueSession, requestOtp, requestTokens, sessionCookie, verifyOtp } from "../services/auth";
 import { classifyPayazaWebhook, payaza } from "../services/payaza";
 import { hashPin } from "../services/pin";
@@ -963,7 +963,13 @@ apiRouter.post("/invoices/:id/checkout-session", async (req: Request, res: Respo
       return;
     }
 
-    const session = await payaza.createCheckoutSession(invoice);
+    const requested =
+      typeof req.body?.currency_code === "string" ? req.body.currency_code.trim().toUpperCase() : invoice.currency.toUpperCase();
+    if (!isPayCurrency(requested)) {
+      res.status(400).json({ error: "That currency is not supported for Payaza checkout" });
+      return;
+    }
+    const session = await payaza.createCheckoutSession(invoice, 1, requested);
     invoice.payaza_checkout_reference = session.transaction_reference;
     if (session.link_id) invoice.payaza_link_id = session.link_id;
     await store.saveInvoice(invoice);

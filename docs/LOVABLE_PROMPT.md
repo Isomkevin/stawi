@@ -189,8 +189,10 @@ GET  /invoices?coop_id=&account_id=     POST /invoices { type, account_id|coop_i
 GET  /invoices/{id}                     -> { invoice, transactions, split_preview: SplitLine[] | null, payee_name, farmer_count }
                                         Public. payee_name is the co-op or exporter name. farmer_count is the member count, or null on a direct invoice.
                                         The pay page reads these. It does not call GET /coops/{id}, GET /coops/{id}/members, or GET /accounts/{id}.
-POST /invoices/{id}/checkout-session    -> { reference, checkoutUrl|null, public_key, transaction_reference, link_id|null, connection_mode: "Test"|"Live" }
-                                        Live mode opens the Payaza Web SDK (checkout-v2.payaza.africa) with public_key, connection_mode, and transaction_reference.
+POST /invoices/{id}/checkout-session    { currency_code? } -> { reference, checkoutUrl|null, public_key, transaction_reference, link_id|null, connection_mode: "Test"|"Live", checkout_amount, currency_code }
+                                        currency_code is a Payaza checkout currency (USD, EUR, GBP, NGN, GHS, KES, UGX, TZS, ZAR, XOF, ZMW, LRD, CDF, XAF). Omitted means the invoice currency. 400 if unsupported.
+                                        checkout_amount is the invoice converted into that currency at the illustrative KES rates. The pay page shows that amount and sends it to the Payaza Web SDK.
+                                        Live mode opens the Payaza Web SDK (checkout-v2.payaza.africa) with public_key, connection_mode, transaction_reference, checkout_amount, and currency_code.
                                         Do not call POST /dev/simulate-payment unless the backend is in mock mode. Poll GET /invoices/{id} after the widget callback; the webhook marks the invoice paid.
 POST /invoices/{id}/approve-split       { treasurer_id, pin } -> { success, invoice, payouts }
 POST /dev/simulate-payment/{invoiceId}  -> { success, invoice, transactions, payouts } (mock backend only)

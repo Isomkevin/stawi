@@ -172,6 +172,8 @@ export type CheckoutSession = {
   transaction_reference: string;
   link_id?: string | null;
   connection_mode?: "Test" | "Live";
+  checkout_amount: number;
+  currency_code: string;
 };
 
 export type CreateAccountBody = {

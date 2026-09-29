@@ -148,11 +148,14 @@ export const api = {
   getPaymentReceipt: (invoiceId: string): Promise<PaymentReceipt> =>
     isMock ? mockApi.getPaymentReceipt(invoiceId) : request(`/invoices/${invoiceId}/receipt`),
 
-  // POST /invoices/{id}/checkout-session
-  createCheckoutSession: (invoiceId: string): Promise<CheckoutSession> =>
+  // POST /invoices/{id}/checkout-session { currency_code? }
+  createCheckoutSession: (invoiceId: string, currencyCode?: string): Promise<CheckoutSession> =>
     isMock
-      ? mockApi.createCheckoutSession(invoiceId)
-      : request(`/invoices/${invoiceId}/checkout-session`, { method: "POST" }),
+      ? mockApi.createCheckoutSession(invoiceId, currencyCode)
+      : request(`/invoices/${invoiceId}/checkout-session`, {
+          method: "POST",
+          body: JSON.stringify(currencyCode ? { currency_code: currencyCode } : {}),
+        }),
 
   // POST /invoices/{id}/approve-split → { success, invoice, payouts }
   approveSplit: (invoiceId: string, treasurerId: string, pin: string): Promise<Invoice> =>

@@ -242,5 +242,26 @@ describe("REST API Endpoints", () => {
     expect(res.body.connection_mode).toBe("Test");
     expect(res.body.transaction_reference).toBeTruthy();
     expect(res.body.public_key).toBeTruthy();
+    expect(res.body.currency_code).toBe("USD");
+    expect(res.body.checkout_amount).toBe(1000);
+  });
+
+  it("converts a USD invoice into KES for Payaza checkout and rejects an unknown currency", async () => {
+    const invoice = await request(app).post("/invoices").send({
+      type: "direct",
+      account_id: "acc_demo",
+      buyer_name: "East Produce Kenya",
+      buyer_email: "ap@eastproduce.example",
+      amount: 1000,
+      currency: "USD",
+      description: "Coffee",
+    });
+    const kes = await request(app).post(`/invoices/${invoice.body.id}/checkout-session`).send({ currency_code: "kes" });
+    expect(kes.status).toBe(200);
+    expect(kes.body.currency_code).toBe("KES");
+    expect(kes.body.checkout_amount).toBe(1000 * 129);
+
+    const rejected = await request(app).post(`/invoices/${invoice.body.id}/checkout-session`).send({ currency_code: "BTC" });
+    expect(rejected.status).toBe(400);
   });
 });

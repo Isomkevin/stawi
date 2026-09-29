@@ -1,5 +1,66 @@
 import { SplitLine } from "../types";
 
+/**
+ * Currencies Payaza documents for hosted checkout or collections.
+ * USD, NGN, GHS: checkout and payment-page examples.
+ * KES, UGX, TZS, ZAR, XOF, ZMW, LRD, CDF, XAF: mobile-money and local rails.
+ * EUR and GBP: Stawi invoices are already charged in these.
+ * Rates are KES per 1 unit. Payaza publishes no FX endpoint, so these match the illustrative table.
+ */
+export const PAY_CURRENCIES = [
+  "USD",
+  "EUR",
+  "GBP",
+  "NGN",
+  "GHS",
+  "KES",
+  "UGX",
+  "TZS",
+  "ZAR",
+  "XOF",
+  "ZMW",
+  "LRD",
+  "CDF",
+  "XAF",
+] as const;
+
+const WHOLE_UNIT = new Set(["KES", "UGX", "TZS", "XOF", "XAF", "CDF", "LRD"]);
+
+const KES_PER_UNIT: Record<string, number> = {
+  USD: 129,
+  EUR: 142,
+  GBP: 168,
+  KES: 1,
+  NGN: 0.083,
+  GHS: 8.3,
+  UGX: 0.035,
+  TZS: 0.049,
+  ZAR: 7.2,
+  XOF: 0.215,
+  XAF: 0.215,
+  ZMW: 4.8,
+  LRD: 0.68,
+  CDF: 0.045,
+};
+
+export function isPayCurrency(code: string): boolean {
+  return (PAY_CURRENCIES as readonly string[]).includes(code.toUpperCase());
+}
+
+/** Illustrative KES per 1 unit. Unknown codes use the USD rate, same as before. */
+export function kesPerUnit(currency: string): number {
+  return KES_PER_UNIT[currency.toUpperCase()] ?? 129;
+}
+
+/** Invoice amount restated in the currency the buyer chose, so Payaza charges the same shilling value. */
+export function checkoutAmount(invoiceAmount: number, fromCurrency: string, toCurrency: string): number {
+  const to = toCurrency.toUpperCase();
+  const raw = (invoiceAmount * kesPerUnit(fromCurrency)) / kesPerUnit(to);
+  if (!Number.isFinite(raw) || raw <= 0) return 0;
+  if (WHOLE_UNIT.has(to)) return Math.round(raw);
+  return Math.round(raw * 100) / 100;
+}
+
 /** Formats integer KES cents as `1,234.50`. The same text is used in SMS and USSD. */
 export function formatKes(cents: number): string {
   const negative = cents < 0;

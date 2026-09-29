@@ -10,7 +10,7 @@ import {
   RefreshCw,
   XCircle,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { api, isMock } from "@/lib/api";
 import type { Invoice, InvoiceDetail, Transaction } from "@/lib/types";
 import { ApiError } from "@/lib/types";
@@ -22,7 +22,17 @@ import { DemoBadge } from "@/components/stawi/DemoDataControl";
 import { StatusChip } from "@/components/stawi/StatusChip";
 import { Timeline, type TimelineStep } from "@/components/stawi/Timeline";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PaymentReceiptCard } from "@/features/shared/PaymentReceiptCard";
+import {
+  PAY_CURRENCIES,
+  checkoutAmount,
+  defaultPayCurrency,
+  formatKesRate,
+  formatPayAmount,
+  kesPerUnit,
+  type PayCurrency,
+} from "@/lib/payCurrencies";
 
 export const Route = createFileRoute("/pay/$invoiceId")({
   head: () => ({
@@ -55,8 +65,11 @@ function PayPage() {
 
   const payeeName = data.payee_name ?? "Stawi seller";
   const farmerCount = data.farmer_count ?? null;
+  const [payCurrency, setPayCurrency] = useState<PayCurrency>(() => defaultPayCurrency(invoice.currency));
+  const expired = invoice.status === "pending" && !!invoice.due_at && new Date(invoice.due_at) < new Date();
+  const payIn = invoice.status === "pending" && !expired ? <PayInSelect value={payCurrency} onChange={setPayCurrency} /> : null;
 
-  if (invoice.status === "pending" && invoice.due_at && new Date(invoice.due_at) < new Date()) {
+  if (expired && invoice.due_at) {
     return (
       <Shell payeeName={payeeName} invoice={invoice}>
         <StatePanel
@@ -85,7 +98,7 @@ function PayPage() {
   const settled = invoice.status !== "pending";
 
   return (
-    <Shell payeeName={payeeName} invoice={invoice}>
+    <Shell payeeName={payeeName} invoice={invoice} payIn={payIn}>
       {settled ? (
         <ReceiptView
           invoice={invoice}
@@ -98,9 +111,28 @@ function PayPage() {
           invoice={invoice}
           payeeName={payeeName}
           farmerCount={farmerCount}
+          payCurrency={payCurrency}
         />
       )}
     </Shell>
+  );
+}
+
+function PayInSelect({ value, onChange }: { value: PayCurrency; onChange: (currency: PayCurrency) => void }) {
+  return (
+    <label className="flex flex-col items-end gap-1 text-[10px] tracking-wide text-muted-foreground uppercase">
+      Pay in
+      <Select value={value} onValueChange={(next) => onChange(next as PayCurrency)}>
+        <SelectTrigger aria-label="Pay in" className="h-9 w-[5.75rem] bg-card">
+          <SelectValue>{value}</SelectValue>
+        </SelectTrigger>
+        <SelectContent align="end">
+          {PAY_CURRENCIES.map((code) => (
+            <SelectItem key={code} value={code}>{code}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </label>
   );
 }
 
@@ -108,10 +140,12 @@ function UnpaidView({
   invoice,
   payeeName,
   farmerCount,
+  payCurrency,
 }: {
   invoice: Invoice;
   payeeName: string;
   farmerCount: number | null;
+  payCurrency: PayCurrency;
 }) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [payError, setPayError] = useState<string | null>(null);
@@ -121,11 +155,11 @@ function UnpaidView({
     mutationFn: async (): Promise<{ invoice: Invoice | null; declined?: boolean }> => {
       if (isMock) return { invoice: await api.simulatePayment(invoice.id) };
 
-      const session = await api.createCheckoutSession(invoice.id);
+      const session = await api.createCheckoutSession(invoice.id, payCurrency);
       const outcome = await openPayazaCheckout({
         session,
-        amount: invoice.amount,
-        currency: invoice.currency,
+        amount: session.checkout_amount,
+        currency: session.currency_code,
         buyerName: invoice.buyer_name,
         buyerEmail: invoice.buyer_email,
         buyerPhone: invoice.buyer_phone,
@@ -166,9 +200,11 @@ function UnpaidView({
     },
   });
 
-  const feeKes = invoice.fee_kes_cents;
-  const kesGross =
-    invoice.kes_total_cents != null && feeKes != null ? invoice.kes_total_cents + feeKes : null;
+  const due = checkoutAmount(invoice.amount, invoice.currency, payCurrency);
+  const dueLabel = formatPayAmount(due, payCurrency);
+  const kesGross = Math.round(invoice.amount * kesPerUnit(invoice.currency) * 100);
+  const feeKes = Math.round(kesGross * 0.008);
+  const sellerKes = kesGross - feeKes;
 
   return (
     <div className="space-y-6">
@@ -182,7 +218,7 @@ function UnpaidView({
           <div>
             <p className="text-xs tracking-wide text-muted-foreground uppercase">Amount due</p>
             <p className="text-display mt-1 text-4xl tabular">
-              {formatCurrency(invoice.amount, invoice.currency)}
+              {dueLabel}
             </p>
             <p className="mt-1 text-sm text-muted-foreground">
               {invoice.description} · ref {invoice.reference}
@@ -195,30 +231,10 @@ function UnpaidView({
         </div>
 
         <dl className="mt-6 space-y-3 border-t border-border pt-4 text-sm">
-          <Row
-            label="Converted at"
-            value={
-              invoice.fx_rate
-                ? `1 ${invoice.currency} = KES ${invoice.fx_rate.toFixed(2)}`
-                : "Live rate when you pay"
-            }
-          />
-          <Row
-            label="Shilling equivalent"
-            value={kesGrosLabel(kesGross)}
-            muted={!kesGross}
-          />
-          <Row
-            label="Stawi fee (0.8%)"
-            value={feeKes != null ? formatKesCents(feeKes) : "Deducted before payout"}
-            muted={feeKes == null}
-          />
-          <Row
-            label="Reaching the seller"
-            value={invoice.kes_total_cents != null ? formatKesCents(invoice.kes_total_cents) : "Confirmed at payment"}
-            muted={invoice.kes_total_cents == null}
-            accent={invoice.kes_total_cents != null}
-          />
+          <Row label="Converted at" value={formatKesRate(payCurrency)} />
+          <Row label="Shilling equivalent" value={formatKesCents(kesGross)} />
+          <Row label="Stawi fee (0.8%)" value={formatKesCents(feeKes)} />
+          <Row label="Reaching the seller" value={formatKesCents(sellerKes)} accent />
         </dl>
       </motion.section>
 
@@ -241,16 +257,19 @@ function UnpaidView({
           else pay.mutate();
         }}
       >
-        Pay {formatCurrency(invoice.amount, invoice.currency)} securely
+        Pay {dueLabel} securely
+      </Button>
+      <Button size="lg" variant="outline" className="w-full min-h-[52px] text-base" disabled>
+        Pay via stablecoins
       </Button>
       <p className="text-center text-xs text-muted-foreground">
-        Card and bank transfer · run by our payment partner
+        Stablecoin payments are not available yet. Card and bank transfer run through our payment partner.
       </p>
 
       <PayazaCheckout
         open={phase === "checkout"}
         onOpenChange={(open) => !open && setPhase("idle")}
-        amountLabel={formatCurrency(invoice.amount, invoice.currency)}
+        amountLabel={dueLabel}
         payee={payeeName}
         reference={invoice.reference}
         onApproved={() => pay.mutate()}
@@ -285,10 +304,6 @@ function UnpaidView({
       )}
     </div>
   );
-}
-
-function kesGrosLabel(kesGross: number | null): string {
-  return kesGross != null ? formatKesCents(kesGross) : "Shown when you pay";
 }
 
 function ReceiptView({
@@ -454,28 +469,33 @@ function Row({
 function Shell({
   payeeName,
   invoice,
+  payIn,
   children,
 }: {
   payeeName: string;
   invoice: { buyer_name: string; reference: string; is_demo?: boolean | undefined };
-  children: React.ReactNode;
+  payIn?: ReactNode;
+  children: ReactNode;
 }) {
   return (
     <div className="motif min-h-screen bg-background px-4 py-10 text-foreground sm:py-14">
       <div className="mx-auto w-full max-w-lg">
-        <div className="mb-8 flex items-center justify-between">
+        <div className="mb-8 flex items-start justify-between gap-3">
           <Link to="/" className="flex items-center gap-2">
             <span className="grid size-8 place-items-center rounded-lg bg-lime">
               <Leaf className="size-4 text-[oklch(0.22_0.035_152)]" strokeWidth={2} />
             </span>
             <span className="text-display text-xl">Stawi</span>
           </Link>
-          <Link
-            to="/"
-            className="text-xs text-muted-foreground hover:text-foreground"
-          >
-            Powered by Stawi
-          </Link>
+          <div className="flex flex-col items-end gap-1.5">
+            {payIn}
+            <Link
+              to="/"
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              Powered by Stawi
+            </Link>
+          </div>
         </div>
 
         <div className="mb-6">

@@ -100,8 +100,8 @@ function payInvoice(inv, buyer) {
   const checkout = PayazaCheckout.setup({
     merchant_key: "<PAYAZA_PUBLIC_KEY>",      // raw, NOT Base64
     connection_mode: "Test",                  // "Live" for real money; must match the key's environment
-    checkout_amount: Number(inv.amount),      // must be a number, not a string
-    currency_code: inv.currency,              // docs show NGN, GHS, USD ⚠️ CONFIRM KES/other buyer currencies
+    checkout_amount: Number(checkoutAmount),  // invoice amount converted into currency_code; must be a number, not a string
+    currency_code: chosenCurrency,            // Payaza checkout/collections: USD, NGN, GHS, KES, UGX, TZS, ZAR, XOF, ZMW, LRD, CDF, XAF. Stawi also allows EUR and GBP.
     email_address: buyer.email,
     first_name: buyer.firstName,
     last_name: buyer.lastName,

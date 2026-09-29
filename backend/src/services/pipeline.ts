@@ -9,7 +9,7 @@ import {
   restoreWithdrawal,
   withdrawalFlags,
 } from "./demoData";
-import { feeCents, splitByKilos, toKesCents } from "./money";
+import { feeCents, kesPerUnit, splitByKilos, toKesCents } from "./money";
 import { notify } from "./notify";
 import { ensureTransactionReference, payaza } from "./payaza";
 import { verifyAccountPin } from "./pin";
@@ -41,18 +41,7 @@ export class PipelineService {
    * Resolves the FX rate for a given currency pair.
    */
   public getFxRate(currency: string): number {
-    switch (currency.toUpperCase()) {
-      case "USD":
-        return 129.0;
-      case "EUR":
-        return 142.0;
-      case "GBP":
-        return 168.0;
-      case "KES":
-        return 1.0;
-      default:
-        return 129.0;
-    }
+    return kesPerUnit(currency);
   }
 
   /**

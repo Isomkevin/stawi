@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { Invoice } from "../types";
+import { checkoutAmount } from "./money";
 
 export type PayazaMode = "mock" | "sandbox" | "live";
 
@@ -11,6 +12,9 @@ export interface CheckoutSessionResult {
   link_id: string | null;
   /** Payaza Web SDK connection_mode. Sandbox and mock use Test. */
   connection_mode: "Test" | "Live";
+  /** Amount charged in currency_code. May differ from the invoice amount after conversion. */
+  checkout_amount: number;
+  currency_code: string;
 }
 
 export interface PayoutBeneficiary {
@@ -225,12 +229,19 @@ export class PayazaService {
    * Creates a payment link for an invoice (one link per attempt name).
    * The webhook, not this response, is what marks the invoice paid.
    */
-  public async createCheckoutSession(invoice: Invoice, attempt: number = 1): Promise<CheckoutSessionResult> {
+  public async createCheckoutSession(
+    invoice: Invoice,
+    attempt: number = 1,
+    currencyCode?: string
+  ): Promise<CheckoutSessionResult> {
     const transactionReference = ensureTransactionReference(
       `STAWI-${invoice.id}-${Date.now().toString(36)}-${attempt}`
     );
     const mode = this.getMode();
     const connection_mode: "Test" | "Live" = mode === "live" ? "Live" : "Test";
+    const currency_code = (currencyCode || invoice.currency).toUpperCase();
+    const amount = checkoutAmount(invoice.amount, invoice.currency, currency_code);
+    const quoted = { checkout_amount: amount, currency_code };
 
     if (mode === "mock") {
       return {
@@ -240,6 +251,7 @@ export class PayazaService {
         transaction_reference: transactionReference,
         link_id: null,
         connection_mode,
+        ...quoted,
       };
     }
 
@@ -254,9 +266,9 @@ export class PayazaService {
           payment_link_name: paymentLinkName,
           payment_description: (invoice.description || `Stawi invoice ${invoice.reference}`).slice(0, 200),
           has_fixed_amount: true,
-          payment_amount: invoice.amount,
+          payment_amount: amount,
           country_code: "KEN",
-          currency_code: invoice.currency,
+          currency_code,
           collect_customer_first_and_last_name: true,
           collect_customer_email: true,
           collect_customer_phone_number: true,
@@ -275,6 +287,7 @@ export class PayazaService {
           transaction_reference: transactionReference,
           link_id: null,
           connection_mode,
+          ...quoted,
         };
       }
 
@@ -286,6 +299,7 @@ export class PayazaService {
         transaction_reference: transactionReference,
         link_id: data.data?.id ? String(data.data.id) : null,
         connection_mode,
+        ...quoted,
       };
     } catch (err) {
       console.warn("[Payaza] Payment link call failed, falling back to SDK checkout ref:", err);
@@ -296,6 +310,7 @@ export class PayazaService {
         transaction_reference: transactionReference,
         link_id: null,
         connection_mode,
+        ...quoted,
       };
     }
   }

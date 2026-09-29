@@ -250,8 +250,9 @@ GET  /invoices/{id}                     -> { invoice, transactions, split_previe
                                         Public. payee_name is the co-op name or the exporter's full name.
                                         farmer_count is the member count for a co-op invoice, and null for a direct invoice.
                                         The buyer page uses these fields. It does not call GET /coops or GET /accounts.
-POST /invoices/{id}/checkout-session    -> { reference, checkoutUrl | null, public_key, transaction_reference, link_id | null, connection_mode: "Test" | "Live" }
-                                        The buyer page opens the Payaza Web SDK with public_key and transaction_reference.
+POST /invoices/{id}/checkout-session    { currency_code? } -> { reference, checkoutUrl | null, public_key, transaction_reference, link_id | null, connection_mode: "Test" | "Live", checkout_amount, currency_code }
+                                        currency_code must be a Payaza checkout currency, or EUR or GBP. 400 otherwise. Omitted uses the invoice currency.
+                                        checkout_amount is the invoice converted into that currency. The buyer page opens the Payaza Web SDK with that amount, currency_code, public_key, and transaction_reference.
                                         connection_mode is Live only when PAYAZA_MODE=live. The webhook marks the invoice paid.
 POST /invoices/{id}/approve-split       { treasurer_id, pin }
 DELETE /invoices/{id}                   -> 204 when status is pending. 409 otherwise.
