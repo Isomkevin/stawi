@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 
 const nodes = [
   { icon: CreditCard, label: "Buyer pays", sub: "USD, EUR, GBP" },
-  { icon: RefreshCw, label: "Converted", sub: "Live FX to KES" },
+  { icon: RefreshCw, label: "Converted", sub: "Into shillings" },
   { icon: Users, label: "Split", sub: "By contribution" },
   { icon: Banknote, label: "Farmers paid", sub: "Same day, M-Pesa" },
 ];
