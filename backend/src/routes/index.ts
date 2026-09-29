@@ -738,7 +738,7 @@ apiRouter.post("/name-enquiry", async (req: Request, res: Response) => {
   }
   const accounts = await store.getAllAccounts();
   const match =
-    type === "mpesa"
+    type === "mpesa" || type === "momo"
       ? await store.getAccountByPhone(String(details))
       : accounts.find((a) => a.payout_destinations.some((d) => d.details === details));
   if (!match) {

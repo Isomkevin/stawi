@@ -578,12 +578,12 @@ export const mockApi = {
   async lookupPhones(coopId: string, phones: string[]) {
     const norm = (p: string) => p.replace(/[^\d]/g, "").replace(/^0/, "254").replace(/^(?!254)/, "254");
     return phones.map((phone) => {
-      const acc = db.accounts.find((a) => norm(a.phone_number) === norm(phone));
+      const acc = mockDb.accounts.find((a) => norm(a.phone_number) === norm(phone));
       return {
         phone_number: phone,
         account_id: acc?.id ?? null,
         full_name: acc?.full_name ?? null,
-        already_member: acc ? db.members.some((m) => m.coop_id === coopId && m.account_id === acc.id) : false,
+        already_member: acc ? mockDb.members.some((m) => m.coop_id === coopId && m.account_id === acc.id) : false,
         other_coop: false,
       };
     });

@@ -184,7 +184,7 @@ export type WithdrawBody = {
   idempotency_key: string;
 };
 
-export type NewDestinationBody = { type: "mpesa" | "bank"; details: string; account_name: string };
+export type NewDestinationBody = { type: "mpesa" | "momo" | "bank"; details: string; account_name: string };
 
 export type ShipmentStatus = "draft" | "preparing" | "ready" | "in_transit" | "delivered" | "completed";
 
