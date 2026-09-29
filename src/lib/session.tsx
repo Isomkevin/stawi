@@ -9,7 +9,7 @@ type Session = {
   coopId: string | null;
 };
 
-type SignInOptions = { accountId?: string; coopId?: string | null; token?: string };
+type SignInOptions = { accountId?: string | undefined; coopId?: string | null | undefined; token?: string | undefined };
 
 type SessionContextValue = Session & {
   ready: boolean;
