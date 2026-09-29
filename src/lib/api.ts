@@ -28,6 +28,14 @@ export function setSessionToken(token: string | null) {
   sessionToken = token;
 }
 
+export type PhoneLookup = {
+  phone_number: string;
+  account_id: string | null;
+  full_name: string | null;
+  already_member: boolean;
+  other_coop: boolean;
+};
+
 export type AppRole = "farmer" | "exporter" | "treasurer";
 
 export type VerifyResult = {
@@ -215,6 +223,27 @@ export const api = {
   // DELETE /shipments/{id} → 204
   deleteShipment: (shipmentId: string): Promise<void> =>
     isMock ? shipmentsApi.remove(shipmentId) : request<void>(`/shipments/${shipmentId}`, { method: "DELETE" }),
+
+  // GET /accounts/{id}/shipments — a Direct exporter's own shipments
+  listAccountShipments: (accountId: string): Promise<Shipment[]> =>
+    isMock
+      ? shipmentsApi.list("coop_kiambu").then((l) => l.slice(0, 4))
+      : request(`/accounts/${accountId}/shipments`),
+
+  // POST /coops/{id}/members/lookup { phones } → which phones already have a Stawi account
+  lookupPhones: (coopId: string, phones: string[]): Promise<PhoneLookup[]> =>
+    isMock
+      ? mockApi.lookupPhones(coopId, phones)
+      : request(`/coops/${coopId}/members/lookup`, { method: "POST", body: JSON.stringify({ phones }) }),
+
+  // POST /coops/{id}/invites/sms { recipients } → per-phone send status
+  sendInviteSms: (
+    coopId: string,
+    recipients: Array<{ phone_number: string; full_name: string; link: string }>,
+  ): Promise<{ sent: number; failed: number; results: Array<{ phone_number: string; sent: boolean; error?: string }> }> =>
+    isMock
+      ? Promise.resolve({ sent: recipients.length, failed: 0, results: recipients.map((r) => ({ phone_number: r.phone_number, sent: true })) })
+      : request(`/coops/${coopId}/invites/sms`, { method: "POST", body: JSON.stringify({ recipients }) }),
 
   // TODO(backend): add to contract — co-op invite links (POST /coops/{id}/invites)
   updateMemberShare: (coopId: string, accountId: string, share: number): Promise<void> =>

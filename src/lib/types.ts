@@ -4,7 +4,7 @@
 
 export type PayoutDestination = {
   id: string;
-  type: "mpesa" | "bank";
+  type: "mpesa" | "momo" | "bank";
   details: string;
   account_name: string;
   is_verified: boolean;
