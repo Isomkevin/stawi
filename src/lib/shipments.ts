@@ -49,4 +49,9 @@ export const shipmentsApi = {
     s.updated_at = new Date().toISOString();
     return { ...s };
   },
+  remove: async (id: string): Promise<void> => {
+    await wait();
+    const i = shipments.findIndex((x) => x.id === id);
+    if (i >= 0) shipments.splice(i, 1);
+  },
 };

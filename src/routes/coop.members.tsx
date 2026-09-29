@@ -12,7 +12,8 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PageHeader } from "@/features/shared/DashboardShell";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
+import { ConfirmDelete } from "@/components/stawi/ConfirmDelete";
 import { parseMembersCsv } from "@/lib/csv";
 import { accountName, mockDb } from "@/lib/mock";
 import { coopMembersOptions } from "@/lib/queries";
@@ -114,15 +115,17 @@ function Members() {
                 <th className="hidden px-4 py-3 text-right font-normal md:table-cell">Kilos</th>
                 <th className="px-4 py-3 font-normal">M-Pesa</th>
                 <th className="px-4 py-3 text-right font-normal">Share %</th>
+                <th className="w-12 px-2 py-3"><span className="sr-only">Remove</span></th>
               </tr>
             </thead>
             <tbody>
               {members.data?.map((m) => {
                 const acc = accounts.find((a) => a.id === m.account_id);
                 const verified = acc?.payout_destinations.some((d) => d.is_verified);
+                const name = m.full_name ?? accountName(m.account_id);
                 return (
                   <tr key={m.account_id} className="border-b border-border last:border-0">
-                    <td className="px-4 py-3">{m.full_name ?? accountName(m.account_id)}</td>
+                    <td className="px-4 py-3">{name}</td>
                     <td className="hidden px-4 py-3 text-muted-foreground tabular sm:table-cell">{acc?.phone_number}</td>
                     <td className="hidden px-4 py-3 text-right tabular md:table-cell">{m.kilos ?? "—"}</td>
                     <td className="px-4 py-3"><StatusChip status={verified ? "verified" : "missing"} label={verified ? "Verified" : "Not verified"} /></td>
@@ -131,10 +134,26 @@ function Members() {
                         type="number"
                         min={0}
                         max={100}
-                        aria-label={`Share for ${accountName(m.account_id)}`}
+                        aria-label={`Share for ${name}`}
                         value={shares[m.account_id] ?? 0}
                         onChange={(e) => setShares((s) => ({ ...s, [m.account_id]: Number(e.target.value) }))}
                         className="ml-auto h-10 w-20 text-right tabular"
+                      />
+                    </td>
+                    <td className="px-2 py-2 text-right">
+                      <ConfirmDelete
+                        label={`Remove ${name}`}
+                        title={`Remove ${name} from the co-op?`}
+                        description="They'll stop getting a share of new payments. Money they've already earned stays in their account. Re-balance shares to 100% afterwards."
+                        onConfirm={async () => {
+                          try {
+                            await api.removeCoopMember(coopId, m.account_id);
+                            toast.success(`${name} removed`);
+                            await qc.invalidateQueries({ queryKey: ["coop", coopId] });
+                          } catch (e) {
+                            toast.error(e instanceof ApiError && e.status === 404 ? "The server can't remove farmers yet." : "Couldn't remove this farmer.");
+                          }
+                        }}
                       />
                     </td>
                   </tr>

@@ -22,10 +22,17 @@ export const API_MODE = (import.meta.env["VITE_API_MODE"] as "mock" | "live") ??
 export const API_BASE_URL = (import.meta.env["VITE_API_BASE_URL"] as string) ?? "";
 export const isMock = API_MODE !== "live";
 
-let sessionToken: string | null = null; // memory only; live mode expects an httpOnly cookie too
+let sessionToken: string | null = null; // live mode also gets an httpOnly cookie from the server
 export function setSessionToken(token: string | null) {
   sessionToken = token;
 }
+
+export type VerifyResult = {
+  token: string;
+  account_id: string;
+  role: "farmer" | "exporter" | "treasurer";
+  account: Account;
+};
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -166,9 +173,32 @@ export const api = {
       ? shipmentsApi.advance(shipmentId)
       : request(`/shipments/${shipmentId}`, { method: "PATCH", body: JSON.stringify({ action: "advance" }) }),
 
-  // TODO(backend): add to contract — OTP login (POST /auth/otp, POST /auth/verify)
+  // POST /auth/otp → { sent, dev_code? }
+  requestOtp: (phone: string): Promise<{ sent: boolean; dev_code?: string }> =>
+    request("/auth/otp", { method: "POST", body: JSON.stringify({ phone_number: phone }) }),
+
+  // POST /auth/verify → { token, account_id, role, account }
+  verifyOtp: (phone: string, code: string): Promise<VerifyResult> =>
+    request("/auth/verify", { method: "POST", body: JSON.stringify({ phone_number: phone, code }) }),
+
+  // POST /auth/logout → 204
+  logout: (): Promise<void> => (isMock ? Promise.resolve() : request<void>("/auth/logout", { method: "POST" })),
+
+  // DELETE /invoices/{id} → 204 — TODO(backend): add to contract (only unpaid invoices)
+  deleteInvoice: (invoiceId: string): Promise<void> =>
+    isMock ? mockApi.deleteInvoice(invoiceId) : request<void>(`/invoices/${invoiceId}`, { method: "DELETE" }),
+
+  // DELETE /coops/{id}/members/{accountId} → 204 — TODO(backend): add to contract
+  removeCoopMember: (coopId: string, accountId: string): Promise<void> =>
+    isMock
+      ? mockApi.removeCoopMember(coopId, accountId)
+      : request<void>(`/coops/${coopId}/members/${accountId}`, { method: "DELETE" }),
+
+  // DELETE /shipments/{id} → 204 — TODO(backend): add to contract
+  deleteShipment: (shipmentId: string): Promise<void> =>
+    isMock ? shipmentsApi.remove(shipmentId) : request<void>(`/shipments/${shipmentId}`, { method: "DELETE" }),
+
   // TODO(backend): add to contract — co-op invite links (POST /coops/{id}/invites)
-  // TODO(backend): add to contract — member share updates (PATCH /coops/{id}/members/{accountId})
   updateMemberShare: (coopId: string, accountId: string, share: number): Promise<void> =>
     isMock
       ? mockApi.updateMemberShare(accountId, share)
