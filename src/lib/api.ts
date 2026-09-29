@@ -156,11 +156,11 @@ export const api = {
           body: JSON.stringify({ type, details }),
         }).then((r) => r.account_name),
 
-  // GET /coops/{id}/shipments — TODO(backend): add to contract
+  // GET /coops/{id}/shipments
   listShipments: (coopId: string): Promise<Shipment[]> =>
     isMock ? shipmentsApi.list(coopId) : request(`/coops/${coopId}/shipments`),
 
-  // PATCH /shipments/{id} { action: "advance" } → Shipment — TODO(backend): add to contract
+  // PATCH /shipments/{id} { action: "advance" } → Shipment
   advanceShipment: (shipmentId: string): Promise<Shipment> =>
     isMock
       ? shipmentsApi.advance(shipmentId)

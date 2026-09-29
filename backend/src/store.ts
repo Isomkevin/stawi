@@ -4,6 +4,7 @@ import {
   CoopMember,
   Invoice,
   Payout,
+  Shipment,
   Transaction,
 } from "./types";
 
@@ -21,6 +22,7 @@ export class InMemoryStore {
   private processedWebhookRefs = new Set<string>();
   private otps = new Map<string, { codeHash: string; expiresAt: string; attempts: number }>();
   private sessions = new Map<string, { accountId: string; expiresAt: string }>();
+  private shipments = new Map<string, Shipment>();
 
   public normalizePhone(phone: string): string {
     const cleaned = phone.replace(/[^\d+]/g, "");
@@ -223,6 +225,27 @@ export class InMemoryStore {
     this.sessions.delete(tokenHash);
   }
 
+  public async saveShipment(shipment: Shipment): Promise<Shipment> {
+    this.shipments.set(shipment.id, {
+      ...shipment,
+      farmers: shipment.farmers.map((farmer) => ({ ...farmer })),
+    });
+    return this.shipments.get(shipment.id)!;
+  }
+
+  public async getShipment(id: string): Promise<Shipment | undefined> {
+    const shipment = this.shipments.get(id);
+    if (!shipment) return undefined;
+    return { ...shipment, farmers: shipment.farmers.map((farmer) => ({ ...farmer })) };
+  }
+
+  public async listShipments(coopId: string): Promise<Shipment[]> {
+    return Array.from(this.shipments.values())
+      .filter((shipment) => shipment.coop_id === coopId)
+      .sort((a, b) => b.ship_date.localeCompare(a.ship_date))
+      .map((shipment) => ({ ...shipment, farmers: shipment.farmers.map((farmer) => ({ ...farmer })) }));
+  }
+
   // Webhook idempotency
   public async isWebhookProcessed(reference: string): Promise<boolean> {
     return this.processedWebhookRefs.has(reference);
@@ -247,6 +270,7 @@ export class InMemoryStore {
     this.processedWebhookRefs.clear();
     this.otps.clear();
     this.sessions.clear();
+    this.shipments.clear();
   }
 }
 

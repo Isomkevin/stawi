@@ -136,6 +136,25 @@ Payout {
 
 `GET /accounts/{id}/transactions` returns payouts, newest first. That is the activity list on web and USSD. Invoice `Transaction` rows are on `GET /invoices/{id}`.
 
+### Shipment
+
+A co-op lot moving to a buyer. `value` is a buyer-currency decimal, same as invoice `amount`. `quantity_kg` and each farmer `kilos` are whole kilograms. Farmer kilos on a shipment sum to `quantity_kg`.
+
+```
+Shipment {
+  id, reference, coop_id,
+  buyer_name, product, quantity_kg, destination,
+  value, currency,
+  ship_date, shipped_at,             // shipped_at is set when status becomes in_transit
+  status: "draft" | "preparing" | "ready" | "in_transit" | "delivered" | "completed",
+  invoice_id: string | null,
+  farmers: [{ account_id, kilos }],
+  updated_at
+}
+```
+
+`PATCH /shipments/{id}` with `{ action: "advance" }` moves one stage forward. Advancing into `in_transit` sets `shipped_at`. Advancing from `delivered` to `completed` requires the linked invoice to be `completed`. A second advance on a completed shipment is rejected.
+
 ## Auth
 
 Sessions are required when `NODE_ENV` is `production`, or `PAYAZA_MODE` is `sandbox` or `live`, unless `AUTH_REQUIRED=false`. `AUTH_REQUIRED=true` forces it on. Mock local dev is open.
@@ -176,6 +195,8 @@ GET  /coops/{id}/members
 POST /coops/{id}/members                { account_id, contribution_share, kilos? }
 PATCH /coops/{id}/members/{accountId}   { contribution_share }
 GET  /coops/{id}/payouts                -> Payout[] for this co-op's invoices, newest first
+GET  /coops/{id}/shipments              -> Shipment[] for this co-op, latest ship date first
+PATCH /shipments/{id}                   { action: "advance" } -> Shipment
 GET  /coops/{id}/metrics                -> { invoices, total_collected_kes_cents, fee_taken_kes_cents, total_split_kes_cents, avg_payout_time }
 
 POST /name-enquiry                      { type, details } -> { account_name } or 404

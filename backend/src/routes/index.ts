@@ -5,6 +5,7 @@ import { enforceAuth, hashToken, readToken, requestOtp, sessionCookie, verifyOtp
 import { classifyPayazaWebhook, payaza } from "../services/payaza";
 import { hashPin } from "../services/pin";
 import { pipeline } from "../services/pipeline";
+import { advanceShipment } from "../services/shipments";
 import { store } from "../store";
 import { Account, CoopMember, Invoice, PublicAccount } from "../types";
 import { handleUssdCallback } from "../ussd/handler";
@@ -356,6 +357,29 @@ apiRouter.patch("/coops/:id/members/:accountId", async (req: Request, res: Respo
   const updated: CoopMember = { ...existing, contribution_share: share };
   await store.addCoopMember(updated);
   res.status(200).json(updated);
+});
+
+apiRouter.get("/coops/:id/shipments", async (req: Request, res: Response) => {
+  const coop = await store.getCoop(getParam(req.params.id));
+  if (!coop) {
+    res.status(404).json({ error: "Co-op not found" });
+    return;
+  }
+  const shipments = await store.listShipments(coop.id);
+  res.status(200).json(shipments);
+});
+
+apiRouter.patch("/shipments/:id", async (req: Request, res: Response) => {
+  if (req.body?.action !== "advance") {
+    res.status(400).json({ error: "action must be advance" });
+    return;
+  }
+  const result = await advanceShipment(getParam(req.params.id));
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.status(200).json(result.shipment);
 });
 
 apiRouter.get("/coops/:id/payouts", async (req: Request, res: Response) => {

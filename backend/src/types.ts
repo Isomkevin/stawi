@@ -115,3 +115,30 @@ export type CoopMetrics = {
   total_split_kes_cents: number;
   avg_payout_time?: string;
 };
+
+export const SHIPMENT_STATUSES = ["draft", "preparing", "ready", "in_transit", "delivered", "completed"] as const;
+export type ShipmentStatus = (typeof SHIPMENT_STATUSES)[number];
+
+export type ShipmentFarmer = {
+  account_id: string;
+  kilos: number;
+};
+
+/** Buyer-currency `value` is a decimal, same as invoice `amount`. Kilos are whole kilograms. */
+export type Shipment = {
+  id: string;
+  reference: string;
+  coop_id: string;
+  buyer_name: string;
+  product: string;
+  quantity_kg: number;
+  destination: string;
+  value: number;
+  currency: string;
+  ship_date: string;
+  shipped_at: string | null;
+  status: ShipmentStatus;
+  invoice_id: string | null;
+  farmers: ShipmentFarmer[];
+  updated_at: string;
+};

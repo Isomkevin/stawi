@@ -138,5 +138,26 @@ describe("rich demo seed", () => {
     for (const account of accounts) {
       expect(account.incoming_kes_cents).toBe(expectedIncoming.get(account.id) ?? 0);
     }
+
+    for (const coop of coops) {
+      const shipments = await store.listShipments(coop.id);
+      expect(shipments.length).toBeGreaterThanOrEqual(2);
+      const draft = shipments.find((shipment) => shipment.status === "draft");
+      expect(draft?.farmers).toEqual([]);
+      const preparing = shipments.find((shipment) => shipment.status === "preparing" && shipment.invoice_id === null);
+      expect(preparing?.farmers.length).toBeGreaterThan(0);
+      for (const shipment of shipments) {
+        const kilos = shipment.farmers.reduce((sum, farmer) => sum + farmer.kilos, 0);
+        if (shipment.farmers.length > 0) expect(kilos).toBe(shipment.quantity_kg);
+      }
+    }
+
+    const kiambuShipments = await store.listShipments("coop_kiambu");
+    const hamburgShipment = kiambuShipments.find((shipment) => shipment.invoice_id === "inv_coop_hamburg_101");
+    expect(hamburgShipment?.status).toBe("completed");
+    expect(hamburgShipment?.value).toBe(12400);
+    expect(hamburgShipment?.currency).toBe("USD");
+    const berlinShipment = kiambuShipments.find((shipment) => shipment.invoice_id === "inv_coop_berlin_102");
+    expect(berlinShipment?.status).toBe("delivered");
   });
 });

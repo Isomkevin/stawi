@@ -1,10 +1,11 @@
-// Shipments are a frontend-only concept for now (demo data). A co-op runs many
-// shipments at once; each may link to one buyer invoice and lists the farmers
-// whose produce is in it (they receive the payout split).
-// TODO(backend): add to contract — GET /coops/{id}/shipments, PATCH /shipments/{id}
+import type { Shipment, ShipmentFarmer, ShipmentStatus } from "./types";
 
-export const SHIPMENT_STATUSES = ["draft", "preparing", "ready", "in_transit", "delivered", "completed"] as const;
-export type ShipmentStatus = (typeof SHIPMENT_STATUSES)[number];
+// Mock shipments for VITE_API_MODE=mock. Live mode reads GET /coops/{id}/shipments
+// and advances with PATCH /shipments/{id} { action: "advance" }.
+
+export type { Shipment, ShipmentFarmer, ShipmentStatus };
+
+export const SHIPMENT_STATUSES = ["draft", "preparing", "ready", "in_transit", "delivered", "completed"] as const satisfies readonly ShipmentStatus[];
 
 export const shipmentStatusMeta: Record<ShipmentStatus, { label: string; tone: string; next?: string }> = {
   draft: { label: "Draft", tone: "neutral", next: "Start preparing" },
@@ -13,26 +14,6 @@ export const shipmentStatusMeta: Record<ShipmentStatus, { label: string; tone: s
   in_transit: { label: "In transit", tone: "sent", next: "Mark delivered" },
   delivered: { label: "Delivered", tone: "verified", next: "Close shipment" },
   completed: { label: "Completed", tone: "active" },
-};
-
-export type ShipmentFarmer = { account_id: string; kilos: number };
-
-export type Shipment = {
-  id: string;
-  reference: string;
-  coop_id: string;
-  buyer_name: string;
-  product: string;
-  quantity_kg: number;
-  destination: string;
-  value: number;
-  currency: string;
-  ship_date: string;
-  shipped_at: string | null;
-  status: ShipmentStatus;
-  invoice_id: string | null;
-  farmers: ShipmentFarmer[];
-  updated_at: string;
 };
 
 const day = 86_400_000;

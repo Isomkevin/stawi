@@ -93,6 +93,8 @@ Seeding runs on startup when `SEED=true`, or when `NODE_ENV` is not `production`
 
 The Lovable mock in `src/lib/mock.ts` is a smaller Kiambu story for `VITE_API_MODE=mock`. It shares the canonical ids above. The live API (`VITE_API_MODE=live`) returns this ledger instead.
 
+Co-op shipments are part of that ledger. Each co-op invoice has one shipment whose stage follows the invoice (`completed` invoices are closed shipments, `settling` invoices are delivered and waiting on the split, `pending` invoices are ready to ship). Each co-op also has a draft with no farmers and a preparing lot with no invoice. Farmer kilos on a shipment sum to its quantity. `GET /coops/{id}/shipments` lists them. `PATCH /shipments/{id}` with `{ action: "advance" }` moves a shipment one stage. Closing a delivered shipment requires the linked invoice to be `completed`. If a database was seeded before shipments existed, the next non-production startup adds them when Kiambu has none.
+
 ## Verified vs still yours to do
 Verified (production build, `node dist`): exact-sum splits, Direct and Co-op flows, treasurer-PIN split approval, double-approve rejection, idempotent webhooks and withdrawals, overdraw rejection, USSD menu + PIN handling, callback-secret rejection, clean JSON errors, CORS allow/deny. The Dockerfile has **not** been built or run (no Docker in the build environment) — test it before relying on it.
 

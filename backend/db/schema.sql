@@ -114,6 +114,31 @@ CREATE TABLE IF NOT EXISTS webhook_events (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS shipments (
+  id VARCHAR(64) PRIMARY KEY,
+  reference VARCHAR(64) NOT NULL UNIQUE,
+  coop_id VARCHAR(64) NOT NULL REFERENCES coops(id) ON DELETE CASCADE,
+  buyer_name VARCHAR(255) NOT NULL,
+  product VARCHAR(255) NOT NULL,
+  quantity_kg INTEGER NOT NULL CHECK (quantity_kg >= 0),
+  destination VARCHAR(255) NOT NULL,
+  value NUMERIC(14, 2) NOT NULL CHECK (value >= 0),
+  currency VARCHAR(8) NOT NULL,
+  ship_date TIMESTAMP WITH TIME ZONE NOT NULL,
+  shipped_at TIMESTAMP WITH TIME ZONE,
+  status VARCHAR(32) NOT NULL CHECK (status IN ('draft', 'preparing', 'ready', 'in_transit', 'delivered', 'completed')),
+  invoice_id VARCHAR(64) REFERENCES invoices(id) ON DELETE SET NULL,
+  updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS shipment_farmers (
+  shipment_id VARCHAR(64) NOT NULL REFERENCES shipments(id) ON DELETE CASCADE,
+  account_id VARCHAR(64) NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  kilos INTEGER NOT NULL CHECK (kilos > 0),
+  PRIMARY KEY (shipment_id, account_id)
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_accounts_phone ON accounts(phone_number);
 CREATE INDEX IF NOT EXISTS idx_invoices_coop ON invoices(coop_id);
@@ -123,6 +148,8 @@ CREATE INDEX IF NOT EXISTS idx_payouts_account ON payouts(account_id);
 CREATE INDEX IF NOT EXISTS idx_payouts_idempotency ON payouts(idempotency_key);
 CREATE INDEX IF NOT EXISTS idx_payouts_payaza_ref ON payouts(payaza_reference);
 CREATE INDEX IF NOT EXISTS idx_sessions_account ON sessions(account_id);
+CREATE INDEX IF NOT EXISTS idx_shipments_coop ON shipments(coop_id);
+CREATE INDEX IF NOT EXISTS idx_shipment_farmers_account ON shipment_farmers(account_id);
 
 ALTER TABLE accounts ADD COLUMN IF NOT EXISTS phone_normalized VARCHAR(32);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_phone_norm ON accounts(phone_normalized);

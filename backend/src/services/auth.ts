@@ -166,6 +166,20 @@ export async function enforceAuth(req: Request, res: Response, next: NextFunctio
       }
     }
 
+    const shipmentMatch = req.path.match(/^\/shipments\/([^/]+)$/);
+    if (shipmentMatch && req.method === "PATCH") {
+      const shipment = await store.getShipment(decodeURIComponent(shipmentMatch[1]));
+      if (!shipment) {
+        res.status(404).json({ error: "Shipment not found" });
+        return;
+      }
+      const coop = await store.getCoop(shipment.coop_id);
+      if (!coop || coop.treasurer_account_id !== req.account.id) {
+        res.status(403).json({ error: "Only the co-op treasurer can do this" });
+        return;
+      }
+    }
+
     if (req.method === "POST" && req.path === "/coops" && req.body?.treasurer_account_id !== req.account.id) {
       res.status(403).json({ error: "You can only create a co-op for your own account" });
       return;

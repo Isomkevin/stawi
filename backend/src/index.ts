@@ -1,6 +1,7 @@
 import { createApp } from "./app";
 import { connectPostgres } from "./db/postgres";
-import { seedDatabase } from "./data/seed";
+import { CANONICAL } from "./data/catalog";
+import { seedDatabase, seedShipments } from "./data/seed";
 import { authRequired } from "./services/auth";
 import { setStore, store } from "./store";
 
@@ -37,6 +38,13 @@ async function main() {
       console.log("[Seed] Seeding demo ledger (4 co-ops, 76 farmers, 6 exporters, PIN 1234)...");
       await seedDatabase();
       console.log("[Seed] Demo data seeded successfully.");
+    } else {
+      const shipments = await store.listShipments(CANONICAL.coopId);
+      if (shipments.length === 0) {
+        console.log("[Seed] Adding co-op shipments to the existing ledger...");
+        await seedShipments();
+        console.log("[Seed] Shipments added.");
+      }
     }
   }
 

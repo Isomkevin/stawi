@@ -154,6 +154,10 @@ type Transaction = { id: string; invoice_id: string; type: "collection" | "conve
 type Payout = { id: string; invoice_id: string; account_id: string; kind: "credit" | "withdrawal"; // credit = split landed in Stawi balance
   amount_kes_cents: number; destination_id: string | null; status: "pending" | "sent" | "confirmed" | "failed"; created_at: string; payaza_reference?: string | null };
 type SplitLine = { account_id: string; share: number; gross_kes_cents: number; fee_kes_cents: number; net_kes_cents: number };
+type Shipment = { id: string; reference: string; coop_id: string; buyer_name: string; product: string; quantity_kg: number;
+  destination: string; value: number; currency: string; ship_date: string; shipped_at: string | null;
+  status: "draft" | "preparing" | "ready" | "in_transit" | "delivered" | "completed";
+  invoice_id: string | null; farmers: { account_id: string; kilos: number }[]; updated_at: string };
 ```
 
 Endpoints (client methods mirror these 1:1):
@@ -174,6 +178,8 @@ POST /invoices/{id}/checkout-session    -> { reference, checkoutUrl|null, public
 POST /invoices/{id}/approve-split       { treasurer_id, pin } -> { success, invoice, payouts }
 POST /dev/simulate-payment/{invoiceId}  -> { success, invoice, transactions, payouts } (mock backend only)
 GET  /coops/{id}                        GET /coops/{id}/payouts -> Payout[] (members' payouts for this co-op's invoices, newest first)
+GET  /coops/{id}/shipments              -> Shipment[]
+PATCH /shipments/{id}                   { action: "advance" } -> Shipment
 PATCH /coops/{id}/members/{accountId}   { contribution_share } -> CoopMember
 POST /name-enquiry                      { type, details } -> { account_name }  404 if unknown
 POST /accounts/{id}/destinations        { type, details, account_name, bank_code? } -> PayoutDestination  409 duplicate

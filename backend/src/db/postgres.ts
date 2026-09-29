@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 import { Pool, PoolClient, QueryResult, QueryResultRow } from "pg";
 import { InMemoryStore } from "../store";
-import { Account, Coop, CoopMember, Invoice, Payout, PayoutDestination, Transaction } from "../types";
+import { Account, Coop, CoopMember, Invoice, Payout, PayoutDestination, Shipment, ShipmentFarmer, ShipmentStatus, Transaction } from "../types";
 
 const txClient = new AsyncLocalStorage<PoolClient>();
 
@@ -473,9 +473,105 @@ export class PostgresStore extends InMemoryStore {
     await this.q("DELETE FROM sessions WHERE token_hash = $1", [tokenHash]);
   }
 
+  private mapShipment(row: QueryResultRow, farmers: ShipmentFarmer[]): Shipment {
+    return {
+      id: row.id,
+      reference: row.reference,
+      coop_id: row.coop_id,
+      buyer_name: row.buyer_name,
+      product: row.product,
+      quantity_kg: num(row.quantity_kg),
+      destination: row.destination,
+      value: num(row.value),
+      currency: row.currency,
+      ship_date: iso(row.ship_date) || new Date().toISOString(),
+      shipped_at: iso(row.shipped_at),
+      status: row.status as ShipmentStatus,
+      invoice_id: row.invoice_id,
+      farmers,
+      updated_at: iso(row.updated_at) || new Date().toISOString(),
+    };
+  }
+
+  private async farmersFor(shipmentIds: string[]): Promise<Map<string, ShipmentFarmer[]>> {
+    const grouped = new Map<string, ShipmentFarmer[]>();
+    if (shipmentIds.length === 0) return grouped;
+    const result = await this.q(
+      "SELECT shipment_id, account_id, kilos FROM shipment_farmers WHERE shipment_id = ANY($1::varchar[]) ORDER BY account_id",
+      [shipmentIds]
+    );
+    for (const row of result.rows) {
+      const list = grouped.get(row.shipment_id) || [];
+      list.push({ account_id: row.account_id, kilos: num(row.kilos) });
+      grouped.set(row.shipment_id, list);
+    }
+    return grouped;
+  }
+
+  public async saveShipment(shipment: Shipment): Promise<Shipment> {
+    await this.q(
+      `INSERT INTO shipments (
+         id, reference, coop_id, buyer_name, product, quantity_kg, destination, value, currency,
+         ship_date, shipped_at, status, invoice_id, updated_at
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+       ON CONFLICT (id) DO UPDATE SET
+         reference = EXCLUDED.reference,
+         coop_id = EXCLUDED.coop_id,
+         buyer_name = EXCLUDED.buyer_name,
+         product = EXCLUDED.product,
+         quantity_kg = EXCLUDED.quantity_kg,
+         destination = EXCLUDED.destination,
+         value = EXCLUDED.value,
+         currency = EXCLUDED.currency,
+         ship_date = EXCLUDED.ship_date,
+         shipped_at = EXCLUDED.shipped_at,
+         status = EXCLUDED.status,
+         invoice_id = EXCLUDED.invoice_id,
+         updated_at = EXCLUDED.updated_at`,
+      [
+        shipment.id,
+        shipment.reference,
+        shipment.coop_id,
+        shipment.buyer_name,
+        shipment.product,
+        shipment.quantity_kg,
+        shipment.destination,
+        shipment.value,
+        shipment.currency,
+        shipment.ship_date,
+        shipment.shipped_at,
+        shipment.status,
+        shipment.invoice_id,
+        shipment.updated_at,
+      ]
+    );
+    await this.q("DELETE FROM shipment_farmers WHERE shipment_id = $1", [shipment.id]);
+    for (const farmer of shipment.farmers) {
+      await this.q(
+        "INSERT INTO shipment_farmers (shipment_id, account_id, kilos) VALUES ($1,$2,$3)",
+        [shipment.id, farmer.account_id, farmer.kilos]
+      );
+    }
+    return shipment;
+  }
+
+  public async getShipment(id: string): Promise<Shipment | undefined> {
+    const result = await this.q("SELECT * FROM shipments WHERE id = $1", [id]);
+    if (!result.rows[0]) return undefined;
+    const farmers = await this.farmersFor([id]);
+    return this.mapShipment(result.rows[0], farmers.get(id) || []);
+  }
+
+  public async listShipments(coopId: string): Promise<Shipment[]> {
+    const result = await this.q("SELECT * FROM shipments WHERE coop_id = $1 ORDER BY ship_date DESC", [coopId]);
+    const ids = result.rows.map((row) => row.id as string);
+    const farmers = await this.farmersFor(ids);
+    return result.rows.map((row) => this.mapShipment(row, farmers.get(row.id) || []));
+  }
+
   public async reset(): Promise<void> {
     await this.q(
-      `TRUNCATE webhook_events, otp_codes, sessions, payouts, transactions, invoices, coop_members, payout_destinations, accounts, coops RESTART IDENTITY CASCADE`
+      `TRUNCATE webhook_events, otp_codes, sessions, payouts, transactions, shipment_farmers, shipments, invoices, coop_members, payout_destinations, accounts, coops RESTART IDENTITY CASCADE`
     );
   }
 }

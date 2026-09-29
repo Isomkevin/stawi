@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, ArrowRight, Check, ChevronRight, Copy, MapPin, Package, Search, Ship, X } from "lucide-react";
@@ -12,7 +12,7 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PageHeader } from "@/features/shared/DashboardShell";
 import { attentionFor, canClose, farmerSplit, type Attention } from "@/features/coop/shipmentLogic";
-import { coopPayoutsOptions, coopShipmentsOptions, invoicesOptions } from "@/lib/queries";
+import { coopMembersOptions, coopPayoutsOptions, coopShipmentsOptions, invoicesOptions } from "@/lib/queries";
 import { SHIPMENT_STATUSES, shipmentStatusMeta, type Shipment, type ShipmentStatus } from "@/lib/shipments";
 import { api } from "@/lib/api";
 import { accountName } from "@/lib/mock";
@@ -62,6 +62,11 @@ function ShipmentsPage() {
   const shipments = useQuery(coopShipmentsOptions(coopId));
   const invoices = useQuery(invoicesOptions({ coop_id: coopId }));
   const payouts = useQuery(coopPayoutsOptions(coopId));
+  const members = useQuery(coopMembersOptions(coopId));
+  const nameOf = useCallback(
+    (accountId: string) => members.data?.find((member) => member.account_id === accountId)?.full_name ?? accountName(accountId),
+    [members.data],
+  );
   const [filter, setFilter] = useState<Filter>("all");
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<Sort>("ship_date");
@@ -71,8 +76,8 @@ function ShipmentsPage() {
   const farmerOptions = useMemo(() => {
     const ids = new Set<string>();
     (shipments.data ?? []).forEach((s) => s.farmers.forEach((x) => ids.add(x.account_id)));
-    return [...ids].map((id) => ({ id, name: accountName(id) })).sort((a, b) => a.name.localeCompare(b.name));
-  }, [shipments.data]);
+    return [...ids].map((id) => ({ id, name: nameOf(id) })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [shipments.data, nameOf]);
   const destOptions = useMemo(() => [...new Set((shipments.data ?? []).map((s) => s.destination))].sort(), [shipments.data]);
   const extraFilters = farmer !== "all" || dest !== "all" || filter !== "all" || q !== "";
   const clearFilters = () => {
@@ -112,7 +117,7 @@ function ShipmentsPage() {
       .filter((r) => dest === "all" || r.s.destination === dest)
       .filter((r) => {
         if (!term) return true;
-        const farmers = r.s.farmers.map((x) => accountName(x.account_id)).join(" ");
+        const farmers = r.s.farmers.map((x) => nameOf(x.account_id)).join(" ");
         return [r.s.reference, r.s.buyer_name, r.s.product, r.s.destination, farmers].join(" ").toLowerCase().includes(term);
       })
       .sort((a, b) => {
@@ -121,7 +126,7 @@ function ShipmentsPage() {
         // upcoming first, then most recent past
         return Math.abs(+new Date(a.s.ship_date) - Date.now()) - Math.abs(+new Date(b.s.ship_date) - Date.now());
       });
-  }, [rows, filter, q, sort, farmer, dest]);
+  }, [rows, filter, q, sort, farmer, dest, nameOf]);
 
   const selected = rows.find((r) => r.s.id === id);
   const select = (sid?: string) => void navigate({ search: sid ? { id: sid } : {}, replace: true, resetScroll: false });
@@ -252,7 +257,7 @@ function ShipmentsPage() {
 
         {selected && desktop && (
           <aside className="sticky top-4 max-h-[calc(100vh-2rem)] self-start overflow-y-auto rounded-2xl border border-border bg-card">
-            <ShipmentDetail s={selected.s} inv={selected.inv} att={selected.att} payouts={payouts.data ?? []} onClose={() => select()} />
+            <ShipmentDetail s={selected.s} inv={selected.inv} att={selected.att} payouts={payouts.data ?? []} nameOf={nameOf} onClose={() => select()} />
           </aside>
         )}
       </div>
@@ -260,7 +265,7 @@ function ShipmentsPage() {
       <Sheet open={!!selected && !desktop} onOpenChange={(o) => !o && select()}>
         <SheetContent side="bottom" className="max-h-[92vh] overflow-y-auto rounded-t-2xl p-0">
           <SheetTitle className="sr-only">Shipment details</SheetTitle>
-          {selected && <ShipmentDetail s={selected.s} inv={selected.inv} att={selected.att} payouts={payouts.data ?? []} />}
+          {selected && <ShipmentDetail s={selected.s} inv={selected.inv} att={selected.att} payouts={payouts.data ?? []} nameOf={nameOf} />}
         </SheetContent>
       </Sheet>
     </div>
@@ -359,7 +364,7 @@ function ShipmentRow({ s, inv, att, active, compact, onOpen }: { s: Shipment; in
   );
 }
 
-function ShipmentDetail({ s, inv, att, payouts, onClose }: { s: Shipment; inv: Invoice | undefined; att: Attention[]; payouts: Payout[]; onClose?: () => void }) {
+function ShipmentDetail({ s, inv, att, payouts, nameOf, onClose }: { s: Shipment; inv: Invoice | undefined; att: Attention[]; payouts: Payout[]; nameOf: (accountId: string) => string; onClose?: () => void }) {
   const split = farmerSplit(s, inv);
   const stage = SHIPMENT_STATUSES.indexOf(s.status);
   const payLink = inv ? `${typeof window !== "undefined" ? window.location.origin : ""}/pay/${inv.id}` : null;
@@ -449,7 +454,7 @@ function ShipmentDetail({ s, inv, att, payouts, onClose }: { s: Shipment; inv: I
               return (
                 <li key={fm.account_id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-2.5 text-sm">
                   <div className="min-w-0">
-                    <p className="truncate">{accountName(fm.account_id)}</p>
+                    <p className="truncate">{nameOf(fm.account_id)}</p>
                     <p className="text-xs text-muted-foreground">{fm.kilos} kg · {Math.round((fm.kilos / totalKg) * 100)}%</p>
                   </div>
                   <div className="flex items-center gap-2 text-right">

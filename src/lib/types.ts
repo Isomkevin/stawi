@@ -155,6 +155,28 @@ export type WithdrawBody = {
 
 export type NewDestinationBody = { type: "mpesa" | "bank"; details: string; account_name: string };
 
+export type ShipmentStatus = "draft" | "preparing" | "ready" | "in_transit" | "delivered" | "completed";
+
+export type ShipmentFarmer = { account_id: string; kilos: number };
+
+export type Shipment = {
+  id: string;
+  reference: string;
+  coop_id: string;
+  buyer_name: string;
+  product: string;
+  quantity_kg: number;
+  destination: string;
+  value: number;
+  currency: string;
+  ship_date: string;
+  shipped_at: string | null;
+  status: ShipmentStatus;
+  invoice_id: string | null;
+  farmers: ShipmentFarmer[];
+  updated_at: string;
+};
+
 export type Role = "farmer" | "exporter" | "treasurer" | "buyer";
 
 export class ApiError extends Error {

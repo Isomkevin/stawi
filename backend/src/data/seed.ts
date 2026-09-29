@@ -16,7 +16,7 @@ import {
 } from "./catalog";
 import { feeCents, splitByShares, toKesCents } from "../services/money";
 import { store } from "../store";
-import { Account, CoopMember, Invoice, PayoutDestination, PayoutStatus } from "../types";
+import { Account, CoopMember, Invoice, InvoiceStatus, PayoutDestination, PayoutStatus, Shipment, ShipmentFarmer, ShipmentStatus } from "../types";
 
 export interface SeedIds {
   coop_id: string;
@@ -600,5 +600,160 @@ export async function seedDatabase(): Promise<SeedIds> {
   }
 
   await applyLedger();
+  await seedShipments();
   return SEED_IDS;
+}
+
+const COOP_PRODUCT: Record<string, string> = {
+  coop_kiambu: "Washed AA green coffee",
+  coop_kericho: "Black CTC tea",
+  coop_meru: "Macadamia kernels",
+  coop_naivasha: "Premium roses",
+};
+
+function kilosFromDescription(description: string, amount: number): number {
+  const match = description.match(/(\d+)\s*kg/i);
+  if (match) return Number(match[1]);
+  return Math.max(80, Math.round(amount / 5.4));
+}
+
+function destinationFrom(description: string): string {
+  const parts = description.split("·").map((part) => part.trim()).filter(Boolean);
+  if (parts.length >= 2) return parts[parts.length - 1];
+  const dashed = description.split(" - ");
+  if (dashed.length >= 2) return dashed[dashed.length - 1].trim();
+  return "Mombasa, KE";
+}
+
+function productFrom(description: string, coopId: string): string {
+  const match = description.match(/kg\s+(.+?)\s+·/);
+  if (match) return match[1].trim();
+  const short = description.split(" - ")[0]?.replace(/^Ref [^:]+:\s*/, "").trim();
+  if (short && short.length > 0 && short.length < 80) return short;
+  return COOP_PRODUCT[coopId] ?? "Export lot";
+}
+
+function stageForInvoice(status: InvoiceStatus): ShipmentStatus {
+  if (status === "completed") return "completed";
+  if (status === "settling" || status === "failed") return "delivered";
+  if (status === "paid" || status === "converting") return "in_transit";
+  if (status === "pending") return "ready";
+  return "preparing";
+}
+
+function splitKilos(total: number, weights: number[]): number[] {
+  const sum = weights.reduce((totalWeight, weight) => totalWeight + weight, 0);
+  if (sum <= 0 || total <= 0) return weights.map(() => 0);
+  const exact = weights.map((weight) => (total * weight) / sum);
+  const shares = exact.map((value) => Math.floor(value));
+  let left = total - shares.reduce((totalShare, share) => totalShare + share, 0);
+  const order = exact
+    .map((value, index) => ({ index, fraction: value - Math.floor(value) }))
+    .sort((a, b) => b.fraction - a.fraction || a.index - b.index);
+  for (const row of order) {
+    if (left <= 0) break;
+    shares[row.index] += 1;
+    left -= 1;
+  }
+  return shares;
+}
+
+function assignFarmers(members: CoopMember[], key: string, totalKg: number): ShipmentFarmer[] {
+  if (members.length === 0 || totalKg <= 0) return [];
+  const count = Math.min(members.length, 3 + (hashCode(`${key}:count`) % 6));
+  const start = hashCode(`${key}:start`) % members.length;
+  const picked: CoopMember[] = [];
+  for (let i = 0; i < count; i++) picked.push(members[(start + i) % members.length]);
+  const weights = picked.map((member) => (member.kilos && member.kilos > 0 ? member.kilos : 1));
+  const kilos = splitKilos(totalKg, weights);
+  return picked
+    .map((member, index) => ({ account_id: member.account_id, kilos: kilos[index] }))
+    .filter((farmer) => farmer.kilos > 0);
+}
+
+function timingFor(status: ShipmentStatus, anchor: string): { ship_date: string; shipped_at: string | null } {
+  if (status === "completed" || status === "delivered" || status === "in_transit") {
+    return { ship_date: anchor, shipped_at: anchor };
+  }
+  if (status === "ready") return { ship_date: shiftDays(8), shipped_at: null };
+  return { ship_date: shiftDays(14), shipped_at: null };
+}
+
+/** One shipment per co-op invoice, plus a draft and a preparing lot with no invoice yet. */
+export async function seedShipments(): Promise<void> {
+  const coops = await store.getAllCoops();
+  for (const coop of coops) {
+    const members = await store.getCoopMembers(coop.id);
+    const invoices = (await store.getInvoices({ coop_id: coop.id })).filter((invoice) => invoice.type === "coop");
+    for (const invoice of invoices) {
+      const status = stageForInvoice(invoice.status);
+      const quantity = kilosFromDescription(invoice.description, invoice.amount);
+      const timing = timingFor(status, invoice.created_at);
+      const id = `shp_${invoice.id}`;
+      assertShort(id, "shipment");
+      const farmers = assignFarmers(members, id, quantity);
+      const farmerKg = farmers.reduce((total, farmer) => total + farmer.kilos, 0);
+      if (farmerKg !== quantity) throw new Error(`Shipment ${id} kilos ${farmerKg} do not match ${quantity}`);
+      const shipment: Shipment = {
+        id,
+        reference: invoice.reference,
+        coop_id: coop.id,
+        buyer_name: invoice.buyer_name,
+        product: productFrom(invoice.description, coop.id),
+        quantity_kg: quantity,
+        destination: destinationFrom(invoice.description),
+        value: invoice.amount,
+        currency: invoice.currency,
+        ship_date: timing.ship_date,
+        shipped_at: timing.shipped_at,
+        status,
+        invoice_id: invoice.id,
+        farmers,
+        updated_at: invoice.created_at,
+      };
+      await store.saveShipment(shipment);
+    }
+
+    const product = COOP_PRODUCT[coop.id] ?? "Export lot";
+    const draftId = `shp_${coop.id}_draft`;
+    const preparingId = `shp_${coop.id}_prep`;
+    assertShort(draftId, "shipment");
+    assertShort(preparingId, "shipment");
+    const now = new Date().toISOString();
+    await store.saveShipment({
+      id: draftId,
+      reference: `${coop.id.toUpperCase()}-DRAFT`,
+      coop_id: coop.id,
+      buyer_name: "Buyer not assigned",
+      product,
+      quantity_kg: 800,
+      destination: "TBD",
+      value: 4200,
+      currency: "USD",
+      ship_date: shiftDays(21),
+      shipped_at: null,
+      status: "draft",
+      invoice_id: null,
+      farmers: [],
+      updated_at: now,
+    });
+    const preparingKg = 1500;
+    await store.saveShipment({
+      id: preparingId,
+      reference: `${coop.id.toUpperCase()}-PREP`,
+      coop_id: coop.id,
+      buyer_name: "Buyer not invoiced",
+      product,
+      quantity_kg: preparingKg,
+      destination: "Mombasa, KE",
+      value: 6100,
+      currency: "USD",
+      ship_date: shiftDays(-3),
+      shipped_at: null,
+      status: "preparing",
+      invoice_id: null,
+      farmers: assignFarmers(members, preparingId, preparingKg),
+      updated_at: now,
+    });
+  }
 }
