@@ -70,6 +70,7 @@ export const shipmentsApi = {
     const s = shipments.find((x) => x.id === shipmentId);
     if (!s) throw new ApiError(404, "Shipment not found");
     if (!Number.isInteger(kilos) || kilos <= 0) throw new ApiError(400, "Kilos must be a whole number greater than zero");
+    if (s.status === "completed") throw new ApiError(400, "Farmers are locked once the split is approved");
     const others = s.farmers.filter((farmer) => farmer.account_id !== accountId);
     const used = others.reduce((sum, farmer) => sum + farmer.kilos, 0);
     if (used + kilos > s.quantity_kg) throw new ApiError(400, "Farmer kilos would exceed the shipment quantity");
@@ -90,6 +91,7 @@ export const shipmentsApi = {
     await wait();
     const s = shipments.find((x) => x.id === shipmentId);
     if (!s) throw new ApiError(404, "Shipment not found");
+    if (s.status === "completed") throw new ApiError(400, "Farmers are locked once the split is approved");
     if (!s.farmers.some((farmer) => farmer.account_id === accountId)) throw new ApiError(404, "Farmer is not on this shipment");
     s.farmers = s.farmers.filter((farmer) => farmer.account_id !== accountId);
     s.updated_at = new Date().toISOString();
