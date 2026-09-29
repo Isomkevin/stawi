@@ -181,7 +181,7 @@ export const api = {
       : request<void>(`/accounts/${accountId}/destinations/${destId}`, { method: "DELETE" }),
 
   // POST /name-enquiry → { account_name }
-  resolveAccountName: (type: "mpesa" | "bank", details: string): Promise<string> =>
+  resolveAccountName: (type: "mpesa" | "momo" | "bank", details: string): Promise<string> =>
     isMock
       ? mockApi.resolveAccountName(type, details)
       : request<{ account_name: string }>(`/name-enquiry`, {

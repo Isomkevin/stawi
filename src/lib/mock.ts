@@ -73,7 +73,7 @@ function id(prefix: string, n: number | string) {
 
 const dest = (
   n: string,
-  type: "mpesa" | "bank",
+  type: "mpesa" | "momo" | "bank",
   details: string,
   account_name: string,
   is_verified = true,
@@ -756,7 +756,7 @@ export const mockApi = {
 
   async addDestination(
     accountId: string,
-    body: { type: "mpesa" | "bank"; details: string; account_name: string },
+    body: { type: "mpesa" | "momo" | "bank"; details: string; account_name: string },
   ): Promise<PayoutDestination> {
     await latency(500);
     const account = accounts.find((a) => a.id === accountId);
@@ -777,7 +777,7 @@ export const mockApi = {
     account.payout_destinations = account.payout_destinations.filter((d) => d.id !== destId);
   },
 
-  async resolveAccountName(type: "mpesa" | "bank", details: string): Promise<string> {
+  async resolveAccountName(type: "mpesa" | "momo" | "bank", details: string): Promise<string> {
     await latency(900);
     if (details.replace(/\D/g, "").length < 6) throw new ApiError(400, "Could not resolve this account");
     return type === "mpesa" ? "WANJIKU M MWANGI" : "KIAMBU HIGHLANDS LTD";
