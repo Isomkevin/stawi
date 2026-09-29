@@ -246,3 +246,11 @@ When `VITE_API_MODE=live`, ignore this mock and read the backend. That ledger is
 **Phase 5 — Direct + USSD simulator:** "Build the Direct dashboard and the USSD simulator with the request/response inspector, wired to the same mock API."
 
 **Phase 6 — Polish pass:** "Audit every screen for loading/empty/error states, motion, contrast, tap targets, responsive breakpoints and copy clarity. Fix anything that looks generic. Then wire `VITE_API_MODE=live` and list every endpoint the backend must implement."
+
+### §8 additions (2026-09-29)
+
+- `GET /accounts/{id}/shipments` → `Shipment[]` — a Direct exporter's own shipments (`account_id` set, `coop_id` empty). Every direct invoice opens one; advance with `PATCH /shipments/{id}`.
+- `POST /coops/{id}/members/lookup` `{ phones: string[] }` → `[{ phone_number, account_id|null, full_name|null, already_member, other_coop }]` (treasurer only).
+- `POST /coops/{id}/invites/sms` `{ recipients: [{ phone_number, full_name, link }] }` → `{ sent, failed, results: [{ phone_number, sent, error? }] }`. Link must be an `https://…/onboarding?` URL.
+- `POST /invoices/{id}/approve-split` now also returns `transfers: Payout[]`: after the split each farmer's share is sent through Payaza to their first verified M-Pesa / mobile money (`momo`) / bank destination. Status `sent` until the payout webhook confirms, `confirmed` in mock mode, `failed` leaves the money in the Stawi balance. Farmers with no verified destination keep it in balance.
+- `PayoutDestination.type` adds `"momo"`; set `PAYAZA_MOMO_BANK_CODE` for non-Safaricom wallets.
