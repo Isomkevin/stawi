@@ -15,12 +15,7 @@ import {
 } from "@/components/ai-elements/prompt-input";
 import { Shimmer } from "@/components/ai-elements/shimmer";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { api } from "@/lib/api";
@@ -54,18 +49,31 @@ async function buildSnapshot(coopId: string) {
       };
     }),
   );
-  const names = Object.fromEntries(farmers.map((farmer) => [farmer.account_id, farmer.full_name ?? farmer.account_id]));
+  const names = Object.fromEntries(
+    farmers.map((farmer) => [farmer.account_id, farmer.full_name ?? farmer.account_id]),
+  );
   return {
     generated_at: new Date().toISOString(),
     coop,
     metrics,
     farmers,
     invoices,
-    payouts: payouts.map((payout) => ({ ...payout, farmer_name: names[payout.account_id] ?? payout.account_id })),
+    payouts: payouts.map((payout) => ({
+      ...payout,
+      farmer_name: names[payout.account_id] ?? payout.account_id,
+    })),
   };
 }
 
-function IconControl({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
+function IconControl({
+  label,
+  onClick,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -92,14 +100,22 @@ export function AskStawiChat() {
   const ask = async (question: string) => {
     const cleanQuestion = question.trim();
     if (!cleanQuestion || busy) return;
-    const history = messages.filter((message) => !message.error).map(({ role, content }) => ({ role, content }));
-    setMessages((current) => [...current, { role: "user", content: cleanQuestion }, { role: "assistant", content: "" }]);
+    const history = messages
+      .filter((message) => !message.error)
+      .map(({ role, content }) => ({ role, content }));
+    setMessages((current) => [
+      ...current,
+      { role: "user", content: cleanQuestion },
+      { role: "assistant", content: "" },
+    ]);
     setInput("");
     setStatus("submitted");
     const controller = new AbortController();
     abortRef.current = controller;
     const updateLast = (update: (message: Msg) => Msg) =>
-      setMessages((current) => current.map((message, index) => (index === current.length - 1 ? update(message) : message)));
+      setMessages((current) =>
+        current.map((message, index) => (index === current.length - 1 ? update(message) : message)),
+      );
 
     try {
       const snapshot = await buildSnapshot(coopId);
@@ -110,7 +126,10 @@ export function AskStawiChat() {
         signal: controller.signal,
       });
       if (!response.ok || !response.body) {
-        const body = (await response.json().catch(() => ({}))) as { error?: string; message?: string };
+        const body = (await response.json().catch(() => ({}))) as {
+          error?: string;
+          message?: string;
+        };
         const message =
           body.message ??
           body.error ??
@@ -141,7 +160,11 @@ export function AskStawiChat() {
         updateLast((current) => ({ ...current, content: current.content || "Response stopped." }));
         setStatus("ready");
       } else {
-        updateLast((current) => ({ ...current, content: "The assistant couldn't answer.", error: true }));
+        updateLast((current) => ({
+          ...current,
+          content: "The assistant couldn't answer.",
+          error: true,
+        }));
         setStatus("error");
       }
     } finally {
@@ -184,7 +207,9 @@ export function AskStawiChat() {
               </span>
               <div className="min-w-0">
                 <DialogTitle className="text-display truncate text-lg">Ask Stawi</DialogTitle>
-                <DialogDescription className="truncate text-xs">Answers from your co-op records</DialogDescription>
+                <DialogDescription className="truncate text-xs">
+                  Answers from your co-op records
+                </DialogDescription>
               </div>
             </div>
             <div className="flex items-center gap-1">
@@ -206,7 +231,12 @@ export function AskStawiChat() {
           </header>
 
           <Conversation className="min-h-0 bg-background">
-            <ConversationContent className={cn("mx-auto w-full", maximized && !isMobile ? "max-w-4xl px-8 py-7" : "px-4 py-5")}>
+            <ConversationContent
+              className={cn(
+                "mx-auto w-full",
+                maximized && !isMobile ? "max-w-4xl px-8 py-7" : "px-4 py-5",
+              )}
+            >
               {messages.length === 0 ? (
                 <div className="flex min-h-[340px] flex-col justify-center py-8">
                   <div className="mb-6 flex items-start gap-3">
@@ -269,7 +299,9 @@ export function AskStawiChat() {
                   className="min-h-12 max-h-32"
                 />
                 <PromptInputFooter className="justify-between">
-                  <span className="text-xs text-muted-foreground">Check important figures against your records.</span>
+                  <span className="text-xs text-muted-foreground">
+                    Check important figures against your records.
+                  </span>
                   <PromptInputSubmit
                     status={status}
                     onStop={stop}

@@ -1,5 +1,14 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
-import { FileBarChart, FileText, Landmark, LayoutDashboard, Settings, Ship, Users, Wallet } from "lucide-react";
+import {
+  FileBarChart,
+  FileText,
+  Landmark,
+  LayoutDashboard,
+  Settings,
+  Ship,
+  Users,
+  Wallet,
+} from "lucide-react";
 import { RoleGate } from "@/components/stawi/RoleGate";
 import { AskStawiChat } from "@/components/stawi/AskStawiChat";
 import { DashboardShell } from "@/features/shared/DashboardShell";
@@ -8,9 +17,15 @@ export const Route = createFileRoute("/coop")({
   head: () => ({
     meta: [
       { title: "Co-op dashboard — Stawi" },
-      { name: "description", content: "Invoice buyers, approve splits and pay every farmer same day." },
+      {
+        name: "description",
+        content: "Invoice buyers, approve splits and pay every farmer same day.",
+      },
       { property: "og:title", content: "Co-op dashboard — Stawi" },
-      { property: "og:description", content: "Invoice buyers, approve splits and pay every farmer same day." },
+      {
+        property: "og:description",
+        content: "Invoice buyers, approve splits and pay every farmer same day.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
     ],
