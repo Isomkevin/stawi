@@ -49,27 +49,61 @@ function LoginPage() {
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [devCode, setDevCode] = useState<string | null>(null);
   const { signIn } = useSession();
   const navigate = useNavigate();
 
   const phoneOk = phone.replace(/\D/g, "").length >= 9;
+  const normalized = () => {
+    const d = phone.replace(/\D/g, "");
+    if (d.startsWith("254")) return `+${d}`;
+    if (d.startsWith("0")) return `+254${d.slice(1)}`;
+    return `+254${d}`;
+  };
 
-  const sendCode = () => {
+  const sendCode = async () => {
     if (!phoneOk) {
       setError("Enter a valid phone number.");
       return;
     }
     setError(null);
-    setStep("code");
-  };
-
-  const verify = () => {
-    if (code !== DEMO_CODE) {
-      setError("That code isn't right. Demo code is 123456.");
+    if (isMock) {
+      setStep("code");
       return;
     }
+    setBusy(true);
+    try {
+      const r = await api.requestOtp(normalized());
+      setDevCode(r.dev_code ?? null);
+      setStep("code");
+    } catch (e) {
+      setError(e instanceof ApiError && e.status === 404 ? "No Stawi account uses this number." : "Couldn't send the code. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const verify = async () => {
     setError(null);
-    setStep("role");
+    if (isMock) {
+      if (code !== DEMO_CODE) {
+        setError("That code isn't right. Demo code is 123456.");
+        return;
+      }
+      setStep("role");
+      return;
+    }
+    setBusy(true);
+    try {
+      const r = await api.verifyOtp(normalized(), code);
+      signIn(r.role, { accountId: r.account_id, coopId: r.account.coop_id, token: r.token });
+      void navigate({ to: homeForRole[r.role] });
+    } catch {
+      setError("That code isn't right or has expired.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const choose = (role: Exclude<Role, "buyer">) => {
