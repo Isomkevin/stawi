@@ -87,8 +87,23 @@ function Overview() {
   const m = metrics.data;
   const live = m?.live ?? m;
   const sample = m?.demo;
-  const bankSpread = live ? Math.round(live.total_collected_kes_cents * 0.045) : 0;
-  const spark = area.map((a) => a.live);
+  const includeSample = Boolean(sample && sample.invoices > 0 && live);
+  const shown =
+    includeSample && live && sample
+      ? {
+          invoices: live.invoices + sample.invoices,
+          total_collected_kes_cents:
+            live.total_collected_kes_cents + sample.total_collected_kes_cents,
+          fee_taken_kes_cents: live.fee_taken_kes_cents + sample.fee_taken_kes_cents,
+          total_split_kes_cents: live.total_split_kes_cents + sample.total_split_kes_cents,
+        }
+      : live;
+  const bankSpread = shown ? Math.round(shown.total_collected_kes_cents * 0.045) : 0;
+  const spark = area.map((a) => a.live + a.sample);
+  const splitHint = (liveCents: number, sampleCents: number) =>
+    liveCents > 0
+      ? `Live ${formatKesCompact(liveCents)} · Sample ${formatKesCompact(sampleCents)}`
+      : `Sample ${formatKesCompact(sampleCents)}`;
 
   return (
     <div>
@@ -99,44 +114,59 @@ function Overview() {
       />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {m && live ? (
+        {m && shown ? (
           <>
             <KpiCard
               index={0}
               label="Collected"
-              value={formatKesCompact(live.total_collected_kes_cents)}
+              value={formatKesCompact(shown.total_collected_kes_cents)}
+              {...(includeSample && sample
+                ? {
+                    hint: splitHint(
+                      live?.total_collected_kes_cents ?? 0,
+                      sample.total_collected_kes_cents,
+                    ),
+                  }
+                : {})}
               spark={spark}
               accent
             />
             <KpiCard
               index={1}
               label="Paid to farmers"
-              value={formatKesCompact(live.total_split_kes_cents)}
+              value={formatKesCompact(shown.total_split_kes_cents)}
+              {...(includeSample && sample
+                ? {
+                    hint: splitHint(live?.total_split_kes_cents ?? 0, sample.total_split_kes_cents),
+                  }
+                : {})}
               spark={spark}
             />
             <KpiCard
               index={2}
               label="Invoices"
-              value={String(live.invoices)}
-              hint={`${needsApproval.filter((i) => !i.is_demo).length} waiting for you`}
+              value={String(shown.invoices)}
+              hint={
+                includeSample && sample
+                  ? `${needsApproval.length} waiting for you · ${sample.invoices} demo`
+                  : `${needsApproval.length} waiting for you`
+              }
             />
             <KpiCard
               index={3}
               label="Stawi fees"
-              value={formatKesCompact(live.fee_taken_kes_cents)}
-              hint="0.8% flat · live"
+              value={formatKesCompact(shown.fee_taken_kes_cents)}
+              hint={
+                includeSample && sample
+                  ? `${splitHint(live?.fee_taken_kes_cents ?? 0, sample.fee_taken_kes_cents)} · 0.8%`
+                  : "0.8% flat"
+              }
             />
           </>
         ) : (
           [0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-32 rounded-2xl" />)
         )}
       </div>
-      {sample && sample.invoices > 0 && (
-        <p className="mt-3 text-sm text-muted-foreground">
-          Sample {formatKesCompact(sample.total_collected_kes_cents)} across {sample.invoices} demo
-          invoice{sample.invoices === 1 ? "" : "s"}. Live totals above leave that out.
-        </p>
-      )}
 
       <Link
         to="/coop/shipments"
@@ -357,17 +387,17 @@ function Overview() {
             <div className="flex justify-between">
               <span>Stawi fees</span>
               <span className="tabular">
-                {live ? formatKesCents(live.fee_taken_kes_cents) : "…"}
+                {shown ? formatKesCents(shown.fee_taken_kes_cents) : "…"}
               </span>
             </div>
             <div className="flex justify-between text-muted-foreground">
               <span>Bank would cost</span>
-              <span className="tabular">{live ? formatKesCents(bankSpread) : "…"}</span>
+              <span className="tabular">{shown ? formatKesCents(bankSpread) : "…"}</span>
             </div>
             <div className="flex justify-between border-t border-border pt-2 text-lime">
               <span>Kept by farmers</span>
               <span className="text-display tabular">
-                {live ? formatKesCents(bankSpread - live.fee_taken_kes_cents) : "…"}
+                {shown ? formatKesCents(bankSpread - shown.fee_taken_kes_cents) : "…"}
               </span>
             </div>
           </div>
