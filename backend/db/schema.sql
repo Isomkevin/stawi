@@ -196,3 +196,28 @@ ALTER TABLE shipments ADD COLUMN IF NOT EXISTS account_id VARCHAR(64) REFERENCES
 -- Airtel Money and other mobile money wallets.
 ALTER TABLE payout_destinations DROP CONSTRAINT IF EXISTS payout_destinations_type_check;
 ALTER TABLE payout_destinations ADD CONSTRAINT payout_destinations_type_check CHECK (type IN ('mpesa', 'momo', 'bank'));
+
+-- Buyer portal: bank-transfer proofs submitted against a shipment. Treasurer confirms before the split.
+CREATE TABLE IF NOT EXISTS payment_proofs (
+  id VARCHAR(64) PRIMARY KEY,
+  invoice_id VARCHAR(64) NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+  shipment_id VARCHAR(64),
+  shipment_reference VARCHAR(128) NOT NULL,
+  coop_id VARCHAR(64),
+  account_id VARCHAR(64),
+  payer_name VARCHAR(255) NOT NULL,
+  payer_email VARCHAR(255) NOT NULL,
+  bank_reference VARCHAR(128) NOT NULL,
+  amount NUMERIC(18, 2) NOT NULL,
+  currency VARCHAR(8) NOT NULL,
+  paid_at VARCHAR(32) NOT NULL,
+  note TEXT,
+  receipt_name VARCHAR(255),
+  receipt_data TEXT,
+  status VARCHAR(16) NOT NULL DEFAULT 'submitted' CHECK (status IN ('submitted', 'confirmed', 'rejected')),
+  reviewed_by VARCHAR(64),
+  reviewed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_payment_proofs_coop ON payment_proofs(coop_id);
+CREATE INDEX IF NOT EXISTS idx_payment_proofs_account ON payment_proofs(account_id);

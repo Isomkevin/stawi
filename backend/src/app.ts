@@ -46,6 +46,8 @@ export function createApp() {
   // Parse JSON with rawBody capture for webhook signature verification
   app.use(
     express.json({
+      // Buyer transfer receipts are sent as data URLs (max ~2 MB image/PDF).
+      limit: "4mb",
       verify: (req: Request, _res: Response, buf: Buffer) => {
         (req as any).rawBody = buf;
       },
