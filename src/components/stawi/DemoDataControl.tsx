@@ -4,7 +4,7 @@ import { Switch } from "@/components/ui/switch";
 import { demoSettingsOptions } from "@/lib/queries";
 import { api } from "@/lib/api";
 
-export function DemoBadge({ demo }: { demo?: boolean }) {
+export function DemoBadge({ demo }: { demo?: boolean | undefined }) {
   if (!demo) return null;
   return (
     <span className="inline-flex items-center rounded-full border border-amber/40 bg-amber/15 px-2 py-0.5 text-[11px] font-medium tracking-wide text-amber uppercase">
