@@ -196,6 +196,7 @@ POST /invoices/{id}/approve-split       { treasurer_id, pin } -> { success, invo
 POST /dev/simulate-payment/{invoiceId}  -> { success, invoice, transactions, payouts } (mock backend only)
 GET  /coops/{id}                        GET /coops/{id}/payouts -> Payout[] (members' payouts for this co-op's invoices, newest first)
 GET  /coops/{id}/shipments              -> Shipment[]
+POST /coops/{id}/shipments              { buyer_name, product, quantity_kg, destination?, value?, currency?, ship_date? } -> Shipment (draft, no invoice)
 POST /shipments/{id}/farmers            { account_id, kilos } -> Shipment
                                         201 the first time that farmer is added, 200 when their kilos change.
                                         400 if they are not a co-op member, kilos are not a positive integer, or the total would exceed quantity_kg.
