@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { FileText, Search } from "lucide-react";
 import { EmptyState } from "@/components/stawi/EmptyState";
 import { StatusChip } from "@/components/stawi/StatusChip";
+import { ConfirmDelete } from "@/components/stawi/ConfirmDelete";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency, formatDate, formatKesCents } from "@/lib/format";
@@ -16,11 +17,13 @@ export function InvoiceTable({
   loading,
   detailTo,
   compact,
+  onDelete,
 }: {
   invoices: Invoice[] | undefined;
   loading: boolean;
   detailTo: "/coop/invoices/$id" | "/direct/invoices/$id";
   compact?: boolean;
+  onDelete?: (invoice: Invoice) => Promise<unknown>;
 }) {
   const navigate = useNavigate();
   const [f, setF] = useState<(typeof filters)[number]>("all");
@@ -76,6 +79,7 @@ export function InvoiceTable({
                 <th className="hidden px-4 py-3 text-right font-normal sm:table-cell">KES</th>
                 <th className="px-4 py-3 font-normal">Status</th>
                 <th className="hidden px-4 py-3 font-normal md:table-cell">Created</th>
+                {onDelete && <th className="w-12 px-2 py-3"><span className="sr-only">Delete</span></th>}
               </tr>
             </thead>
             <tbody>
@@ -95,6 +99,17 @@ export function InvoiceTable({
                   </td>
                   <td className="px-4 py-3"><StatusChip status={i.status} /></td>
                   <td className="hidden px-4 py-3 text-muted-foreground md:table-cell">{formatDate(i.created_at)}</td>
+                  {onDelete && (
+                    <td className="px-2 py-2 text-right">
+                      <ConfirmDelete
+                        label={`Delete invoice ${i.reference}`}
+                        title={`Delete invoice ${i.reference}?`}
+                        description={`The payment link for ${i.buyer_name} will stop working. This can't be undone.`}
+                        disabledReason={i.status === "pending" ? undefined : "Paid invoices can't be deleted"}
+                        onConfirm={() => onDelete(i)}
+                      />
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

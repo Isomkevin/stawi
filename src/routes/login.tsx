@@ -4,6 +4,7 @@ import { motion } from "motion/react";
 import { ArrowLeft, ArrowRight, Leaf, Phone, ShieldCheck } from "lucide-react";
 import { homeForRole, useSession } from "@/lib/session";
 import type { Role } from "@/lib/types";
+import { api, ApiError, isMock } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
