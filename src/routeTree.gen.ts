@@ -28,6 +28,7 @@ import { Route as CoopMembersRouteImport } from './routes/coop.members'
 import { Route as CoopOverviewRouteImport } from './routes/coop.overview'
 import { Route as CoopPaymentsRouteImport } from './routes/coop.payments'
 import { Route as CoopPayoutsRouteImport } from './routes/coop.payouts'
+import { Route as CoopReportsRouteImport } from './routes/coop.reports'
 import { Route as CoopSettingsRouteImport } from './routes/coop.settings'
 import { Route as CoopShipmentsRouteImport } from './routes/coop.shipments'
 import { Route as DemoUssdRouteImport } from './routes/demo.ussd'
@@ -136,6 +137,11 @@ const CoopPayoutsRoute = CoopPayoutsRouteImport.update({
   path: '/payouts',
   getParentRoute: () => CoopRoute,
 } as any)
+const CoopReportsRoute = CoopReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => CoopRoute,
+} as any)
 const CoopSettingsRoute = CoopSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -215,6 +221,7 @@ export interface FileRoutesByFullPath {
   '/coop/overview': typeof CoopOverviewRoute
   '/coop/payments': typeof CoopPaymentsRoute
   '/coop/payouts': typeof CoopPayoutsRoute
+  '/coop/reports': typeof CoopReportsRoute
   '/coop/settings': typeof CoopSettingsRoute
   '/coop/shipments': typeof CoopShipmentsRoute
   '/demo/ussd': typeof DemoUssdRoute
@@ -245,6 +252,7 @@ export interface FileRoutesByTo {
   '/coop/overview': typeof CoopOverviewRoute
   '/coop/payments': typeof CoopPaymentsRoute
   '/coop/payouts': typeof CoopPayoutsRoute
+  '/coop/reports': typeof CoopReportsRoute
   '/coop/settings': typeof CoopSettingsRoute
   '/coop/shipments': typeof CoopShipmentsRoute
   '/demo/ussd': typeof DemoUssdRoute
@@ -279,6 +287,7 @@ export interface FileRoutesById {
   '/coop/overview': typeof CoopOverviewRoute
   '/coop/payments': typeof CoopPaymentsRoute
   '/coop/payouts': typeof CoopPayoutsRoute
+  '/coop/reports': typeof CoopReportsRoute
   '/coop/settings': typeof CoopSettingsRoute
   '/coop/shipments': typeof CoopShipmentsRoute
   '/demo/ussd': typeof DemoUssdRoute
@@ -314,6 +323,7 @@ export interface FileRouteTypes {
     | '/coop/overview'
     | '/coop/payments'
     | '/coop/payouts'
+    | '/coop/reports'
     | '/coop/settings'
     | '/coop/shipments'
     | '/demo/ussd'
@@ -344,6 +354,7 @@ export interface FileRouteTypes {
     | '/coop/overview'
     | '/coop/payments'
     | '/coop/payouts'
+    | '/coop/reports'
     | '/coop/settings'
     | '/coop/shipments'
     | '/demo/ussd'
@@ -377,6 +388,7 @@ export interface FileRouteTypes {
     | '/coop/overview'
     | '/coop/payments'
     | '/coop/payouts'
+    | '/coop/reports'
     | '/coop/settings'
     | '/coop/shipments'
     | '/demo/ussd'
@@ -541,6 +553,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CoopPayoutsRouteImport
       parentRoute: typeof CoopRoute
     }
+    '/coop/reports': {
+      id: '/coop/reports'
+      path: '/reports'
+      fullPath: '/coop/reports'
+      preLoaderRoute: typeof CoopReportsRouteImport
+      parentRoute: typeof CoopRoute
+    }
     '/coop/settings': {
       id: '/coop/settings'
       path: '/settings'
@@ -652,6 +671,7 @@ interface CoopRouteChildren {
   CoopOverviewRoute: typeof CoopOverviewRoute
   CoopPaymentsRoute: typeof CoopPaymentsRoute
   CoopPayoutsRoute: typeof CoopPayoutsRoute
+  CoopReportsRoute: typeof CoopReportsRoute
   CoopSettingsRoute: typeof CoopSettingsRoute
   CoopShipmentsRoute: typeof CoopShipmentsRoute
   CoopIndexRoute: typeof CoopIndexRoute
@@ -665,6 +685,7 @@ const CoopRouteChildren: CoopRouteChildren = {
   CoopOverviewRoute: CoopOverviewRoute,
   CoopPaymentsRoute: CoopPaymentsRoute,
   CoopPayoutsRoute: CoopPayoutsRoute,
+  CoopReportsRoute: CoopReportsRoute,
   CoopSettingsRoute: CoopSettingsRoute,
   CoopShipmentsRoute: CoopShipmentsRoute,
   CoopIndexRoute: CoopIndexRoute,
