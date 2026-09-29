@@ -85,7 +85,7 @@ function makeDestinations(
   return [
     {
       id: mpesaId,
-      type: "mpesa",
+          type: "mpesa",
       details: phone,
       account_name: personName,
       is_verified: flags?.mpesaVerified !== false,
@@ -93,7 +93,7 @@ function makeDestinations(
     },
     {
       id: bankId,
-      type: "bank",
+          type: "bank",
       details: bankAccountNumber(`${accountId}:${bank.code}`),
       account_name: bankAccountName,
       is_verified: flags?.bankVerified !== false,
@@ -595,7 +595,7 @@ export async function seedDatabase(): Promise<SeedIds> {
         full_name: exporter.full_name,
         phone_number: exporter.phone,
         id_number: exporter.id_number,
-        coop_id: null,
+    coop_id: null,
         channel_capability: "webapp+ussd",
         payout_destinations: makeDestinations(exporter.id, exporter.full_name, exporter.phone, 2, exporter.business),
       })

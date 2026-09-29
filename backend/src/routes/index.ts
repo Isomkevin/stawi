@@ -1,16 +1,48 @@
 import { Router, Request, Response } from "express";
 import { SEED_IDS } from "../data/seed";
 import { feeCents, isPayCurrency, toKesCents } from "../services/money";
-import { clearSessionCookie, enforceAuth, hashToken, issueSession, requestOtp, requestTokens, sessionCookie, verifyOtp } from "../services/auth";
+import {
+  clearSessionCookie,
+  enforceAuth,
+  hashToken,
+  issueSession,
+  requestOtp,
+  requestTokens,
+  sessionCookie,
+  verifyOtp,
+} from "../services/auth";
 import { classifyPayazaWebhook, payaza } from "../services/payaza";
 import { hashPin } from "../services/pin";
 import { pipeline } from "../services/pipeline";
 import { paymentReceipt } from "../services/receipt";
-import { addShipmentFarmer, advanceShipment, openShipmentForInvoice, removeShipmentFarmer, updateShipmentDetails } from "../services/shipments";
+import {
+  addShipmentFarmer,
+  advanceShipment,
+  openShipmentForInvoice,
+  removeShipmentFarmer,
+  updateShipmentDetails,
+} from "../services/shipments";
 import { store } from "../store";
 import { randomUUID } from "crypto";
-import { Account, PaymentProof, CoopMetrics, CoopMetricsBucket, CoopMember, DemoDataSettings, Invoice, PublicAccount, UNRESOLVED_ACCOUNT_NAME } from "../types";
-import { DEMO_DATA_EFFECT, demoDataDefault, demoDataVisible, includeInView, isDemo, parseDemoDataEnabled } from "../services/demoData";
+import {
+  Account,
+  PaymentProof,
+  CoopMetrics,
+  CoopMetricsBucket,
+  CoopMember,
+  DemoDataSettings,
+  Invoice,
+  PublicAccount,
+  UNRESOLVED_ACCOUNT_NAME,
+} from "../types";
+import {
+  DEMO_DATA_EFFECT,
+  demoDataDefault,
+  demoDataVisible,
+  includeInView,
+  isDemo,
+  parseDemoDataEnabled,
+} from "../services/demoData";
 import { handleUssdCallback } from "../ussd/handler";
 import { registerAdmin } from "./admin";
 
@@ -25,7 +57,9 @@ function getParam(param: string | string[] | undefined): string {
 }
 
 /** Seller label for the public pay page. Does not include member phones or account numbers. */
-async function publicPayee(invoice: Invoice): Promise<{ payee_name: string; farmer_count: number | null }> {
+async function publicPayee(
+  invoice: Invoice,
+): Promise<{ payee_name: string; farmer_count: number | null }> {
   if (invoice.type === "coop" && invoice.coop_id) {
     const coop = await store.getCoop(invoice.coop_id);
     const members = await store.getCoopMembers(invoice.coop_id);
@@ -168,18 +202,12 @@ apiRouter.post("/auth/logout", async (req: Request, res: Response) => {
 // -------------------------------------------------------------
 apiRouter.post("/accounts", async (req: Request, res: Response) => {
   try {
-    const {
-      full_name,
-      phone_number,
-      id_number,
-      pin,
-      destination,
-      ussd,
-      coop_id,
-    } = req.body;
+    const { full_name, phone_number, id_number, pin, destination, ussd, coop_id } = req.body;
 
     if (!full_name || !phone_number || !id_number || !pin) {
-      res.status(400).json({ error: "Missing required fields (full_name, phone_number, id_number, pin)" });
+      res
+        .status(400)
+        .json({ error: "Missing required fields (full_name, phone_number, id_number, pin)" });
       return;
     }
 
@@ -305,7 +333,9 @@ apiRouter.get("/accounts/:id/transactions", async (req: Request, res: Response) 
   }
   const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : undefined;
   const visible = seesDemo(req);
-  const payouts = (await store.getPayoutsByAccount(account.id)).filter((payout) => includeInView(payout, visible));
+  const payouts = (await store.getPayoutsByAccount(account.id)).filter((payout) =>
+    includeInView(payout, visible),
+  );
   res.status(200).json(limit && limit > 0 ? payouts.slice(0, limit) : payouts);
 });
 
@@ -324,7 +354,9 @@ apiRouter.post("/accounts/:id/destinations", async (req: Request, res: Response)
   const mobile = type === "mpesa" || type === "momo";
   const valid = mobile ? /^\+?\d{9,13}$/.test(clean) : /^\d{6,20}$/.test(clean);
   if (!valid) {
-    res.status(400).json({ error: mobile ? "Invalid mobile money number" : "Invalid bank account number" });
+    res
+      .status(400)
+      .json({ error: mobile ? "Invalid mobile money number" : "Invalid bank account number" });
     return;
   }
   const normalized = mobile ? store.normalizePhone(clean) : clean;
@@ -370,7 +402,9 @@ apiRouter.post("/accounts/:id/withdraw", async (req: Request, res: Response) => 
   try {
     const { destination_id, amount_kes_cents, pin, idempotency_key } = req.body;
     if (!destination_id || amount_kes_cents === undefined || !pin) {
-      res.status(400).json({ error: "Missing required fields (destination_id, amount_kes_cents, pin)" });
+      res
+        .status(400)
+        .json({ error: "Missing required fields (destination_id, amount_kes_cents, pin)" });
       return;
     }
 
@@ -379,7 +413,7 @@ apiRouter.post("/accounts/:id/withdraw", async (req: Request, res: Response) => 
       destination_id,
       parseInt(amount_kes_cents, 10),
       String(pin),
-      idempotency_key
+      idempotency_key,
     );
 
     if (!result.success) {
@@ -547,7 +581,9 @@ apiRouter.get("/coops/:id/shipments", async (req: Request, res: Response) => {
     return;
   }
   const visible = seesDemo(req);
-  const shipments = (await store.listShipments(coop.id)).filter((shipment) => includeInView(shipment, visible));
+  const shipments = (await store.listShipments(coop.id)).filter((shipment) =>
+    includeInView(shipment, visible),
+  );
   res.status(200).json(shipments);
 });
 
@@ -566,7 +602,10 @@ apiRouter.post("/coops/:id/shipments", async (req: Request, res: Response) => {
   const quantity = Number(b.quantity_kg);
   const value = Number(b.value ?? 0);
   const currency = ["USD", "EUR", "GBP"].includes(b.currency) ? b.currency : "USD";
-  const shipDate = typeof b.ship_date === "string" && !Number.isNaN(Date.parse(b.ship_date)) ? new Date(b.ship_date).toISOString() : new Date().toISOString();
+  const shipDate =
+    typeof b.ship_date === "string" && !Number.isNaN(Date.parse(b.ship_date))
+      ? new Date(b.ship_date).toISOString()
+      : new Date().toISOString();
   if (!buyer || !product) {
     res.status(400).json({ error: "Buyer and product are required" });
     return;
@@ -584,7 +623,10 @@ apiRouter.post("/coops/:id/shipments", async (req: Request, res: Response) => {
   const id = `shp_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
   const shipment = {
     id,
-    reference: `${coop.id.replace(/^coop_/, "").slice(0, 3).toUpperCase()}-S-${String(existing.length + 1).padStart(3, "0")}-${id.slice(-4).toUpperCase()}`,
+    reference: `${coop.id
+      .replace(/^coop_/, "")
+      .slice(0, 3)
+      .toUpperCase()}-S-${String(existing.length + 1).padStart(3, "0")}-${id.slice(-4).toUpperCase()}`,
     coop_id: coop.id,
     account_id: null,
     buyer_name: buyer,
@@ -620,7 +662,9 @@ apiRouter.get("/accounts/:id/shipments", async (req: Request, res: Response) => 
     await openShipmentForInvoice(invoice);
   }
   const visible = seesDemo(req);
-  const shipments = (await store.listAccountShipments(accountId)).filter((shipment) => includeInView(shipment, visible));
+  const shipments = (await store.listAccountShipments(accountId)).filter((shipment) =>
+    includeInView(shipment, visible),
+  );
   res.status(200).json(shipments);
 });
 
@@ -680,12 +724,26 @@ apiRouter.post("/coops/:id/invites/sms", async (req: Request, res: Response) => 
     const message = `${greeting}${coop.name} invites you to Stawi to get paid for your deliveries on M-Pesa. Join here: ${link}`;
     try {
       const sent = await notify.sendSms(phone, message);
-      results.push({ phone_number: phone, sent: sent.success, error: sent.success ? undefined : sent.error || "Text failed" });
+      results.push({
+        phone_number: phone,
+        sent: sent.success,
+        error: sent.success ? undefined : sent.error || "Text failed",
+      });
     } catch (err) {
-      results.push({ phone_number: phone, sent: false, error: err instanceof Error ? err.message : "Text failed" });
+      results.push({
+        phone_number: phone,
+        sent: false,
+        error: err instanceof Error ? err.message : "Text failed",
+      });
     }
   }
-  res.status(200).json({ sent: results.filter((r) => r.sent).length, failed: results.filter((r) => !r.sent).length, results });
+  res
+    .status(200)
+    .json({
+      sent: results.filter((r) => r.sent).length,
+      failed: results.filter((r) => !r.sent).length,
+      results,
+    });
 });
 
 apiRouter.patch("/shipments/:id", async (req: Request, res: Response) => {
@@ -729,7 +787,10 @@ apiRouter.post("/shipments/:id/farmers", async (req: Request, res: Response) => 
 });
 
 apiRouter.delete("/shipments/:id/farmers/:accountId", async (req: Request, res: Response) => {
-  const result = await removeShipmentFarmer(getParam(req.params.id), getParam(req.params.accountId));
+  const result = await removeShipmentFarmer(
+    getParam(req.params.id),
+    getParam(req.params.accountId),
+  );
   if (!result.ok) {
     res.status(result.status).json({ error: result.error });
     return;
@@ -738,7 +799,10 @@ apiRouter.delete("/shipments/:id/farmers/:accountId", async (req: Request, res: 
   res.status(200).json(result.shipment);
 });
 
-async function refreshIncomingIfSettling(shipment: { coop_id: string; invoice_id: string | null }): Promise<void> {
+async function refreshIncomingIfSettling(shipment: {
+  coop_id: string;
+  invoice_id: string | null;
+}): Promise<void> {
   if (!shipment.invoice_id) return;
   const invoice = await store.getInvoice(shipment.invoice_id);
   if (invoice?.status === "settling") await pipeline.refreshCoopIncoming(shipment.coop_id);
@@ -768,7 +832,9 @@ apiRouter.get("/coops/:id/payouts", async (req: Request, res: Response) => {
     return;
   }
   const visible = seesDemo(req);
-  const invoices = (await store.getInvoices({ coop_id: coop.id })).filter((invoice) => includeInView(invoice, visible));
+  const invoices = (await store.getInvoices({ coop_id: coop.id })).filter((invoice) =>
+    includeInView(invoice, visible),
+  );
   const invoiceIds = new Set(invoices.map((i) => i.id));
   const members = await store.getCoopMembers(coop.id);
   const groups = await Promise.all(members.map((m) => store.getPayoutsByAccount(m.account_id)));
@@ -823,7 +889,9 @@ apiRouter.get("/invoices", async (req: Request, res: Response) => {
   const coop_id = req.query.coop_id as string | undefined;
   const account_id = req.query.account_id as string | undefined;
   const visible = seesDemo(req);
-  const invoices = (await store.getInvoices({ coop_id, account_id })).filter((invoice) => includeInView(invoice, visible));
+  const invoices = (await store.getInvoices({ coop_id, account_id })).filter((invoice) =>
+    includeInView(invoice, visible),
+  );
   res.status(200).json(invoices);
 });
 
@@ -884,7 +952,10 @@ apiRouter.post("/invoices", async (req: Request, res: Response) => {
   };
 
   await store.saveInvoice(invoice);
-  if ((invoice.type === "coop" && invoice.coop_id) || (invoice.type === "direct" && invoice.account_id)) {
+  if (
+    (invoice.type === "coop" && invoice.coop_id) ||
+    (invoice.type === "direct" && invoice.account_id)
+  ) {
     await openShipmentForInvoice(invoice);
   }
   res.status(201).json(invoice);
@@ -964,7 +1035,9 @@ apiRouter.post("/invoices/:id/checkout-session", async (req: Request, res: Respo
     }
 
     const requested =
-      typeof req.body?.currency_code === "string" ? req.body.currency_code.trim().toUpperCase() : invoice.currency.toUpperCase();
+      typeof req.body?.currency_code === "string"
+        ? req.body.currency_code.trim().toUpperCase()
+        : invoice.currency.toUpperCase();
     if (!isPayCurrency(requested)) {
       res.status(400).json({ error: "That currency is not supported for Payaza checkout" });
       return;
@@ -988,7 +1061,11 @@ apiRouter.post("/invoices/:id/approve-split", async (req: Request, res: Response
       return;
     }
 
-    const result = await pipeline.approveCoopSplit(getParam(req.params.id), treasurer_id, String(pin));
+    const result = await pipeline.approveCoopSplit(
+      getParam(req.params.id),
+      treasurer_id,
+      String(pin),
+    );
 
     if (!result.success) {
       if (result.error === "wrong" || result.error === "locked") {
@@ -1049,12 +1126,22 @@ apiRouter.post("/buyer/lookup", async (req: Request, res: Response) => {
   const proofs = await store.listPaymentProofs({ invoice_id: invoice.id });
   res.status(200).json({
     shipment: {
-      reference: shipment.reference, product: shipment.product, quantity_kg: shipment.quantity_kg,
-      destination: shipment.destination, ship_date: shipment.ship_date, status: shipment.status,
+      reference: shipment.reference,
+      product: shipment.product,
+      quantity_kg: shipment.quantity_kg,
+      destination: shipment.destination,
+      ship_date: shipment.ship_date,
+      status: shipment.status,
     },
     invoice: {
-      id: invoice.id, reference: invoice.reference, amount: invoice.amount, currency: invoice.currency,
-      description: invoice.description, status: invoice.status, buyer_name: invoice.buyer_name, due_at: invoice.due_at,
+      id: invoice.id,
+      reference: invoice.reference,
+      amount: invoice.amount,
+      currency: invoice.currency,
+      description: invoice.description,
+      status: invoice.status,
+      buyer_name: invoice.buyer_name,
+      due_at: invoice.due_at,
     },
     payee_name: payee.payee_name,
     proofs: proofs.map(({ receipt_data, payer_email, ...rest }) => rest),
@@ -1077,11 +1164,21 @@ apiRouter.post("/buyer/payment-proofs", async (req: Request, res: Response) => {
   const bank_reference = str(b.bank_reference, 128);
   const paid_at = str(b.paid_at, 32);
   const receipt = typeof b.receipt_data === "string" ? b.receipt_data : "";
-  if (!payer_name || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(payer_email) || !bank_reference || !paid_at || !(amount > 0)) {
+  if (
+    !payer_name ||
+    !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(payer_email) ||
+    !bank_reference ||
+    !paid_at ||
+    !(amount > 0)
+  ) {
     res.status(400).json({ error: "Fill in name, email, transfer reference, date and amount" });
     return;
   }
-  if (receipt && (!/^data:(image\/(png|jpeg|webp)|application\/pdf);base64,/.test(receipt) || receipt.length > 3_000_000)) {
+  if (
+    receipt &&
+    (!/^data:(image\/(png|jpeg|webp)|application\/pdf);base64,/.test(receipt) ||
+      receipt.length > 3_000_000)
+  ) {
     res.status(400).json({ error: "Receipt must be a PNG, JPG, WEBP or PDF under 2 MB" });
     return;
   }
@@ -1092,12 +1189,18 @@ apiRouter.post("/buyer/payment-proofs", async (req: Request, res: Response) => {
     shipment_reference: shipment.reference,
     coop_id: invoice.coop_id,
     account_id: invoice.type === "direct" ? invoice.account_id : null,
-    payer_name, payer_email, bank_reference, amount,
+    payer_name,
+    payer_email,
+    bank_reference,
+    amount,
     currency: str(b.currency, 8).toUpperCase() || invoice.currency,
-    paid_at, note: str(b.note, 1000) || null,
+    paid_at,
+    note: str(b.note, 1000) || null,
     receipt_name: receipt ? str(b.receipt_name, 255) || "receipt" : null,
     receipt_data: receipt || null,
-    status: "submitted", reviewed_by: null, reviewed_at: null,
+    status: "submitted",
+    reviewed_by: null,
+    reviewed_at: null,
     created_at: new Date().toISOString(),
   };
   await store.savePaymentProof(proof);
@@ -1107,12 +1210,20 @@ apiRouter.post("/buyer/payment-proofs", async (req: Request, res: Response) => {
 
 apiRouter.get("/coops/:id/payment-proofs", async (req: Request, res: Response) => {
   const proofs = await store.listPaymentProofs({ coop_id: getParam(req.params.id) });
-  res.status(200).json(proofs.map(({ receipt_data, ...rest }) => ({ ...rest, has_receipt: Boolean(receipt_data) })));
+  res
+    .status(200)
+    .json(
+      proofs.map(({ receipt_data, ...rest }) => ({ ...rest, has_receipt: Boolean(receipt_data) })),
+    );
 });
 
 apiRouter.get("/accounts/:id/payment-proofs", async (req: Request, res: Response) => {
   const proofs = await store.listPaymentProofs({ account_id: getParam(req.params.id) });
-  res.status(200).json(proofs.map(({ receipt_data, ...rest }) => ({ ...rest, has_receipt: Boolean(receipt_data) })));
+  res
+    .status(200)
+    .json(
+      proofs.map(({ receipt_data, ...rest }) => ({ ...rest, has_receipt: Boolean(receipt_data) })),
+    );
 });
 
 async function reviewableProof(req: Request, res: Response): Promise<PaymentProof | null> {
@@ -1137,7 +1248,9 @@ async function reviewableProof(req: Request, res: Response): Promise<PaymentProo
 apiRouter.get("/payment-proofs/:id/receipt", async (req: Request, res: Response) => {
   const proof = await reviewableProof(req, res);
   if (!proof) return;
-  res.status(200).json({ receipt_name: proof.receipt_name, receipt_data: proof.receipt_data ?? null });
+  res
+    .status(200)
+    .json({ receipt_name: proof.receipt_name, receipt_data: proof.receipt_data ?? null });
 });
 
 /** Treasurer checked the bank statement: record the collection so the split can be approved. */
@@ -1154,7 +1267,12 @@ apiRouter.post("/payment-proofs/:id/confirm", async (req: Request, res: Response
       res.status(409).json({ error: "This invoice is already paid" });
       return;
     }
-    const result = await pipeline.processPayment(invoice.id, `BANK-${proof.bank_reference}`, proof.amount, proof.currency);
+    const result = await pipeline.processPayment(
+      invoice.id,
+      `BANK-${proof.bank_reference}`,
+      proof.amount,
+      proof.currency,
+    );
     proof.status = "confirmed";
     proof.reviewed_by = req.account?.id ?? null;
     proof.reviewed_at = new Date().toISOString();
@@ -1216,7 +1334,10 @@ apiRouter.post("/webhooks/payaza", async (req: Request, res: Response) => {
     }
 
     const result = await pipeline.applyPayazaWebhook(decision);
-    if (!result.matched && (decision.kind === "payout_success" || decision.kind === "payout_failed")) {
+    if (
+      !result.matched &&
+      (decision.kind === "payout_success" || decision.kind === "payout_failed")
+    ) {
       res.status(503).json({ received: true, matched: false });
       return;
     }
