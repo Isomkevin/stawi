@@ -16,6 +16,7 @@ Leave the block above unchanged. Lovable may rewrite the text between `LOVABLE:B
 - Protected areas (/app, /coop, /direct) wrap their layout in RoleGate; in mock mode it auto-signs in the demo role so every screen is reviewable.
 - Invoice UI shared between co-op and direct dashboards lives in src/features/shared (table, new-invoice sheet, detail view) to avoid drift.
 - All reads go through queryOptions in src/lib/queries.ts so keys stay consistent across screens.
+- Co-op shipments are demo-only (src/lib/shipments.ts) until the backend adds them; /coop/shipments is a list + side detail (bottom sheet on mobile) keyed by ?id= so context is never lost.
 - Lovable edits the frontend only. Do not edit `backend/` or `docs/`.
 
 ## Other coding agents (backend and docs)
