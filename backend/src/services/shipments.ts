@@ -2,6 +2,35 @@ import { store } from "../store";
 import { requireKenyanPhone } from "./phone";
 import { Invoice, SHIPMENT_STATUSES, Shipment, ShipmentFarmer } from "../types";
 
+/** Seeded lots that used the co-op id as a label, e.g. COOP_KIAMBU-DRAFT. */
+const PLACEHOLDER_SHIPMENT_REFERENCE = /^[A-Z0-9_]+-(DRAFT|PREP)$/;
+
+export function isPlaceholderShipmentReference(reference: string): boolean {
+  return PLACEHOLDER_SHIPMENT_REFERENCE.test(reference);
+}
+
+/** First three letters of the co-op slug. coop_kiambu becomes KIA. */
+export function shipmentReferencePrefix(coopId: string): string {
+  const letters = coopId.replace(/^coop_/, "").replace(/[^A-Za-z]/g, "").slice(0, 3).toUpperCase();
+  return letters || "SHP";
+}
+
+/**
+ * Next free shipment number for a co-op.
+ * Seeded lots are KIA-S-001. Treasurer-created drafts add a short suffix: KIA-S-001-AB12.
+ */
+export function mintShipmentReference(coopId: string, taken: Iterable<string>, suffix?: string): string {
+  const prefix = shipmentReferencePrefix(coopId);
+  const used = new Set(Array.from(taken, (reference) => reference.toUpperCase()));
+  const cleaned = suffix?.replace(/[^A-Za-z0-9]/g, "").slice(0, 8).toUpperCase() ?? "";
+  const tail = cleaned ? `-${cleaned}` : "";
+  for (let n = 1; n <= 9999; n++) {
+    const reference = `${prefix}-S-${String(n).padStart(3, "0")}${tail}`;
+    if (!used.has(reference)) return reference;
+  }
+  throw new Error(`No free shipment reference for ${coopId}`);
+}
+
 /** A new co-op invoice opens an empty draft shipment. The treasurer adds the farmers who will be paid. */
 export async function openShipmentForInvoice(invoice: Invoice): Promise<Shipment> {
   const match = invoice.description.match(/(\d+)\s*kg/i);

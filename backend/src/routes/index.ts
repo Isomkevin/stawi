@@ -18,6 +18,7 @@ import { paymentReceipt } from "../services/receipt";
 import {
   addShipmentFarmer,
   advanceShipment,
+  mintShipmentReference,
   openShipmentForInvoice,
   removeShipmentFarmer,
   updateShipmentDetails,
@@ -623,10 +624,7 @@ apiRouter.post("/coops/:id/shipments", async (req: Request, res: Response) => {
   const id = `shp_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
   const shipment = {
     id,
-    reference: `${coop.id
-      .replace(/^coop_/, "")
-      .slice(0, 3)
-      .toUpperCase()}-S-${String(existing.length + 1).padStart(3, "0")}-${id.slice(-4).toUpperCase()}`,
+    reference: mintShipmentReference(coop.id, existing.map((row) => row.reference), id.slice(-4)),
     coop_id: coop.id,
     account_id: null,
     buyer_name: buyer,

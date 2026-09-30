@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/features/shared/DashboardShell";
 import { downloadCsv } from "@/lib/csv";
 import { accountName } from "@/lib/mock";
-import { coopPayoutsOptions } from "@/lib/queries";
+import { coopMembersOptions, coopPayoutsOptions } from "@/lib/queries";
 import { useCoopId } from "@/lib/session";
 import { formatDateTime, formatKesCents } from "@/lib/format";
 
@@ -28,10 +28,13 @@ export const Route = createFileRoute("/coop/payouts")({
 function Payouts() {
   const coopId = useCoopId();
   const payouts = useQuery(coopPayoutsOptions(coopId));
+  const members = useQuery(coopMembersOptions(coopId));
+  const nameOf = (accountId: string) =>
+    members.data?.find((member) => member.account_id === accountId)?.full_name ?? accountName(accountId);
   const exportCsv = () =>
     downloadCsv("stawi-payouts.csv", [
       ["id", "farmer", "invoice", "amount_kes", "status", "date"],
-      ...(payouts.data ?? []).map((p) => [p.id, accountName(p.account_id), p.invoice_id, (p.amount_kes_cents / 100).toFixed(2), p.status, p.created_at]),
+      ...(payouts.data ?? []).map((p) => [p.id, nameOf(p.account_id), p.invoice_id, (p.amount_kes_cents / 100).toFixed(2), p.status, p.created_at]),
     ]);
 
   return (
@@ -62,7 +65,7 @@ function Payouts() {
                 <tr key={p.id} className="border-b border-border last:border-0">
                   <td className="px-4 py-3">
                     <span className="inline-flex items-center gap-2">
-                      {accountName(p.account_id)}
+                      {nameOf(p.account_id)}
                       <DemoBadge demo={p.is_demo} />
                     </span>
                   </td>

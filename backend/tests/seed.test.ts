@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import { feeCents, splitByKilos, toKesCents } from "../src/services/money";
-import { seedDatabase, SEED_IDS } from "../src/data/seed";
+import { repairPlaceholderShipmentReferences, seedDatabase, SEED_IDS } from "../src/data/seed";
 import { store } from "../src/store";
 import { Payout } from "../src/types";
 
@@ -156,6 +156,13 @@ describe("rich demo seed", () => {
       expect(preparing?.farmers.length).toBeGreaterThan(0);
       for (const shipment of shipments) {
         expect(shipment.is_demo).toBe(true);
+        expect(shipment.reference).not.toMatch(/DRAFT|PREP/);
+        if (shipment.invoice_id) {
+          const invoice = invoices.find((item) => item.id === shipment.invoice_id);
+          expect(shipment.reference).toBe(invoice?.reference);
+        } else {
+          expect(shipment.reference).toMatch(/^[A-Z]{3}-S-\d{3}$/);
+        }
         const kilos = shipment.farmers.reduce((sum, farmer) => sum + farmer.kilos, 0);
         if (shipment.farmers.length > 0) expect(kilos).toBe(shipment.quantity_kg);
       }
@@ -168,5 +175,21 @@ describe("rich demo seed", () => {
     expect(hamburgShipment?.currency).toBe("USD");
     const berlinShipment = kiambuShipments.find((shipment) => shipment.invoice_id === "inv_coop_berlin_102");
     expect(berlinShipment?.status).toBe("delivered");
+  });
+
+  it("rewrites placeholder shipment references already stored in the ledger", async () => {
+    await seedDatabase();
+    const draft = (await store.listShipments("coop_kiambu")).find((shipment) => shipment.id === "shp_coop_kiambu_draft");
+    expect(draft).toBeTruthy();
+    await store.saveShipment({ ...draft!, reference: "COOP_KIAMBU-DRAFT" });
+
+    await repairPlaceholderShipmentReferences();
+
+    const repaired = await store.getShipment("shp_coop_kiambu_draft");
+    expect(repaired?.reference).toMatch(/^KIA-S-\d{3}$/);
+    expect(repaired?.reference).not.toMatch(/DRAFT|PREP/);
+    const kiambu = await store.listShipments("coop_kiambu");
+    const references = kiambu.map((shipment) => shipment.reference);
+    expect(new Set(references).size).toBe(references.length);
   });
 });

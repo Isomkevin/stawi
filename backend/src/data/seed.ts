@@ -18,6 +18,7 @@ import {
   demoInvoiceIds,
 } from "./catalog";
 import { feeCents, splitByKilos, toKesCents } from "../services/money";
+import { isPlaceholderShipmentReference, mintShipmentReference } from "../services/shipments";
 import { store } from "../store";
 import { Account, CoopMember, Invoice, InvoiceStatus, PayoutDestination, PayoutStatus, Shipment, ShipmentFarmer, ShipmentStatus } from "../types";
 
@@ -726,6 +727,7 @@ export async function seedShipments(): Promise<void> {
   for (const coop of coops) {
     const members = await store.getCoopMembers(coop.id);
     const invoices = (await store.getInvoices({ coop_id: coop.id })).filter((invoice) => invoice.type === "coop");
+    const taken: string[] = [];
     for (const invoice of invoices) {
       const status = stageForInvoice(invoice.status);
       const timing = timingFor(status, invoice.created_at);
@@ -752,6 +754,7 @@ export async function seedShipments(): Promise<void> {
         farmers,
         updated_at: invoice.created_at,
       };
+      taken.push(shipment.reference);
       await store.saveShipment(shipment);
     }
 
@@ -761,9 +764,12 @@ export async function seedShipments(): Promise<void> {
     assertShort(draftId, "shipment");
     assertShort(preparingId, "shipment");
     const now = new Date().toISOString();
+    const draftReference = mintShipmentReference(coop.id, taken);
+    taken.push(draftReference);
+    const preparingReference = mintShipmentReference(coop.id, taken);
     await store.saveShipment({
       id: draftId,
-      reference: `${coop.id.toUpperCase()}-DRAFT`,
+      reference: draftReference,
       coop_id: coop.id,
       buyer_name: "Buyer not assigned",
       product,
@@ -782,7 +788,7 @@ export async function seedShipments(): Promise<void> {
     const preparingKg = 1500;
     await store.saveShipment({
       id: preparingId,
-      reference: `${coop.id.toUpperCase()}-PREP`,
+      reference: preparingReference,
       coop_id: coop.id,
       buyer_name: "Buyer not invoiced",
       product,
@@ -798,6 +804,28 @@ export async function seedShipments(): Promise<void> {
       farmers: assignFarmers(members, preparingId, preparingKg),
       updated_at: now,
     });
+  }
+}
+
+/**
+ * Databases seeded before shipment numbers existed still store COOP_KIAMBU-DRAFT and COOP_KIAMBU-PREP.
+ * Give those lots the next free KIA-S-001 style reference. Fresh seeds already use that form.
+ */
+export async function repairPlaceholderShipmentReferences(): Promise<void> {
+  const coops = await store.getAllCoops();
+  for (const coop of coops) {
+    const shipments = await store.listShipments(coop.id);
+    const taken = shipments.map((shipment) => shipment.reference);
+    for (const shipment of shipments) {
+      if (!isPlaceholderShipmentReference(shipment.reference)) continue;
+      const reference = mintShipmentReference(
+        coop.id,
+        taken.filter((item) => item !== shipment.reference)
+      );
+      const index = taken.indexOf(shipment.reference);
+      if (index >= 0) taken[index] = reference;
+      await store.saveShipment({ ...shipment, reference });
+    }
   }
 }
 

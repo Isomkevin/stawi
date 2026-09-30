@@ -15,7 +15,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { invoiceSteps } from "./invoiceSteps";
 import { PaymentReceiptCard } from "./PaymentReceiptCard";
 import { api, ApiError } from "@/lib/api";
-import { invoiceOptions } from "@/lib/queries";
+import { coopMembersOptions, invoiceOptions } from "@/lib/queries";
 import { accountName } from "@/lib/mock";
 import { useAccountId } from "@/lib/session";
 import { formatCurrency, formatDateTime, formatKesCents } from "@/lib/format";
@@ -25,6 +25,10 @@ export function InvoiceDetailView({ invoiceId, backTo }: { invoiceId: string; ba
   const qc = useQueryClient();
   const treasurerId = useAccountId();
   const detail = useQuery(invoiceOptions(invoiceId));
+  const coopId = detail.data?.invoice.coop_id ?? "";
+  const members = useQuery({ ...coopMembersOptions(coopId || "none"), enabled: Boolean(coopId) });
+  const nameOf = (accountId: string) =>
+    members.data?.find((member) => member.account_id === accountId)?.full_name ?? accountName(accountId);
   const [pinOpen, setPinOpen] = useState(false);
   const [pin, setPin] = useState("");
   const [pinErr, setPinErr] = useState<string | null>(null);
@@ -103,7 +107,7 @@ export function InvoiceDetailView({ invoiceId, backTo }: { invoiceId: string; ba
                   <tbody>
                     {split_preview.map((l) => (
                       <tr key={l.account_id} className="border-b border-border last:border-0">
-                        <td className="py-2">{accountName(l.account_id)}</td>
+                        <td className="py-2">{nameOf(l.account_id)}</td>
                         <td className="py-2 text-right tabular">{l.share}%</td>
                         <td className="py-2 text-right text-muted-foreground tabular">{formatKesCents(l.fee_kes_cents)}</td>
                         <td className="py-2 text-right tabular">{formatKesCents(l.net_kes_cents)}</td>

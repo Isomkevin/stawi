@@ -72,6 +72,8 @@ function Overview() {
     live: i.is_demo ? 0 : (i.kes_total_cents ?? 0) / 100,
     sample: i.is_demo ? (i.kes_total_cents ?? 0) / 100 : 0,
   }));
+  const nameOf = (accountId: string) =>
+    members.data?.find((member) => member.account_id === accountId)?.full_name ?? accountName(accountId);
   const perFarmer = (members.data ?? []).map((m) => ({
     name: (m.full_name ?? accountName(m.account_id)).split(" ")[0],
     kes:
@@ -271,7 +273,7 @@ function Overview() {
               >
                 <AlertTriangle className="size-4 shrink-0 text-terracotta" />
                 <span className="flex-1">
-                  Payout to {accountName(p.account_id)} failed — M-Pesa not verified
+                  Payout to {nameOf(p.account_id)} failed — M-Pesa not verified
                 </span>
               </li>
             ))}
@@ -338,7 +340,7 @@ function Overview() {
                 <Tooltip
                   formatter={(v: number, _n, p) => [
                     `${v}%`,
-                    accountName((p.payload as { account_id: string }).account_id),
+                    nameOf((p.payload as { account_id: string }).account_id),
                   ]}
                   contentStyle={{
                     background: "var(--card)",
