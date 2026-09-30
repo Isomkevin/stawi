@@ -22,7 +22,13 @@ import { DemoBadge } from "@/components/stawi/DemoDataControl";
 import { StatusChip } from "@/components/stawi/StatusChip";
 import { Timeline, type TimelineStep } from "@/components/stawi/Timeline";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { PaymentReceiptCard } from "@/features/shared/PaymentReceiptCard";
 import {
   PAY_CURRENCIES,
@@ -40,7 +46,8 @@ export const Route = createFileRoute("/pay/$invoiceId")({
       { title: "Pay invoice — Stawi" },
       {
         name: "description",
-        content: "Review and pay your Stawi export invoice. Funds convert at a live rate and reach every farmer the same day.",
+        content:
+          "Review and pay your Stawi export invoice. Funds convert at a live rate and reach every farmer the same day.",
       },
       { property: "og:title", content: "Pay invoice — Stawi" },
       {
@@ -65,9 +72,15 @@ function PayPage() {
 
   const payeeName = data.payee_name ?? "Stawi seller";
   const farmerCount = data.farmer_count ?? null;
-  const [payCurrency, setPayCurrency] = useState<PayCurrency>(() => defaultPayCurrency(invoice.currency));
-  const expired = invoice.status === "pending" && !!invoice.due_at && new Date(invoice.due_at) < new Date();
-  const payIn = invoice.status === "pending" && !expired ? <PayInSelect value={payCurrency} onChange={setPayCurrency} /> : null;
+  const [payCurrency, setPayCurrency] = useState<PayCurrency>(() =>
+    defaultPayCurrency(invoice.currency),
+  );
+  const expired =
+    invoice.status === "pending" && !!invoice.due_at && new Date(invoice.due_at) < new Date();
+  const payIn =
+    invoice.status === "pending" && !expired ? (
+      <PayInSelect value={payCurrency} onChange={setPayCurrency} />
+    ) : null;
 
   if (expired && invoice.due_at) {
     return (
@@ -118,7 +131,13 @@ function PayPage() {
   );
 }
 
-function PayInSelect({ value, onChange }: { value: PayCurrency; onChange: (currency: PayCurrency) => void }) {
+function PayInSelect({
+  value,
+  onChange,
+}: {
+  value: PayCurrency;
+  onChange: (currency: PayCurrency) => void;
+}) {
   return (
     <label className="flex flex-col items-end gap-1 text-[10px] tracking-wide text-muted-foreground uppercase">
       Pay in
@@ -128,7 +147,9 @@ function PayInSelect({ value, onChange }: { value: PayCurrency; onChange: (curre
         </SelectTrigger>
         <SelectContent align="end">
           {PAY_CURRENCIES.map((code) => (
-            <SelectItem key={code} value={code}>{code}</SelectItem>
+            <SelectItem key={code} value={code}>
+              {code}
+            </SelectItem>
           ))}
         </SelectContent>
       </Select>
@@ -217,9 +238,7 @@ function UnpaidView({
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-xs tracking-wide text-muted-foreground uppercase">Amount due</p>
-            <p className="text-display mt-1 text-4xl tabular">
-              {dueLabel}
-            </p>
+            <p className="text-display mt-1 text-4xl tabular">{dueLabel}</p>
             <p className="mt-1 text-sm text-muted-foreground">
               {invoice.description} · ref {invoice.reference}
             </p>
@@ -263,7 +282,8 @@ function UnpaidView({
         Pay via stablecoins
       </Button>
       <p className="text-center text-xs text-muted-foreground">
-        Stablecoin payments are not available yet. Card and bank transfer run through our payment partners.
+        Stablecoin payments are not available yet. Card and bank transfer run through our payment
+        partners.
       </p>
 
       <PayazaCheckout
@@ -318,7 +338,11 @@ function ReceiptView({
   transactions: Transaction[];
 }) {
   const steps: TimelineStep[] = [
-    { label: "Payment received", state: "done", detail: `${formatCurrency(invoice.amount, invoice.currency)} · ${payeeName}` },
+    {
+      label: "Payment received",
+      state: "done",
+      detail: `${formatCurrency(invoice.amount, invoice.currency)} · ${payeeName}`,
+    },
   ];
   const conversion = transactions.find((t) => t.type === "conversion");
   steps.push({
@@ -337,11 +361,7 @@ function ReceiptView({
   steps.push({
     label: invoice.type === "coop" ? "M-Pesa payouts sent" : "Payout to bank account",
     state:
-      invoice.status === "completed"
-        ? "done"
-        : invoice.status === "settling"
-          ? "active"
-          : "todo",
+      invoice.status === "completed" ? "done" : invoice.status === "settling" ? "active" : "todo",
   });
 
   return (
@@ -362,7 +382,8 @@ function ReceiptView({
           {formatCurrency(invoice.amount, invoice.currency)}
         </p>
         <p className="mt-2 text-sm text-muted-foreground">
-          Paid {formatDate(invoice.created_at)} · receipt {invoice.payaza_checkout_reference ?? invoice.reference}
+          Paid {formatDate(invoice.created_at)} · receipt{" "}
+          {invoice.payaza_checkout_reference ?? invoice.reference}
         </p>
         {invoice.kes_total_cents != null && (
           <p className="mt-1 text-sm text-muted-foreground tabular">
@@ -383,7 +404,11 @@ function ReceiptView({
         <Timeline steps={steps} className="mt-5" />
       </section>
 
-      <Button asChild variant="outline" className="w-full min-h-[48px] border-border bg-transparent">
+      <Button
+        asChild
+        variant="outline"
+        className="w-full min-h-[48px] border-border bg-transparent"
+      >
         <Link to="/">
           <ArrowLeft className="size-4" strokeWidth={2} />
           Back to Stawi
@@ -394,7 +419,12 @@ function ReceiptView({
 }
 
 function WhatHappensNext() {
-  const steps = ["Payment received", "Converted to KES", "Split by contribution", "Same-day M-Pesa"];
+  const steps = [
+    "Payment received",
+    "Converted to KES",
+    "Split by contribution",
+    "Same-day Payout",
+  ];
   return (
     <section>
       <h3 className="text-sm font-medium tracking-wide text-muted-foreground uppercase">
@@ -489,10 +519,7 @@ function Shell({
           </Link>
           <div className="flex flex-col items-end gap-1.5">
             {payIn}
-            <Link
-              to="/"
-              className="text-xs text-muted-foreground hover:text-foreground"
-            >
+            <Link to="/" className="text-xs text-muted-foreground hover:text-foreground">
               Powered by Stawi
             </Link>
           </div>
