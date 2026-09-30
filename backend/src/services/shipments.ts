@@ -58,6 +58,31 @@ export async function openShipmentForInvoice(invoice: Invoice): Promise<Shipment
   return shipment;
 }
 
+/** Point an existing co-op shipment at a new invoice. Buyer, value, and currency follow the invoice. */
+export async function linkInvoiceToShipment(
+  shipmentId: string,
+  invoice: Invoice
+): Promise<{ ok: true; shipment: Shipment } | { ok: false; status: number; error: string }> {
+  const shipment = await store.getShipment(shipmentId);
+  if (!shipment || !invoice.coop_id || shipment.coop_id !== invoice.coop_id) {
+    return { ok: false, status: 400, error: "Choose a shipment from this co-op" };
+  }
+  if (shipment.invoice_id && shipment.invoice_id !== invoice.id) {
+    const existing = await store.getInvoice(shipment.invoice_id);
+    if (existing) return { ok: false, status: 409, error: "This shipment already has an invoice" };
+  }
+  const next: Shipment = {
+    ...shipment,
+    invoice_id: invoice.id,
+    buyer_name: invoice.buyer_name,
+    value: invoice.amount,
+    currency: invoice.currency,
+    updated_at: new Date().toISOString(),
+  };
+  await store.saveShipment(next);
+  return { ok: true, shipment: next };
+}
+
 export async function advanceShipment(
   id: string
 ): Promise<{ ok: true; shipment: Shipment } | { ok: false; status: number; error: string }> {

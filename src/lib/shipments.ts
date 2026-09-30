@@ -127,6 +127,21 @@ export const shipmentsApi = {
     });
     return { ...s, farmers: [...s.farmers] };
   },
+  attachInvoice: async (
+    shipmentId: string,
+    invoice: { id: string; coop_id?: string | null; buyer_name: string; amount: number; currency: string },
+  ): Promise<Shipment> => {
+    await wait();
+    const shipment = shipments.find((row) => row.id === shipmentId);
+    if (!shipment || shipment.coop_id !== invoice.coop_id) throw new ApiError(400, "Choose a shipment from this co-op");
+    if (shipment.invoice_id && shipment.invoice_id !== invoice.id) throw new ApiError(409, "This shipment already has an invoice");
+    shipment.invoice_id = invoice.id;
+    shipment.buyer_name = invoice.buyer_name;
+    shipment.value = invoice.amount;
+    shipment.currency = invoice.currency;
+    shipment.updated_at = new Date().toISOString();
+    return { ...shipment, farmers: [...shipment.farmers] };
+  },
   remove: async (id: string): Promise<void> => {
     await wait();
     const i = shipments.findIndex((x) => x.id === id);

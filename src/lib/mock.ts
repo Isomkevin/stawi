@@ -710,6 +710,16 @@ export const mockApi = {
       due_at: body.due_at ?? daysAhead(14),
     };
     invoices.unshift(invoice);
+    if (body.type === "coop" && body.shipment_id) {
+      const { shipmentsApi } = await import("./shipments");
+      try {
+        await shipmentsApi.attachInvoice(body.shipment_id, invoice);
+      } catch (err) {
+        const index = invoices.indexOf(invoice);
+        if (index >= 0) invoices.splice(index, 1);
+        throw err;
+      }
+    }
     return structuredClone(invoice);
   },
 

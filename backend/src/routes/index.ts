@@ -19,6 +19,7 @@ import {
   addShipmentFarmer,
   advanceShipment,
   mintShipmentReference,
+  linkInvoiceToShipment,
   openShipmentForInvoice,
   removeShipmentFarmer,
   updateShipmentDetails,
@@ -906,6 +907,7 @@ apiRouter.post("/invoices", async (req: Request, res: Response) => {
     description,
     reference,
     due_at,
+    shipment_id,
   } = req.body;
 
   if (!type || !buyer_name || !buyer_email || amount === undefined || !currency) {
@@ -950,7 +952,15 @@ apiRouter.post("/invoices", async (req: Request, res: Response) => {
   };
 
   await store.saveInvoice(invoice);
-  if (
+  const chosenShipment = typeof shipment_id === "string" ? shipment_id.trim() : "";
+  if (invoice.type === "coop" && invoice.coop_id && chosenShipment) {
+    const linked = await linkInvoiceToShipment(chosenShipment, invoice);
+    if (!linked.ok) {
+      await store.deleteInvoice(invoice.id);
+      res.status(linked.status).json({ error: linked.error });
+      return;
+    }
+  } else if (
     (invoice.type === "coop" && invoice.coop_id) ||
     (invoice.type === "direct" && invoice.account_id)
   ) {

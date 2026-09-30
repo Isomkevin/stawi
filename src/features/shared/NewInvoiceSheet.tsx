@@ -12,10 +12,10 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { api } from "@/lib/api";
-import { coopMembersOptions } from "@/lib/queries";
+import { coopMembersOptions, coopShipmentsOptions } from "@/lib/queries";
 import { FEE_RATE, fxFor, accountName } from "@/lib/mock";
 import { formatKesCents } from "@/lib/format";
-import type { Invoice } from "@/lib/types";
+import { ApiError, type Invoice, type ShipmentFarmer } from "@/lib/types";
 
 const schema = z.object({
   buyer_name: z.string().min(2, "Enter the buyer's name"),
@@ -23,6 +23,7 @@ const schema = z.object({
   amount: z.coerce.number().positive("Enter an amount"),
   currency: z.enum(["USD", "EUR"]),
   description: z.string().min(3, "Describe the goods"),
+  shipment_id: z.string().optional(),
 });
 type Values = z.infer<typeof schema>;
 
@@ -41,19 +42,34 @@ export function NewInvoiceSheet({
   const [created, setCreated] = useState<Invoice | null>(null);
   const qc = useQueryClient();
   const members = useQuery({ ...coopMembersOptions(coopId ?? ""), enabled: type === "coop" && !!coopId });
+  const shipments = useQuery({ ...coopShipmentsOptions(coopId ?? ""), enabled: type === "coop" && !!coopId });
   const form = useForm<Values>({
     resolver: zodResolver(schema),
-    defaultValues: { buyer_name: "", buyer_email: "", amount: 0, currency: "USD", description: "" },
+    defaultValues: { buyer_name: "", buyer_email: "", amount: 0, currency: "USD", description: "", shipment_id: "" },
   });
   const amount = Number(form.watch("amount")) || 0;
   const currency = form.watch("currency");
+  const shipmentId = form.watch("shipment_id") ?? "";
+  const openLots = (shipments.data ?? []).filter((shipment) => !shipment.invoice_id);
+  const chosen = openLots.find((shipment) => shipment.id === shipmentId);
 
   const create = useMutation({
     mutationFn: (v: Values) =>
-      api.createInvoice({ ...v, type, coop_id: coopId, account_id: accountId }),
+      api.createInvoice({
+        buyer_name: v.buyer_name,
+        buyer_email: v.buyer_email,
+        amount: v.amount,
+        currency: v.currency,
+        description: v.description,
+        type,
+        coop_id: coopId,
+        account_id: accountId,
+        shipment_id: v.shipment_id || undefined,
+      }),
     onSuccess: (inv) => {
       setCreated(inv);
       void qc.invalidateQueries({ queryKey: ["invoices"] });
+      if (coopId) void qc.invalidateQueries({ queryKey: ["coop", coopId, "shipments"] });
     },
   });
 
@@ -114,24 +130,49 @@ export function NewInvoiceSheet({
             <F label="What's being sold" error={form.formState.errors.description?.message}>
               <Textarea {...form.register("description")} rows={2} />
             </F>
+            {type === "coop" && (
+              <F label="Shipment">
+                <select {...form.register("shipment_id")} className="h-11 w-full rounded-md border border-input bg-transparent px-3 text-sm">
+                  <option value="">New shipment</option>
+                  {openLots.map((shipment) => (
+                    <option key={shipment.id} value={shipment.id}>
+                      {shipment.reference} · {shipment.product} · {shipment.quantity_kg} kg
+                    </option>
+                  ))}
+                </select>
+              </F>
+            )}
 
             {amount > 0 && (
               <div className="rounded-2xl border border-border bg-card p-4 text-sm">
                 <p className="mb-2 text-xs tracking-wide text-amber uppercase">Estimate — final rate set at payment</p>
                 <div className="flex justify-between"><span className="text-muted-foreground">You receive about</span><span className="tabular text-lime">{formatKesCents(netPreview)}</span></div>
-                {type === "coop" && members.data && (
+                {type === "coop" && chosen && chosen.farmers.length > 0 && (
                   <div className="mt-3 max-h-48 space-y-1 overflow-y-auto border-t border-border pt-3">
-                    {members.data.map((m) => (
-                      <div key={m.account_id} className="flex justify-between text-xs">
-                        <span>{m.full_name ?? accountName(m.account_id)} · {m.contribution_share}%</span>
-                        <span className="tabular">{formatKesCents(Math.round((netPreview * m.contribution_share) / 100))}</span>
+                    {kiloShares(netPreview, chosen.farmers).map((row) => (
+                      <div key={row.account_id} className="flex justify-between text-xs">
+                        <span>{memberName(members.data, row.account_id)} · {row.kilos} kg</span>
+                        <span className="tabular">{formatKesCents(row.cents)}</span>
                       </div>
                     ))}
                   </div>
                 )}
+                {type === "coop" && (
+                  <p className="mt-3 border-t border-border pt-3 text-xs text-muted-foreground">
+                    {chosen
+                      ? chosen.farmers.length > 0
+                        ? "These farmers are paid from this shipment, by the kilos they delivered."
+                        : "Add farmers on this shipment. They are the ones paid."
+                      : "A new shipment opens with this invoice. Add the farmers there before the split."}
+                  </p>
+                )}
               </div>
             )}
-            {create.isError && <p role="alert" className="text-sm text-terracotta">Couldn't create the invoice. Try again.</p>}
+            {create.isError && (
+              <p role="alert" className="text-sm text-terracotta">
+                {create.error instanceof ApiError ? create.error.message : "Couldn't create the invoice. Try again."}
+              </p>
+            )}
             <Button type="submit" className="h-12 w-full" disabled={create.isPending}>
               {create.isPending && <Loader2 className="size-4 animate-spin" />} Create payment link
             </Button>
@@ -140,6 +181,27 @@ export function NewInvoiceSheet({
       </SheetContent>
     </Sheet>
   );
+}
+
+function memberName(members: { account_id: string; full_name?: string | null }[] | undefined, accountId: string) {
+  return members?.find((member) => member.account_id === accountId)?.full_name ?? accountName(accountId);
+}
+
+function kiloShares(net: number, farmers: ShipmentFarmer[]) {
+  const total = farmers.reduce((sum, farmer) => sum + farmer.kilos, 0);
+  if (total <= 0 || net <= 0) return farmers.map((farmer) => ({ ...farmer, cents: 0 }));
+  const rows = farmers.map((farmer) => {
+    const exact = (net * farmer.kilos) / total;
+    const cents = Math.floor(exact);
+    return { ...farmer, cents, remainder: exact - cents };
+  });
+  let left = net - rows.reduce((sum, row) => sum + row.cents, 0);
+  for (const row of [...rows].sort((a, b) => b.remainder - a.remainder || b.kilos - a.kilos)) {
+    if (left <= 0) break;
+    row.cents += 1;
+    left -= 1;
+  }
+  return rows;
 }
 
 function F({ label, error, children }: { label: string; error?: string | undefined; children: React.ReactNode }) {

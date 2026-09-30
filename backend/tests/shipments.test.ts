@@ -379,6 +379,52 @@ describe("Co-op shipments", () => {
     expect(locked.status).toBe(409);
   });
 
+  it("links a new invoice to the shipment you choose", async () => {
+    await store.saveShipment(shipment());
+    const linked = await request(app).post("/invoices").send({
+      type: "coop",
+      coop_id: "coop_test",
+      buyer_name: "Browser Buyer",
+      buyer_email: "buyer@example.com",
+      amount: 4200,
+      currency: "USD",
+      description: "Washed AA",
+      shipment_id: "shp_test",
+    });
+    expect(linked.status).toBe(201);
+    const saved = await store.getShipment("shp_test");
+    expect(saved?.invoice_id).toBe(linked.body.id);
+    expect(saved?.buyer_name).toBe("Browser Buyer");
+    expect(saved?.value).toBe(4200);
+    expect(saved?.currency).toBe("USD");
+
+    const again = await request(app).post("/invoices").send({
+      type: "coop",
+      coop_id: "coop_test",
+      buyer_name: "Second Buyer",
+      buyer_email: "second@example.com",
+      amount: 100,
+      currency: "EUR",
+      description: "Another lot",
+      shipment_id: "shp_test",
+    });
+    expect(again.status).toBe(409);
+
+    const opened = await request(app).post("/invoices").send({
+      type: "coop",
+      coop_id: "coop_test",
+      buyer_name: "New Lot",
+      buyer_email: "new@example.com",
+      amount: 800,
+      currency: "USD",
+      description: "500 kg peaberry",
+    });
+    expect(opened.status).toBe(201);
+    const created = await store.getShipmentByInvoice(opened.body.id);
+    expect(created?.quantity_kg).toBe(500);
+    expect(created?.farmers).toEqual([]);
+  });
+
   it("returns 404 for an unknown co-op or shipment", async () => {
     const missingCoop = await request(app).get("/coops/missing/shipments");
     expect(missingCoop.status).toBe(404);

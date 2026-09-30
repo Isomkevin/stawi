@@ -198,6 +198,8 @@ export type CreateInvoiceBody = {
   description: string;
   reference?: string | undefined;
   due_at?: string | null | undefined;
+  /** Co-op only. Links this invoice to a shipment that does not already have one. */
+  shipment_id?: string | undefined;
 };
 
 export type WithdrawBody = {
