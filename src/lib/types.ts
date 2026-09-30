@@ -202,6 +202,17 @@ export type CreateInvoiceBody = {
   shipment_id?: string | undefined;
 };
 
+/** Commercial fields that can change until the buyer pays. */
+export type UpdateInvoiceBody = {
+  buyer_name?: string | undefined;
+  buyer_email?: string | undefined;
+  amount?: number | undefined;
+  currency?: string | undefined;
+  description?: string | undefined;
+  /** Co-op only. Moves the link to another shipment that does not already have an invoice. */
+  shipment_id?: string | undefined;
+};
+
 export type WithdrawBody = {
   destination_id: string;
   amount_kes_cents: number;

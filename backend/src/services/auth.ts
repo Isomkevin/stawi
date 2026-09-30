@@ -281,7 +281,7 @@ export async function enforceAuth(req: Request, res: Response, next: NextFunctio
       }
     }
 
-    if (req.method === "DELETE" && /^\/invoices\/[^/]+$/.test(req.path)) {
+    if ((req.method === "DELETE" || req.method === "PATCH") && /^\/invoices\/[^/]+$/.test(req.path)) {
       const invoiceId = decodeURIComponent(req.path.split("/")[2] || "");
       const invoice = await store.getInvoice(invoiceId);
       if (!invoice) {
@@ -291,11 +291,18 @@ export async function enforceAuth(req: Request, res: Response, next: NextFunctio
       if (invoice.type === "coop" || invoice.coop_id) {
         const coop = invoice.coop_id ? await store.getCoop(invoice.coop_id) : undefined;
         if (!coop || coop.treasurer_account_id !== req.account.id) {
-          res.status(403).json({ error: "Only the co-op treasurer can delete this invoice" });
+          res.status(403).json({
+            error:
+              req.method === "PATCH"
+                ? "Only the co-op treasurer can edit this invoice"
+                : "Only the co-op treasurer can delete this invoice",
+          });
           return;
         }
       } else if (invoice.account_id !== req.account.id) {
-        res.status(403).json({ error: "You can only delete your own invoice" });
+        res.status(403).json({
+          error: req.method === "PATCH" ? "You can only edit your own invoice" : "You can only delete your own invoice",
+        });
         return;
       }
     }

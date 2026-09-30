@@ -85,6 +85,19 @@ export type Invoice = {
   due_at: string | null;
 };
 
+/** Fields a treasurer or exporter may change while the invoice is still unpaid. */
+export type UpdateInvoiceBody = {
+  buyer_name?: string;
+  buyer_email?: string;
+  buyer_phone?: string | null;
+  amount?: number;
+  currency?: string;
+  description?: string;
+  due_at?: string | null;
+  /** Co-op only. Moves the link to another shipment that does not already have an invoice. */
+  shipment_id?: string;
+};
+
 export type TransactionType = "collection" | "conversion" | "settlement" | "payout";
 export type TransactionStatus = "pending" | "completed" | "failed";
 

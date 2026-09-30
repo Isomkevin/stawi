@@ -142,6 +142,15 @@ export const shipmentsApi = {
     shipment.updated_at = new Date().toISOString();
     return { ...shipment, farmers: [...shipment.farmers] };
   },
+  linkedTo: (invoiceId: string): Shipment | undefined => shipments.find((row) => row.invoice_id === invoiceId),
+  applyInvoice: (invoice: { id: string; buyer_name: string; amount: number; currency: string }): void => {
+    const shipment = shipments.find((row) => row.invoice_id === invoice.id);
+    if (!shipment) return;
+    shipment.buyer_name = invoice.buyer_name;
+    shipment.value = invoice.amount;
+    shipment.currency = invoice.currency;
+    shipment.updated_at = new Date().toISOString();
+  },
   remove: async (id: string): Promise<void> => {
     await wait();
     const i = shipments.findIndex((x) => x.id === id);

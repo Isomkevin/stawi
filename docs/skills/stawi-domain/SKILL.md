@@ -256,6 +256,9 @@ POST /invoices/{id}/checkout-session    { currency_code? } -> { reference, check
                                         checkout_amount is the invoice converted into that currency. The buyer page opens the Payaza Web SDK with that amount, currency_code, public_key, and transaction_reference.
                                         connection_mode is Live only when PAYAZA_MODE=live. The webhook marks the invoice paid.
 POST /invoices/{id}/approve-split       { treasurer_id, pin }
+PATCH /invoices/{id}                   { buyer_name?, buyer_email?, amount?, currency?, description?, shipment_id? }
+                                        Only while status is pending. 409 once the buyer has paid (or the invoice has left pending).
+                                        Buyer, amount, and currency are copied onto the linked shipment. shipment_id moves a co-op invoice onto another free lot.
 DELETE /invoices/{id}                   -> 204 when status is pending. 409 otherwise.
 
 POST /webhooks/payaza                   Payaza collection and payout notifications. HMAC when a secret is configured.

@@ -1,9 +1,10 @@
-import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useEffect, useState } from "react";
+import { useForm, type UseFormSetValue } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Plus } from "lucide-react";
+import { Loader2, Pencil, Plus } from "lucide-react";
+import { toast } from "sonner";
 import { CopyLink } from "@/components/stawi/CopyLink";
 import { QrCode } from "@/components/stawi/QrCode";
 import { Button } from "@/components/ui/button";
@@ -15,17 +16,29 @@ import { api } from "@/lib/api";
 import { coopMembersOptions, coopShipmentsOptions } from "@/lib/queries";
 import { FEE_RATE, fxFor, accountName } from "@/lib/mock";
 import { formatKesCents } from "@/lib/format";
-import { ApiError, type Invoice, type ShipmentFarmer } from "@/lib/types";
+import { ApiError, type Invoice, type Shipment, type ShipmentFarmer } from "@/lib/types";
 
 const schema = z.object({
   buyer_name: z.string().min(2, "Enter the buyer's name"),
   buyer_email: z.string().email("Enter a valid email"),
   amount: z.coerce.number().positive("Enter an amount"),
-  currency: z.enum(["USD", "EUR"]),
+  currency: z.enum(["USD", "EUR", "GBP"]),
   description: z.string().min(3, "Describe the goods"),
   shipment_id: z.string().optional(),
 });
 type Values = z.infer<typeof schema>;
+
+function fillFromShipment(setValue: UseFormSetValue<Values>, shipment: Shipment) {
+  setValue("buyer_name", shipment.buyer_name, { shouldDirty: true, shouldValidate: true });
+  if (shipment.value > 0) setValue("amount", shipment.value, { shouldDirty: true, shouldValidate: true });
+  const currency = shipment.currency === "EUR" || shipment.currency === "GBP" ? shipment.currency : "USD";
+  setValue("currency", currency, { shouldDirty: true, shouldValidate: true });
+  const place = shipment.destination && shipment.destination !== "TBD" ? ` to ${shipment.destination}` : "";
+  setValue("description", `${shipment.product}, ${shipment.quantity_kg} kg${place}`, {
+    shouldDirty: true,
+    shouldValidate: true,
+  });
+}
 
 export function NewInvoiceSheet({
   type,
@@ -110,6 +123,32 @@ export function NewInvoiceSheet({
           </div>
         ) : (
           <form onSubmit={form.handleSubmit((v) => create.mutate(v))} className="mt-6 space-y-4 px-1">
+            {type === "coop" && (
+              <F label="Shipment">
+                <select
+                  value={shipmentId}
+                  onChange={(event) => {
+                    const id = event.target.value;
+                    form.setValue("shipment_id", id);
+                    const lot = openLots.find((shipment) => shipment.id === id);
+                    if (lot) fillFromShipment(form.setValue, lot);
+                  }}
+                  className="h-11 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+                >
+                  <option value="">New shipment</option>
+                  {openLots.map((shipment) => (
+                    <option key={shipment.id} value={shipment.id}>
+                      {shipment.reference} · {shipment.product} · {shipment.quantity_kg} kg
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  {chosen
+                    ? "Buyer, amount, currency, and what's being sold are filled from this shipment. Change anything before you send the link."
+                    : "Leave this on New shipment, or pick a lot that does not have an invoice yet."}
+                </p>
+              </F>
+            )}
             <F label="Buyer name" error={form.formState.errors.buyer_name?.message}>
               <Input {...form.register("buyer_name")} className="h-11" />
             </F>
@@ -124,24 +163,13 @@ export function NewInvoiceSheet({
                 <select {...form.register("currency")} className="h-11 w-full rounded-md border border-input bg-transparent px-3 text-sm">
                   <option value="USD">USD</option>
                   <option value="EUR">EUR</option>
+                  <option value="GBP">GBP</option>
                 </select>
               </F>
             </div>
             <F label="What's being sold" error={form.formState.errors.description?.message}>
               <Textarea {...form.register("description")} rows={2} />
             </F>
-            {type === "coop" && (
-              <F label="Shipment">
-                <select {...form.register("shipment_id")} className="h-11 w-full rounded-md border border-input bg-transparent px-3 text-sm">
-                  <option value="">New shipment</option>
-                  {openLots.map((shipment) => (
-                    <option key={shipment.id} value={shipment.id}>
-                      {shipment.reference} · {shipment.product} · {shipment.quantity_kg} kg
-                    </option>
-                  ))}
-                </select>
-              </F>
-            )}
 
             {amount > 0 && (
               <div className="rounded-2xl border border-border bg-card p-4 text-sm">
@@ -181,6 +209,149 @@ export function NewInvoiceSheet({
       </SheetContent>
     </Sheet>
   );
+}
+
+export function EditInvoiceSheet({ invoice }: { invoice: Invoice }) {
+  const [open, setOpen] = useState(false);
+  const qc = useQueryClient();
+  const coopId = invoice.coop_id ?? "";
+  const shipments = useQuery({
+    ...coopShipmentsOptions(coopId || "none"),
+    enabled: invoice.type === "coop" && Boolean(coopId),
+  });
+  const linked = (shipments.data ?? []).find((shipment) => shipment.invoice_id === invoice.id);
+  const choices = (shipments.data ?? []).filter((shipment) => !shipment.invoice_id || shipment.id === linked?.id);
+  const form = useForm<Values>({
+    resolver: zodResolver(schema),
+    defaultValues: valuesFrom(invoice, linked?.id ?? ""),
+  });
+  const shipmentId = form.watch("shipment_id") ?? "";
+
+  useEffect(() => {
+    if (!open || !linked) return;
+    if (!form.getValues("shipment_id")) form.setValue("shipment_id", linked.id);
+  }, [open, linked, form]);
+
+  const save = useMutation({
+    mutationFn: (values: Values) =>
+      api.updateInvoice(invoice.id, {
+        buyer_name: values.buyer_name,
+        buyer_email: values.buyer_email,
+        amount: values.amount,
+        currency: values.currency,
+        description: values.description,
+        shipment_id: invoice.type === "coop" ? values.shipment_id || undefined : undefined,
+      }),
+    onSuccess: () => {
+      toast.success("Invoice updated");
+      setOpen(false);
+      void qc.invalidateQueries({ queryKey: ["invoice", invoice.id] });
+      void qc.invalidateQueries({ queryKey: ["invoices"] });
+      if (coopId) void qc.invalidateQueries({ queryKey: ["coop", coopId, "shipments"] });
+    },
+  });
+
+  if (invoice.status !== "pending") return null;
+
+  return (
+    <Sheet
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) form.reset(valuesFrom(invoice, linked?.id ?? ""));
+        if (!next) save.reset();
+      }}
+    >
+      <Button
+        variant="outline"
+        className="h-11"
+        onClick={() => {
+          form.reset(valuesFrom(invoice, linked?.id ?? ""));
+          setOpen(true);
+        }}
+      >
+        <Pencil className="size-4" /> Edit invoice
+      </Button>
+      <SheetContent className="w-full overflow-y-auto sm:max-w-lg">
+        <SheetHeader>
+          <SheetTitle className="text-display text-2xl">Edit invoice</SheetTitle>
+          <SheetDescription>
+            You can change this until the buyer pays. After that, the invoice is locked.
+          </SheetDescription>
+        </SheetHeader>
+        <form onSubmit={form.handleSubmit((values) => save.mutate(values))} className="mt-6 space-y-4 px-1">
+          {invoice.type === "coop" && choices.length > 0 && (
+            <F label="Shipment">
+              <select
+                value={shipmentId}
+                onChange={(event) => {
+                  const id = event.target.value;
+                  form.setValue("shipment_id", id);
+                  const lot = choices.find((shipment) => shipment.id === id);
+                  if (lot && lot.id !== linked?.id) fillFromShipment(form.setValue, lot);
+                }}
+                className="h-11 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+              >
+                {linked && (
+                  <option value={linked.id}>
+                    {linked.reference} · {linked.product} · {linked.quantity_kg} kg
+                  </option>
+                )}
+                {choices
+                  .filter((shipment) => shipment.id !== linked?.id)
+                  .map((shipment) => (
+                    <option key={shipment.id} value={shipment.id}>
+                      {shipment.reference} · {shipment.product} · {shipment.quantity_kg} kg
+                    </option>
+                  ))}
+              </select>
+            </F>
+          )}
+          <F label="Buyer name" error={form.formState.errors.buyer_name?.message}>
+            <Input {...form.register("buyer_name")} className="h-11" />
+          </F>
+          <F label="Buyer email" error={form.formState.errors.buyer_email?.message}>
+            <Input type="email" {...form.register("buyer_email")} className="h-11" />
+          </F>
+          <div className="grid grid-cols-[1fr_110px] gap-3">
+            <F label="Amount" error={form.formState.errors.amount?.message}>
+              <Input inputMode="decimal" {...form.register("amount")} className="h-11 tabular" />
+            </F>
+            <F label="Currency">
+              <select {...form.register("currency")} className="h-11 w-full rounded-md border border-input bg-transparent px-3 text-sm">
+                <option value="USD">USD</option>
+                <option value="EUR">EUR</option>
+                <option value="GBP">GBP</option>
+              </select>
+            </F>
+          </div>
+          <F label="What's being sold" error={form.formState.errors.description?.message}>
+            <Textarea {...form.register("description")} rows={2} />
+          </F>
+          {save.isError && (
+            <p role="alert" className="text-sm text-terracotta">
+              {save.error instanceof ApiError ? save.error.message : "Couldn't update the invoice. Try again."}
+            </p>
+          )}
+          <Button type="submit" className="h-12 w-full" disabled={save.isPending}>
+            {save.isPending && <Loader2 className="size-4 animate-spin" />} Save changes
+          </Button>
+        </form>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function valuesFrom(invoice: Invoice, shipmentId: string): Values {
+  const currency = invoice.currency === "EUR" || invoice.currency === "GBP" ? invoice.currency : "USD";
+  return {
+    buyer_name: invoice.buyer_name,
+    buyer_email: invoice.buyer_email,
+    amount: invoice.amount,
+    currency,
+    description: invoice.description,
+    shipment_id: shipmentId,
+  };
 }
 
 function memberName(members: { account_id: string; full_name?: string | null }[] | undefined, accountId: string) {

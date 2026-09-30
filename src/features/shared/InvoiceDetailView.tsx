@@ -12,6 +12,7 @@ import { Timeline } from "@/components/stawi/Timeline";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { EditInvoiceSheet } from "./NewInvoiceSheet";
 import { invoiceSteps } from "./invoiceSteps";
 import { PaymentReceiptCard } from "./PaymentReceiptCard";
 import { api, ApiError } from "@/lib/api";
@@ -75,12 +76,15 @@ export function InvoiceDetailView({ invoiceId, backTo }: { invoiceId: string; ba
           <h1 className="text-display text-3xl">{invoice.buyer_name}</h1>
           <p className="mt-1 text-sm text-muted-foreground">{invoice.description}</p>
         </div>
-        <div className="text-right">
+        <div className="flex items-start gap-3">
+          <EditInvoiceSheet invoice={invoice} />
+          <div className="text-right">
           <p className="text-display text-3xl tabular">{formatCurrency(invoice.amount, invoice.currency)}</p>
           {invoice.kes_total_cents != null && (
             <p className="text-sm text-lime tabular">{formatKesCents(invoice.kes_total_cents)} after fee</p>
           )}
           <StatusChip status={invoice.status} className="mt-2" />
+          </div>
         </div>
       </div>
 

@@ -10,6 +10,7 @@ import {
   type CreateAccountBody,
   type DemoDataSettings,
   type CreateInvoiceBody,
+  type UpdateInvoiceBody,
   type Invoice,
   type InvoiceDetail,
   type PaymentReceipt,
@@ -720,6 +721,33 @@ export const mockApi = {
         throw err;
       }
     }
+    return structuredClone(invoice);
+  },
+
+  async updateInvoice(id: string, body: UpdateInvoiceBody): Promise<Invoice> {
+    await latency(400);
+    const invoice = invoices.find((row) => row.id === id);
+    if (!invoice) throw new ApiError(404, "Invoice not found");
+    if (invoice.status !== "pending") throw new ApiError(409, "Only unpaid invoices can be edited");
+    if (body.buyer_name !== undefined) invoice.buyer_name = body.buyer_name;
+    if (body.buyer_email !== undefined) invoice.buyer_email = body.buyer_email;
+    if (body.amount !== undefined) invoice.amount = body.amount;
+    if (body.currency !== undefined) invoice.currency = body.currency;
+    if (body.description !== undefined) invoice.description = body.description;
+    const { shipmentsApi } = await import("./shipments");
+    if (invoice.type === "coop" && body.shipment_id) {
+      const current = shipmentsApi.linkedTo(invoice.id);
+      if (!current || current.id !== body.shipment_id) {
+        if (current) current.invoice_id = null;
+        try {
+          await shipmentsApi.attachInvoice(body.shipment_id, invoice);
+        } catch (err) {
+          if (current) current.invoice_id = invoice.id;
+          throw err;
+        }
+      }
+    }
+    shipmentsApi.applyInvoice(invoice);
     return structuredClone(invoice);
   },
 

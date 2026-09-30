@@ -83,6 +83,39 @@ export async function linkInvoiceToShipment(
   return { ok: true, shipment: next };
 }
 
+/**
+ * Keep the linked shipment's buyer, value, and currency aligned with an unpaid invoice.
+ * A co-op invoice may move to another free shipment. The previous lot is unlinked first.
+ */
+export async function relinkInvoiceShipment(
+  invoice: Invoice,
+  shipmentId?: string,
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  const current = await store.getShipmentByInvoice(invoice.id);
+  const nextId = shipmentId?.trim() ?? "";
+  if (invoice.type === "coop" && nextId && nextId !== current?.id) {
+    if (current) {
+      await store.saveShipment({ ...current, invoice_id: null, updated_at: new Date().toISOString() });
+    }
+    const linked = await linkInvoiceToShipment(nextId, invoice);
+    if (!linked.ok) {
+      if (current) await store.saveShipment(current);
+      return linked;
+    }
+    return { ok: true };
+  }
+  if (current) {
+    await store.saveShipment({
+      ...current,
+      buyer_name: invoice.buyer_name,
+      value: invoice.amount,
+      currency: invoice.currency,
+      updated_at: new Date().toISOString(),
+    });
+  }
+  return { ok: true };
+}
+
 export async function advanceShipment(
   id: string
 ): Promise<{ ok: true; shipment: Shipment } | { ok: false; status: number; error: string }> {

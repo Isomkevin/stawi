@@ -11,6 +11,7 @@ import {
   type CreateAccountBody,
   type DemoDataSettings,
   type CreateInvoiceBody,
+  type UpdateInvoiceBody,
   type Invoice,
   type InvoiceDetail,
   type PaymentReceipt,
@@ -139,6 +140,12 @@ export const api = {
   // POST /invoices
   createInvoice: (body: CreateInvoiceBody): Promise<Invoice> =>
     isMock ? mockApi.createInvoice(body) : request("/invoices", { method: "POST", body: JSON.stringify(body) }),
+
+  // PATCH /invoices/{id} — unpaid invoices only
+  updateInvoice: (invoiceId: string, body: UpdateInvoiceBody): Promise<Invoice> =>
+    isMock
+      ? mockApi.updateInvoice(invoiceId, body)
+      : request(`/invoices/${invoiceId}`, { method: "PATCH", body: JSON.stringify(body) }),
 
   // GET /invoices/{id}
   getInvoice: (invoiceId: string): Promise<InvoiceDetail> =>

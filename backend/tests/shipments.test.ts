@@ -425,6 +425,51 @@ describe("Co-op shipments", () => {
     expect(created?.farmers).toEqual([]);
   });
 
+  it("edits an unpaid invoice and refuses once it has been paid", async () => {
+    await store.saveInvoice({
+      id: "inv_open",
+      type: "coop",
+      account_id: null,
+      coop_id: "coop_test",
+      buyer_name: "Buyer",
+      buyer_email: "buyer@example.com",
+      amount: 1000,
+      currency: "USD",
+      description: "Green coffee",
+      reference: "INV-OPEN",
+      status: "pending",
+      split_approved: false,
+      fx_rate: null,
+      fee_kes_cents: null,
+      kes_total_cents: null,
+      payaza_checkout_reference: null,
+      created_at: new Date().toISOString(),
+      due_at: null,
+    });
+    await store.saveShipment(shipment({ invoice_id: "inv_open", buyer_name: "Buyer", value: 1000 }));
+    await store.saveShipment(shipment({ id: "shp_free", reference: "TEST-S-9", invoice_id: null, buyer_name: "Kyoto", value: 6900, product: "AA Top" }));
+
+    const edited = await request(app).patch("/invoices/inv_open").send({
+      buyer_name: "Kyoto Specialty Imports",
+      amount: 6900,
+      description: "AA Top micro-lot, 600 kg",
+      shipment_id: "shp_free",
+    });
+    expect(edited.status).toBe(200);
+    expect(edited.body.buyer_name).toBe("Kyoto Specialty Imports");
+    expect(edited.body.amount).toBe(6900);
+    expect((await store.getShipment("shp_test"))?.invoice_id).toBeNull();
+    const moved = await store.getShipment("shp_free");
+    expect(moved?.invoice_id).toBe("inv_open");
+    expect(moved?.buyer_name).toBe("Kyoto Specialty Imports");
+    expect(moved?.value).toBe(6900);
+
+    await store.saveInvoice({ ...(await store.getInvoice("inv_open"))!, status: "paid" });
+    const locked = await request(app).patch("/invoices/inv_open").send({ buyer_name: "Changed" });
+    expect(locked.status).toBe(409);
+    expect((await store.getInvoice("inv_open"))?.buyer_name).toBe("Kyoto Specialty Imports");
+  });
+
   it("returns 404 for an unknown co-op or shipment", async () => {
     const missingCoop = await request(app).get("/coops/missing/shipments");
     expect(missingCoop.status).toBe(404);

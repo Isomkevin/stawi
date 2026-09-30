@@ -21,6 +21,7 @@ import {
   mintShipmentReference,
   linkInvoiceToShipment,
   openShipmentForInvoice,
+  relinkInvoiceShipment,
   removeShipmentFarmer,
   updateShipmentDetails,
 } from "../services/shipments";
@@ -1026,6 +1027,66 @@ apiRouter.delete("/invoices/:id", async (req: Request, res: Response) => {
   }
   await store.deleteInvoice(invoice.id);
   res.status(204).send();
+});
+
+apiRouter.patch("/invoices/:id", async (req: Request, res: Response) => {
+  const invoice = await store.getInvoice(getParam(req.params.id));
+  if (!invoice) {
+    res.status(404).json({ error: "Invoice not found" });
+    return;
+  }
+  if (invoice.status !== "pending") {
+    res.status(409).json({ error: "Only unpaid invoices can be edited" });
+    return;
+  }
+
+  const body = req.body ?? {};
+  const text = (value: unknown, max = 255) => (typeof value === "string" ? value.trim().slice(0, max) : undefined);
+  const buyer = text(body.buyer_name);
+  const email = text(body.buyer_email);
+  const description = text(body.description, 2000);
+  const currency = typeof body.currency === "string" ? body.currency.trim().toUpperCase() : undefined;
+  if (buyer !== undefined && buyer.length < 2) {
+    res.status(400).json({ error: "Enter the buyer's name" });
+    return;
+  }
+  if (email !== undefined && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    res.status(400).json({ error: "Enter a valid email" });
+    return;
+  }
+  if (description !== undefined && description.length < 3) {
+    res.status(400).json({ error: "Describe the goods" });
+    return;
+  }
+  if (currency !== undefined && !["USD", "EUR", "GBP"].includes(currency)) {
+    res.status(400).json({ error: "Currency must be USD, EUR, or GBP" });
+    return;
+  }
+  let amount = invoice.amount;
+  if (body.amount !== undefined) {
+    amount = Number(body.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      res.status(400).json({ error: "Enter an amount" });
+      return;
+    }
+  }
+
+  const next: Invoice = {
+    ...invoice,
+    buyer_name: buyer ?? invoice.buyer_name,
+    buyer_email: email ?? invoice.buyer_email,
+    amount,
+    currency: currency ?? invoice.currency,
+    description: description ?? invoice.description,
+  };
+  const shipmentId = typeof body.shipment_id === "string" ? body.shipment_id : undefined;
+  const linked = await relinkInvoiceShipment(next, shipmentId);
+  if (!linked.ok) {
+    res.status(linked.status).json({ error: linked.error });
+    return;
+  }
+  await store.saveInvoice(next);
+  res.status(200).json(next);
 });
 
 apiRouter.post("/invoices/:id/checkout-session", async (req: Request, res: Response) => {
