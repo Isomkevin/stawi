@@ -1,6 +1,7 @@
 import { DevMenu } from "@/components/stawi/DevMenu";
 import { Toaster } from "@/components/ui/sonner";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { createClientOnlyFn } from "@tanstack/react-start";
 import {
   Outlet,
   Link,
@@ -16,6 +17,11 @@ import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { SessionProvider } from "@/lib/session";
 import { I18nProvider } from "@/lib/i18n";
+
+const initializePwa = createClientOnlyFn(async () => {
+  const pwa = await import("@/lib/pwa.client");
+  await pwa.initializePwa();
+});
 
 function NotFoundComponent() {
   return (
@@ -139,7 +145,7 @@ function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
   useEffect(() => {
-    void import("@/lib/pwa.client").then(({ initializePwa }) => initializePwa());
+    void initializePwa();
   }, []);
 
   return (
