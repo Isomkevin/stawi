@@ -19,6 +19,7 @@ Leave the managed block above unchanged.
 - Shared invoice UI stays in `src/features/shared`; reads use `src/lib/queries.ts` query options.
 - `/coop/shipments` uses API-backed list/detail state keyed by `?id=`; mock data remains available.
 - Ask Stawi mounts once in the co-op layout as a floating modal so its conversation survives co-op navigation.
+- PWA registration stays in `src/lib/pwa.client.ts`; it is disabled in development and Lovable previews to prevent stale preview caches.
 - Live mode comes from root `.env`; sessions are kept per browser tab.
 - Lovable edits frontend files only, not `backend/` or `docs/`.
 

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Stawi">
+  <rect width="512" height="512" fill="#233c31"/>
+  <g transform="translate(77 77) scale(.7)">
+    <path d="M372 100c-110 8-190 45-226 111-27 50-17 105 21 143 28-75 82-126 160-155-70 39-116 94-139 166 44 20 97 13 133-25 53-56 55-153 51-240Z" fill="#baf24a"/>
+    <path d="M165 387c27-91 81-158 167-199" fill="none" stroke="#f8f7ef" stroke-width="25" stroke-linecap="round"/>
+  </g>
+</svg>

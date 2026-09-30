@@ -354,7 +354,7 @@ function valuesFrom(invoice: Invoice, shipmentId: string): Values {
   };
 }
 
-function memberName(members: { account_id: string; full_name?: string | null }[] | undefined, accountId: string) {
+function memberName(members: { account_id: string; full_name?: string | null | undefined }[] | undefined, accountId: string) {
   return members?.find((member) => member.account_id === accountId)?.full_name ?? accountName(accountId);
 }
 
