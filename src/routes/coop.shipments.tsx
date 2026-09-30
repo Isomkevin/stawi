@@ -13,8 +13,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Progress } from "@/components/ui/progress";
 import { PageHeader } from "@/features/shared/DashboardShell";
-import { attentionFor, canClose, farmerSplit, type Attention } from "@/features/coop/shipmentLogic";
+import { attentionFor, assignedKilos, canClose, demandPercents, farmerSplit, type Attention } from "@/features/coop/shipmentLogic";
 import { accountOptions, coopMembersOptions, coopPayoutsOptions, coopShipmentsOptions, invoicesOptions } from "@/lib/queries";
 import { SHIPMENT_STATUSES, shipmentStatusMeta, type Shipment, type ShipmentStatus } from "@/lib/shipments";
 import { api, ApiError } from "@/lib/api";
@@ -603,19 +604,21 @@ function QuickAction({ s, inv, att, size = "sm" }: { s: Shipment; inv: Invoice |
     );
   const next = shipmentStatusMeta[s.status].next;
   if (!next) return null;
-  const blocked = s.status === "delivered" && !canClose(inv);
+  const shortfall = s.status === "draft" ? s.quantity_kg - assignedKilos(s) : 0;
+  const blocked = (s.status === "delivered" && !canClose(inv)) || shortfall !== 0;
+  const title = shortfall > 0 ? `${shortfall.toLocaleString()} kg still to assign` : shortfall < 0 ? "Farmer kilos are over this shipment" : blocked ? "Close once farmers are paid out" : undefined;
   return (
     <Button
       size={size}
       variant="outline"
       disabled={blocked || advance.isPending}
-      title={blocked ? "Close once farmers are paid out" : undefined}
+      title={title}
       onClick={(e) => {
         e.stopPropagation();
         advance.mutate(s.id);
       }}
     >
-      {next}
+      {shortfall > 0 ? `${shortfall.toLocaleString()} kg left` : next}
     </Button>
   );
 }
@@ -670,7 +673,10 @@ function ShipmentDetail({ s, inv, att, payouts, nameOf, onClose }: { s: Shipment
   const split = farmerSplit(s, inv);
   const stage = SHIPMENT_STATUSES.indexOf(s.status);
   const payLink = inv ? `${typeof window !== "undefined" ? window.location.origin : ""}/pay/${inv.id}` : null;
-  const totalKg = s.farmers.reduce((a, x) => a + x.kilos, 0);
+  const totalKg = assignedKilos(s);
+  const percents = demandPercents(s.farmers, s.quantity_kg);
+  const fill = s.quantity_kg > 0 ? Math.min(100, Math.round((totalKg / s.quantity_kg) * 100)) : 0;
+  const fillLabel = s.quantity_kg > 0 ? Math.round((totalKg / s.quantity_kg) * 1000) / 10 : 0;
   const locked = s.status === "completed" || !!inv?.split_approved || inv?.status === "completed";
   return (
     <div className="p-5">
@@ -750,8 +756,9 @@ function ShipmentDetail({ s, inv, att, payouts, nameOf, onClose }: { s: Shipment
       <section className="mt-5">
         <div className="mb-2 flex items-baseline justify-between">
           <h3 className="text-sm font-medium">Farmers in this shipment</h3>
-          <span className="text-xs text-muted-foreground">{totalKg.toLocaleString()} / {s.quantity_kg.toLocaleString()} kg · {inv?.kes_total_cents ? "payout" : "est. payout"}</span>
+          <span className={cn("text-xs tabular", totalKg === s.quantity_kg ? "text-lime" : "text-muted-foreground")}>{totalKg.toLocaleString()} / {s.quantity_kg.toLocaleString()} kg · {fillLabel}% of this shipment</span>
         </div>
+        <Progress value={fill} className="mb-3" />
         {s.farmers.length === 0 ? (
           <p className="rounded-xl border border-dashed border-border p-4 text-sm text-muted-foreground">No farmers added yet.</p>
         ) : (
@@ -762,7 +769,7 @@ function ShipmentDetail({ s, inv, att, payouts, nameOf, onClose }: { s: Shipment
                 <li key={fm.account_id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-2.5 text-sm">
                   <div className="min-w-0">
                     <p className="truncate">{nameOf(fm.account_id)}</p>
-                    <p className="text-xs text-muted-foreground">{fm.kilos} kg · {totalKg > 0 ? Math.round((fm.kilos / totalKg) * 100) : 0}%</p>
+                    <p className="text-xs text-muted-foreground">{fm.kilos} kg · {percents.get(fm.account_id) ?? 0}% of this shipment</p>
                   </div>
                   <div className="flex items-center gap-2 text-right">
                     <span className="tabular">{formatKesCents(split.get(fm.account_id) ?? 0)}</span>

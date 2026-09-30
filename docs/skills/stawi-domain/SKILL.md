@@ -25,9 +25,9 @@ All KES amounts are integer cents (`*_kes_cents`). Never floats.
 
 `splitByShares` uses the largest-remainder method. For one invoice, member gross lines sum to the gross, net lines sum to the net, and fee lines sum to the fee.
 
-A member's `contribution_share` is a percentage. Shares for one co-op are expected to sum to 100. The splitter normalizes by the total share it is given, and still sums exactly.
+A member's `contribution_share` is a percentage from 0 to 100. A co-op roster may total more or less than 100. Those standing shares are not the payout split. The splitter normalizes by the total share it is given, and still sums exactly.
 
-A co-op invoice does not split by roster share. It pays the farmers on the shipment whose `invoice_id` points at that invoice, weighted by their kilos. `split_preview.share` is that weight as an integer percent, and those percents sum to 100. Approving the split with no shipment farmers is rejected.
+A co-op invoice does not split by roster share. It pays the farmers on the shipment whose `invoice_id` points at that invoice, weighted by their kilos. `split_preview.share` is that weight as an integer percent, and those percents sum to 100. A draft shipment cannot advance until those kilos equal `quantity_kg`. Approving the split with no shipment farmers is rejected.
 
 `balance_kes_cents` is the live spendable balance. It increases when a live credit payout is confirmed and decreases when a withdrawal is sent. `incoming_kes_cents` is a co-op member's live share of invoices that are `settling` and not yet approved. Approval moves that amount from incoming into balance.
 
@@ -84,7 +84,7 @@ Coop { id, name, treasurer_account_id }
 
 CoopMember {
   coop_id, account_id, full_name?,
-  contribution_share,    // percentage
+  contribution_share,    // 0–100. The roster total may pass 100.
   kilos?                 // roster volume. The split uses shipment kilos, not this field.
 }
 ```
@@ -218,8 +218,22 @@ POST /coops                             { name, treasurer_account_id }
 GET  /coops/{id}
 GET  /coops/{id}/members
 POST /coops/{id}/members                { account_id, contribution_share, kilos? }
-PATCH /coops/{id}/members/{accountId}   { contribution_share }
+                                        409 if that account already belongs to another co-op.
+PATCH /coops/{id}/members/{accountId}   { contribution_share?, kilos? }
+                                        Each share stays between 0 and 100. The roster total is not required to be 100.
 DELETE /coops/{id}/members/{accountId}  -> 204. 404 if they are not a member.
+POST /coops/{id}/members/import/preview { csv_base64? | csv?, columns?: { name, phone, share?, kilos? } }
+                                        -> { needs_mapping, headers, delimiter, rows, total_share }
+                                        Row status is add, update, invite, or other_coop. other_coop is a hard stop.
+                                        Caps: 1 MB and 5000 farmers.
+POST /coops/{id}/members/import         { origin, rows } plus Idempotency-Key
+                                        -> { added, updated, invites, failed }
+                                        Re-validates, updates kilos on existing members, and builds invite links with the co-op's real name.
+POST /coops/{id}/members/lookup         { phones } -> 1 to 1000 numbers. Import preview looks phones up itself and is not capped at 1000.
+POST /coops/{id}/invites/sms            { recipients } -> { sent, failed, results }
+                                        Up to 5000 farmers in one call, sent in chunks of 100.
+                                        One summary text goes to the operator number. Farmer texts are not copied one by one.
+                                        Link must be an https://…/onboarding? URL.
 GET  /coops/{id}/payouts                -> Payout[] for this co-op's invoices, newest first
 GET  /coops/{id}/shipments              -> Shipment[] for this co-op, latest ship date first
 POST /shipments/{id}/farmers            { account_id, kilos } -> Shipment

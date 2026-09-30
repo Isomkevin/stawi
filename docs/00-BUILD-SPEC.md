@@ -29,7 +29,7 @@ See `skills/stawi-domain/SKILL.md` for entities, the pipeline, auth, and every r
 
 - **Account** — a payee (solo exporter, farmer, or treasurer). Phone, national ID, M-Pesa and/or bank destinations, `channel_capability` (`webapp` or `webapp+ussd`), a 4-digit PIN, `balance_kes_cents`, and `incoming_kes_cents`.
 - **Coop** — a named group with one treasurer Account.
-- **CoopMember** — links an Account to a Coop with a `contribution_share` (percentage, summing to 100) and optional kilos.
+- **CoopMember** — links an Account to a Coop with a `contribution_share` (a percentage from 0 to 100; the roster total may pass 100) and optional kilos. A shipment pays the farmers selected for that lot. Their kilos must add up to the shipment quantity before the draft can move on.
 - **Invoice** — Direct (one account) or Co-op. Buyer, amount, currency, reference, and a status from `pending` through `completed` or `failed`.
 - **Transaction** — append-only steps on an invoice: collection, conversion, settlement. Fee is integer KES cents on conversion and settlement.
 - **Payout** — money for one account. `credit` lands in the Stawi balance. `withdrawal` sends that balance to M-Pesa or a bank.

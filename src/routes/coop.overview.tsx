@@ -352,7 +352,7 @@ function Overview() {
             </ResponsiveContainer>
           </div>
           <p className="text-center text-xs text-muted-foreground">
-            {members.data?.length ?? 0} farmers · shares total 100%
+            {members.data?.length ?? 0} farmers · standing shares total {Math.round((members.data ?? []).reduce((sum, member) => sum + (Number(member.contribution_share) || 0), 0) * 1000) / 1000}%
           </p>
         </section>
 

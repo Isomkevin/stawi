@@ -21,6 +21,7 @@ import {
   type WithdrawBody,
 } from "./types";
 import { checkoutAmount, defaultPayCurrency } from "./payCurrencies";
+import { decodeRosterBase64, parseRosterCsv, rowsToRosterCsv, type ParsedRosterRow, type RosterColumnMap } from "./csv";
 
 export const FX_USD_KES = 129;
 export const FX_EUR_KES = 139;
@@ -155,6 +156,36 @@ const members: CoopMember[] = farmerSeed.map((f, i) => ({
   contribution_share: f.share,
   kilos: f.kilos,
 }));
+
+const rosterApplyCache = new Map<string, {
+  added: string[];
+  updated: string[];
+  invites: Array<{ name: string; phone: string; share: number; url: string }>;
+  failed: Array<{ name: string; reason: string }>;
+}>();
+
+type AnnotatedRosterRow = ParsedRosterRow & {
+  status?: "add" | "update" | "invite" | "other_coop";
+  account_id?: string | null;
+  full_name?: string | null;
+};
+
+function annotateRosterRow(coopId: string, row: ParsedRosterRow): AnnotatedRosterRow {
+  if (row.error) return row;
+  const digits = row.phone.replace(/[^\d]/g, "");
+  const acc = accounts.find((a) => a.phone_number.replace(/[^\d]/g, "") === digits);
+  if (!acc) return { ...row, status: "invite" as const, account_id: null, full_name: null };
+  if (acc.coop_id && acc.coop_id !== coopId) {
+    return { ...row, status: "other_coop" as const, account_id: acc.id, full_name: acc.full_name, error: "Already in another co-op" };
+  }
+  const already = members.some((m) => m.coop_id === coopId && m.account_id === acc.id);
+  return {
+    ...row,
+    status: already ? ("update" as const) : ("add" as const),
+    account_id: acc.id,
+    full_name: acc.full_name,
+  };
+}
 
 // ---------------------------------------------------------------- invoices
 
@@ -587,9 +618,86 @@ export const mockApi = {
         account_id: acc?.id ?? null,
         full_name: acc?.full_name ?? null,
         already_member: acc ? mockDb.members.some((m) => m.coop_id === coopId && m.account_id === acc.id) : false,
-        other_coop: false,
+        other_coop: Boolean(acc?.coop_id && acc.coop_id !== coopId),
       };
     });
+  },
+
+  async previewMemberImport(
+    coopId: string,
+    body: { csv_base64?: string; csv?: string; columns?: RosterColumnMap },
+  ) {
+    await latency(200);
+    if (!coops.some((c) => c.id === coopId)) throw new ApiError(404, "Co-op not found");
+    let text = "";
+    try {
+      text = typeof body.csv === "string" ? body.csv : decodeRosterBase64(body.csv_base64 ?? "");
+      const parsed = parseRosterCsv(text, body.columns);
+      if (parsed.needs_mapping) return parsed;
+      return { ...parsed, rows: parsed.rows.map((row) => annotateRosterRow(coopId, row)) };
+    } catch (err) {
+      if (err instanceof ApiError) throw err;
+      throw new ApiError(400, err instanceof Error ? err.message : "Import failed");
+    }
+  },
+
+  async applyMemberImport(
+    coopId: string,
+    body: { origin: string; rows: Array<{ name: string; phone: string; share: number; kilos?: number }> },
+    idempotencyKey?: string,
+  ) {
+    await latency(300);
+    const coop = coops.find((c) => c.id === coopId);
+    if (!coop) throw new ApiError(404, "Co-op not found");
+    const cacheKey = idempotencyKey ? `${coopId}:${idempotencyKey}` : "";
+    if (cacheKey && rosterApplyCache.has(cacheKey)) return rosterApplyCache.get(cacheKey)!;
+    const origin = body.origin.replace(/\/$/, "");
+    const result: {
+      added: string[];
+      updated: string[];
+      invites: Array<{ name: string; phone: string; share: number; url: string }>;
+      failed: Array<{ name: string; reason: string }>;
+    } = { added: [], updated: [], invites: [], failed: [] };
+    let parsed;
+    try {
+      parsed = parseRosterCsv(rowsToRosterCsv(body.rows));
+    } catch (err) {
+      throw new ApiError(400, err instanceof Error ? err.message : "Import failed");
+    }
+    for (const row of parsed.rows) {
+      const noted = annotateRosterRow(coopId, row);
+      if (noted.error || noted.status === "other_coop") {
+        result.failed.push({ name: noted.name || `Row ${noted.line}`, reason: noted.error || "Already in another co-op" });
+        continue;
+      }
+      if (noted.status === "update" && noted.account_id) {
+        const member = members.find((m) => m.coop_id === coopId && m.account_id === noted.account_id);
+        if (!member) {
+          result.failed.push({ name: noted.name, reason: "Member not found" });
+          continue;
+        }
+        member.contribution_share = noted.share;
+        if (noted.kilos !== undefined) member.kilos = noted.kilos;
+        result.updated.push(noted.name);
+      } else if (noted.status === "add" && noted.account_id) {
+        const acc = accounts.find((a) => a.id === noted.account_id);
+        if (acc) acc.coop_id = coopId;
+        const member: CoopMember = {
+          coop_id: coopId,
+          account_id: noted.account_id,
+          full_name: noted.full_name ?? noted.name,
+          contribution_share: noted.share,
+        };
+        if (noted.kilos !== undefined) member.kilos = noted.kilos;
+        members.push(member);
+        result.added.push(noted.name);
+      } else {
+        const q = new URLSearchParams({ coop: coop.name, share: String(noted.share), phone: noted.phone, name: noted.name });
+        result.invites.push({ name: noted.name, phone: noted.phone, share: noted.share, url: `${origin}/onboarding?${q.toString()}` });
+      }
+    }
+    if (cacheKey) rosterApplyCache.set(cacheKey, result);
+    return result;
   },
 
   async updateMemberShare(accountId: string, share: number): Promise<void> {

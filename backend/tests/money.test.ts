@@ -1,4 +1,4 @@
-import { allocate, feeCents, splitByKilos, splitByShares, toKesCents } from "../src/services/money";
+import { allocate, feeCents, percentsOfQuantity, splitByKilos, splitByShares, toKesCents } from "../src/services/money";
 
 describe("Money Service", () => {
   describe("toKesCents", () => {
@@ -113,6 +113,17 @@ describe("Money Service", () => {
       expect(lines.reduce((sum, line) => sum + line.share, 0)).toBe(100);
       expect(lines.reduce((sum, line) => sum + line.net_kes_cents, 0)).toBe(gross - fee);
       expect(lines[0].net_kes_cents).toBeGreaterThan(lines[1].net_kes_cents);
+    });
+  });
+
+  describe("percentsOfQuantity", () => {
+    it("keeps a half-filled lot under 100 and a full lot at 100", () => {
+      const half = percentsOfQuantity([40, 10], 100);
+      expect(half).toEqual([40, 10]);
+      expect(half.reduce((sum, n) => sum + n, 0)).toBe(50);
+      const full = percentsOfQuantity([100, 100, 100], 300);
+      expect(full.reduce((sum, n) => sum + n, 0)).toBe(100);
+      expect(full.every((n) => Number.isInteger(n))).toBe(true);
     });
   });
 });

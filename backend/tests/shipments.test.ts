@@ -64,6 +64,13 @@ describe("Co-op shipments", () => {
     expect(again.body[0].status).toBe("in_transit");
   });
 
+  it("refuses to leave draft until farmer kilos fill the quantity", async () => {
+    await store.saveShipment(shipment({ status: "draft", quantity_kg: 100, farmers: [{ account_id: "acc_farmer", kilos: 40 }] }));
+    const advanced = await request(app).patch("/shipments/shp_test").send({ action: "advance" });
+    expect(advanced.status).toBe(400);
+    expect(advanced.body.error).toMatch(/kilos/i);
+  });
+
   it("refuses to close a delivered shipment until the invoice is completed", async () => {
     await store.saveInvoice({
       id: "inv_open",

@@ -147,6 +147,24 @@ export function allocate<T extends { share: number }>(
 }
 
 /**
+ * Integer percents of `quantity` for each part.
+ * Unassigned quantity keeps its own percent, so a half-filled lot does not look like 100%.
+ * When the parts sum to `quantity`, the returned percents sum to 100.
+ */
+export function percentsOfQuantity(parts: number[], quantity: number): number[] {
+  if (parts.length === 0 || quantity <= 0) return parts.map(() => 0);
+  const safe = parts.map((n) => (Number.isFinite(n) && n > 0 ? n : 0));
+  const assigned = safe.reduce((sum, n) => sum + n, 0);
+  const open = Math.max(0, quantity - assigned);
+  if (assigned + open <= 0) return parts.map(() => 0);
+  const items = safe.map((share, index) => ({ index, share }));
+  if (open > 0) items.push({ index: -1, share: open });
+  const allocated = allocate(100, items);
+  const byIndex = new Map(allocated.map((row) => [row.index, row.amt]));
+  return parts.map((_, index) => byIndex.get(index) ?? 0);
+}
+
+/**
  * Splits gross and net KES cents among co-op members using largest-remainder.
  * Guarantees that:
  * 1. sum(line.gross_kes_cents) === grossKesCents

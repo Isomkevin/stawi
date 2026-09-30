@@ -40,6 +40,41 @@ export type PhoneLookup = {
   other_coop: boolean;
 };
 
+export const INVITE_SMS_CHUNK = 100;
+
+export type RosterImportStatus = "add" | "update" | "invite" | "other_coop";
+
+export type RosterColumnMap = { name: number; phone: number; share?: number; kilos?: number };
+
+export type RosterImportRow = {
+  line: number;
+  name: string;
+  phone: string;
+  share: number;
+  kilos?: number;
+  error?: string;
+  status?: RosterImportStatus;
+  account_id?: string | null;
+  full_name?: string | null;
+};
+
+export type RosterPreview = {
+  needs_mapping: boolean;
+  headers: string[];
+  delimiter: "," | ";" | "\t";
+  rows: RosterImportRow[];
+  total_share: number;
+};
+
+export type RosterApplyResult = {
+  added: string[];
+  updated: string[];
+  invites: Array<{ name: string; phone: string; share: number; url: string }>;
+  failed: Array<{ name: string; reason: string }>;
+};
+
+export type InviteSmsProgress = { done: number; total: number; sent: number; failed: number };
+
 export type AppRole = "farmer" | "exporter" | "treasurer";
 
 export type VerifyResult = {
@@ -284,14 +319,61 @@ export const api = {
       ? mockApi.lookupPhones(coopId, phones)
       : request(`/coops/${coopId}/members/lookup`, { method: "POST", body: JSON.stringify({ phones }) }),
 
-  // POST /coops/{id}/invites/sms { recipients } → per-phone send status
-  sendInviteSms: (
+  // POST /coops/{id}/members/import/preview
+  previewMemberImport: (
+    coopId: string,
+    body: { csv_base64?: string; csv?: string; columns?: RosterColumnMap },
+  ): Promise<RosterPreview> =>
+    isMock
+      ? mockApi.previewMemberImport(coopId, body)
+      : request(`/coops/${coopId}/members/import/preview`, { method: "POST", body: JSON.stringify(body) }),
+
+  // POST /coops/{id}/members/import
+  applyMemberImport: (coopId: string, body: { origin: string; rows: RosterImportRow[] }, idempotencyKey: string): Promise<RosterApplyResult> =>
+    isMock
+      ? mockApi.applyMemberImport(coopId, body, idempotencyKey)
+      : request(`/coops/${coopId}/members/import`, {
+          method: "POST",
+          body: JSON.stringify(body),
+          headers: { "Idempotency-Key": idempotencyKey },
+        }),
+
+  // POST /coops/{id}/invites/sms { recipients } → per-phone send status, chunked so a long list is not capped at 500
+  sendInviteSms: async (
     coopId: string,
     recipients: Array<{ phone_number: string; full_name: string; link: string }>,
-  ): Promise<{ sent: number; failed: number; results: Array<{ phone_number: string; sent: boolean; error?: string }> }> =>
-    isMock
-      ? Promise.resolve({ sent: recipients.length, failed: 0, results: recipients.map((r) => ({ phone_number: r.phone_number, sent: true })) })
-      : request(`/coops/${coopId}/invites/sms`, { method: "POST", body: JSON.stringify({ recipients }) }),
+    onProgress?: (progress: InviteSmsProgress) => void,
+  ): Promise<{ sent: number; failed: number; results: Array<{ phone_number: string; sent: boolean; error?: string }> }> => {
+    let sent = 0;
+    let failed = 0;
+    const results: Array<{ phone_number: string; sent: boolean; error?: string }> = [];
+    const total = recipients.length;
+    if (total === 0) return { sent, failed, results };
+    for (let i = 0; i < total; i += INVITE_SMS_CHUNK) {
+      const chunk = recipients.slice(i, i + INVITE_SMS_CHUNK);
+      try {
+        const part = isMock
+          ? {
+              sent: chunk.length,
+              failed: 0,
+              results: chunk.map((r) => ({ phone_number: r.phone_number, sent: true })),
+            }
+          : await request<{ sent: number; failed: number; results: Array<{ phone_number: string; sent: boolean; error?: string }> }>(
+              `/coops/${coopId}/invites/sms`,
+              { method: "POST", body: JSON.stringify({ recipients: chunk }) },
+            );
+        results.push(...part.results);
+        sent += part.sent;
+        failed += part.failed;
+      } catch (err) {
+        const reason = err instanceof ApiError ? err.message : "Couldn't send texts";
+        for (const recipient of chunk) results.push({ phone_number: recipient.phone_number, sent: false, error: reason });
+        failed += chunk.length;
+      }
+      onProgress?.({ done: Math.min(i + chunk.length, total), total, sent, failed });
+    }
+    return { sent, failed, results };
+  },
 
   // GET /coops/{id}/payment-proofs or /accounts/{id}/payment-proofs (live only; see buyerPortal.ts)
   listPaymentProofs: (path: string): Promise<PaymentProof[]> => request(path),

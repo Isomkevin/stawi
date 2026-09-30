@@ -264,3 +264,46 @@ export type PaymentProof = {
   reviewed_at: string | null;
   created_at: string;
 };
+
+export type RosterImportStatus = "add" | "update" | "invite" | "other_coop";
+
+export type RosterColumnMap = {
+  name: number;
+  phone: number;
+  share?: number;
+  kilos?: number;
+};
+
+export type RosterImportRow = {
+  line: number;
+  name: string;
+  phone: string;
+  share: number;
+  kilos?: number;
+  error?: string;
+  status?: RosterImportStatus;
+  account_id?: string | null;
+  full_name?: string | null;
+};
+
+export type RosterPreview = {
+  needs_mapping: boolean;
+  headers: string[];
+  delimiter: "," | ";" | "\t";
+  rows: RosterImportRow[];
+  total_share: number;
+};
+
+export type RosterInvite = {
+  name: string;
+  phone: string;
+  share: number;
+  url: string;
+};
+
+export type RosterApplyResult = {
+  added: string[];
+  updated: string[];
+  invites: RosterInvite[];
+  failed: Array<{ name: string; reason: string }>;
+};

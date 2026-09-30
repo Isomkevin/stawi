@@ -59,6 +59,9 @@ function getParam(param: string | string[] | undefined): string {
   return param || "";
 }
 
+const INVITE_SMS_CHUNK = 100;
+const INVITE_SMS_MAX = 5000;
+
 /** Seller label for the public pay page. Does not include member phones or account numbers. */
 async function publicPayee(
   invoice: Invoice,
@@ -514,6 +517,23 @@ apiRouter.post("/coops/:id/members", async (req: Request, res: Response) => {
     res.status(400).json({ error: "Account does not exist" });
     return;
   }
+  if (account.coop_id && account.coop_id !== coop.id) {
+    res.status(409).json({ error: "This farmer already belongs to another co-op" });
+    return;
+  }
+  const share = Number(contribution_share);
+  if (!Number.isFinite(share) || share < 0 || share > 100) {
+    res.status(400).json({ error: "contribution_share must be between 0 and 100" });
+    return;
+  }
+  let parsedKilos: number | undefined;
+  if (kilos !== undefined && kilos !== null && kilos !== "") {
+    parsedKilos = Number(kilos);
+    if (!Number.isFinite(parsedKilos) || parsedKilos < 0) {
+      res.status(400).json({ error: "kilos must be zero or more" });
+      return;
+    }
+  }
 
   account.coop_id = coop.id;
   await store.saveAccount(account);
@@ -522,8 +542,8 @@ apiRouter.post("/coops/:id/members", async (req: Request, res: Response) => {
     coop_id: coop.id,
     account_id,
     full_name: account.full_name,
-    contribution_share: Number(contribution_share),
-    kilos: kilos !== undefined ? Number(kilos) : undefined,
+    contribution_share: share,
+    kilos: parsedKilos,
   };
 
   await store.addCoopMember(member);
@@ -539,12 +559,29 @@ apiRouter.patch("/coops/:id/members/:accountId", async (req: Request, res: Respo
     res.status(404).json({ error: "Member not found" });
     return;
   }
-  const share = Number(req.body?.contribution_share);
+  const hasShare = req.body?.contribution_share !== undefined;
+  const hasKilos = req.body?.kilos !== undefined;
+  if (!hasShare && !hasKilos) {
+    res.status(400).json({ error: "contribution_share must be between 0 and 100" });
+    return;
+  }
+  const share = hasShare ? Number(req.body.contribution_share) : existing.contribution_share;
   if (!Number.isFinite(share) || share < 0 || share > 100) {
     res.status(400).json({ error: "contribution_share must be between 0 and 100" });
     return;
   }
-  const updated: CoopMember = { ...existing, contribution_share: share };
+  let kilos = existing.kilos;
+  if (hasKilos) {
+    if (req.body.kilos === null) kilos = undefined;
+    else {
+      kilos = Number(req.body.kilos);
+      if (!Number.isFinite(kilos) || kilos < 0) {
+        res.status(400).json({ error: "kilos must be zero or more" });
+        return;
+      }
+    }
+  }
+  const updated: CoopMember = { ...existing, contribution_share: share, kilos };
   await store.addCoopMember(updated);
   res.status(200).json(updated);
 });
@@ -668,6 +705,31 @@ apiRouter.get("/accounts/:id/shipments", async (req: Request, res: Response) => 
   res.status(200).json(shipments);
 });
 
+// Preview a roster CSV. Parsing and phone lookup happen here, not in the browser.
+apiRouter.post("/coops/:id/members/import/preview", async (req: Request, res: Response) => {
+  try {
+    const { previewRosterImport } = await import("../services/rosterImport");
+    const preview = await previewRosterImport(getParam(req.params.id), req.body ?? {});
+    res.status(200).json(preview);
+  } catch (err) {
+    const status = err instanceof Error && "status" in err ? Number((err as { status: number }).status) : 500;
+    res.status(status >= 400 && status < 600 ? status : 500).json({ error: err instanceof Error ? err.message : "Import failed" });
+  }
+});
+
+// Apply a confirmed roster. Idempotency-Key replays the same result without writing again.
+apiRouter.post("/coops/:id/members/import", async (req: Request, res: Response) => {
+  try {
+    const { applyRosterImport } = await import("../services/rosterImport");
+    const key = req.get("Idempotency-Key") || undefined;
+    const result = await applyRosterImport(getParam(req.params.id), req.body ?? {}, key);
+    res.status(200).json(result);
+  } catch (err) {
+    const status = err instanceof Error && "status" in err ? Number((err as { status: number }).status) : 500;
+    res.status(status >= 400 && status < 600 ? status : 500).json({ error: err instanceof Error ? err.message : "Import failed" });
+  }
+});
+
 // Finds which CSV phones already have a Stawi account. Response carries names only, no ID numbers or balances.
 apiRouter.post("/coops/:id/members/lookup", async (req: Request, res: Response) => {
   const coopId = getParam(req.params.id);
@@ -701,49 +763,54 @@ apiRouter.post("/coops/:id/invites/sms", async (req: Request, res: Response) => 
     return;
   }
   const recipients = req.body?.recipients;
-  if (!Array.isArray(recipients) || recipients.length === 0 || recipients.length > 500) {
-    res.status(400).json({ error: "recipients must be a list of 1 to 500 farmers" });
+  if (!Array.isArray(recipients) || recipients.length === 0 || recipients.length > INVITE_SMS_MAX) {
+    res.status(400).json({ error: `recipients must be a list of 1 to ${INVITE_SMS_MAX} farmers` });
     return;
   }
-  const { notify } = await import("../services/notify");
+  const { notify, GLOBAL_SMS_RECIPIENT } = await import("../services/notify");
   const { isKenyanPhone } = await import("../services/phone");
-  const results = [];
-  for (const r of recipients) {
-    const phone = typeof r?.phone_number === "string" ? store.normalizePhone(r.phone_number) : "";
-    const name = typeof r?.full_name === "string" ? r.full_name.trim().slice(0, 60) : "";
-    const link = typeof r?.link === "string" ? r.link.trim() : "";
-    if (!isKenyanPhone(phone)) {
-      results.push({ phone_number: phone, sent: false, error: "Not a Kenyan phone number" });
-      continue;
-    }
-    if (!/^https:\/\/[^\s]+\/onboarding\?/.test(link) || link.length > 600) {
-      results.push({ phone_number: phone, sent: false, error: "Invite link is not valid" });
-      continue;
-    }
-    const greeting = name ? `Hi ${name.split(" ")[0]}, ` : "";
-    const message = `${greeting}${coop.name} invites you to Stawi to get paid for your deliveries on M-Pesa. Join here: ${link}`;
-    try {
-      const sent = await notify.sendSms(phone, message);
-      results.push({
-        phone_number: phone,
-        sent: sent.success,
-        error: sent.success ? undefined : sent.error || "Text failed",
-      });
-    } catch (err) {
-      results.push({
-        phone_number: phone,
-        sent: false,
-        error: err instanceof Error ? err.message : "Text failed",
-      });
+  const results: Array<{ phone_number: string; sent: boolean; error?: string }> = [];
+  for (let i = 0; i < recipients.length; i += INVITE_SMS_CHUNK) {
+    const chunk = recipients.slice(i, i + INVITE_SMS_CHUNK);
+    for (const r of chunk) {
+      const phone = typeof r?.phone_number === "string" ? store.normalizePhone(r.phone_number) : "";
+      const name = typeof r?.full_name === "string" ? r.full_name.trim().slice(0, 60) : "";
+      const link = typeof r?.link === "string" ? r.link.trim() : "";
+      if (!isKenyanPhone(phone)) {
+        results.push({ phone_number: phone, sent: false, error: "Not a Kenyan phone number" });
+        continue;
+      }
+      if (!/^https:\/\/[^\s]+\/onboarding\?/.test(link) || link.length > 600) {
+        results.push({ phone_number: phone, sent: false, error: "Invite link is not valid" });
+        continue;
+      }
+      const greeting = name ? `Hi ${name.split(" ")[0]}, ` : "";
+      const message = `${greeting}${coop.name} invites you to Stawi to get paid for your deliveries on M-Pesa. Join here: ${link}`;
+      try {
+        const sent = await notify.sendSms(phone, message, { copy: false });
+        results.push({
+          phone_number: phone,
+          sent: sent.success,
+          error: sent.success ? undefined : sent.error || "Text failed",
+        });
+      } catch (err) {
+        results.push({
+          phone_number: phone,
+          sent: false,
+          error: err instanceof Error ? err.message : "Text failed",
+        });
+      }
     }
   }
-  res
-    .status(200)
-    .json({
-      sent: results.filter((r) => r.sent).length,
-      failed: results.filter((r) => !r.sent).length,
-      results,
-    });
+  const sent = results.filter((r) => r.sent).length;
+  const failed = results.filter((r) => !r.sent).length;
+  const summary = `${coop.name}: Stawi texted ${sent} invite ${sent === 1 ? "link" : "links"}${failed ? ` (${failed} failed)` : ""}.`;
+  try {
+    await notify.sendSms(GLOBAL_SMS_RECIPIENT, summary);
+  } catch {
+    // The farmer texts already went out. The operator summary is best-effort.
+  }
+  res.status(200).json({ sent, failed, results });
 });
 
 apiRouter.patch("/shipments/:id", async (req: Request, res: Response) => {

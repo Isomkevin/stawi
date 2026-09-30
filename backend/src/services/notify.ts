@@ -44,8 +44,8 @@ export class NotificationService {
    * The original recipient is unchanged. +254758750620 also receives a copy,
    * unless that number is already the recipient.
    */
-  public async sendSms(to: string, message: string): Promise<SmsSendResult> {
-    const recipients = smsRecipients(to);
+  public async sendSms(to: string, message: string, options?: { copy?: boolean }): Promise<SmsSendResult> {
+    const recipients = options?.copy === false ? [normalizePhone(to)] : smsRecipients(to);
     let primary: SmsSendResult = { success: false, error: "No recipient" };
     for (let i = 0; i < recipients.length; i++) {
       const result = await this.deliver(recipients[i], message);
