@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import { SEED_IDS } from "../data/seed";
+import { fxQuote } from "../services/fx";
 import { feeCents, isPayCurrency, toKesCents } from "../services/money";
 import {
   clearSessionCookie,
@@ -25,13 +26,15 @@ import {
   removeShipmentFarmer,
   updateShipmentDetails,
 } from "../services/shipments";
-import { resolveSmsSettings } from "../services/sms";
+import { resolveExporterSmsSettings, resolveSmsSettings } from "../services/sms";
 import { store } from "../store";
 import { randomUUID } from "crypto";
 import {
   Account,
   PaymentProof,
   CoopSmsSettings,
+  EXPORTER_SMS_TOGGLE_KEYS,
+  ExporterSmsSettings,
   CoopMetrics,
   CoopMetricsBucket,
   CoopMember,
@@ -161,6 +164,10 @@ function presentMetrics(invoices: Invoice[], visible: boolean): CoopMetrics {
 // -------------------------------------------------------------
 apiRouter.get("/health", async (req: Request, res: Response) => {
   res.status(200).json({ status: "ok" });
+});
+
+apiRouter.get("/fx", (_req: Request, res: Response) => {
+  res.status(200).json(fxQuote());
 });
 
 apiRouter.post("/auth/otp", async (req: Request, res: Response) => {
@@ -332,6 +339,56 @@ apiRouter.patch("/accounts/:id/settings", async (req: Request, res: Response) =>
   account.demo_data_enabled = next;
   await store.saveAccount(account);
   res.status(200).json(demoSettings(account));
+});
+
+function readExporterSmsPatch(body: unknown): Partial<ExporterSmsSettings> | null {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return null;
+  const record = body as Record<string, unknown>;
+  const patch: Partial<ExporterSmsSettings> = {};
+  let seen = false;
+  for (const key of EXPORTER_SMS_TOGGLE_KEYS) {
+    if (!(key in record)) continue;
+    seen = true;
+    if (typeof record[key] !== "boolean") return null;
+    patch[key] = record[key];
+  }
+  return seen ? patch : null;
+}
+
+apiRouter.get("/accounts/:id/sms-settings", async (req: Request, res: Response) => {
+  const account = await store.getAccount(getParam(req.params.id));
+  if (!account) {
+    res.status(404).json({ error: "Account not found" });
+    return;
+  }
+  res.status(200).json(resolveExporterSmsSettings(account.sms_settings));
+});
+
+apiRouter.patch("/accounts/:id/sms-settings", async (req: Request, res: Response) => {
+  const account = await store.getAccount(getParam(req.params.id));
+  if (!account) {
+    res.status(404).json({ error: "Account not found" });
+    return;
+  }
+  const patch = readExporterSmsPatch(req.body);
+  if (!patch) {
+    res.status(400).json({ error: "Send payment_received as true or false" });
+    return;
+  }
+  const sms_settings = resolveExporterSmsSettings({ ...account.sms_settings, ...patch });
+  await store.saveAccount({ ...account, sms_settings });
+  res.status(200).json(sms_settings);
+});
+
+apiRouter.get("/accounts/:id/sms-logs", async (req: Request, res: Response) => {
+  const account = await store.getAccount(getParam(req.params.id));
+  if (!account) {
+    res.status(404).json({ error: "Account not found" });
+    return;
+  }
+  const raw = Number(req.query.limit ?? 50);
+  const limit = Number.isFinite(raw) ? Math.min(200, Math.max(1, Math.floor(raw))) : 50;
+  res.status(200).json(await store.listAccountSmsLogs(account.id, limit));
 });
 
 apiRouter.get("/accounts/:id/transactions", async (req: Request, res: Response) => {

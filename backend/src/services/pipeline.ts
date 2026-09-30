@@ -9,7 +9,7 @@ import {
   restoreWithdrawal,
   withdrawalFlags,
 } from "./demoData";
-import { feeCents, kesPerUnit, splitByKilos, toKesCents } from "./money";
+import { activeKesPerUnit, feeCents, splitByKilos, toKesCents } from "./money";
 import { notify } from "./notify";
 import { ensureTransactionReference, payaza } from "./payaza";
 import { verifyAccountPin } from "./pin";
@@ -22,6 +22,7 @@ type PayoutAlert = {
   reference?: string;
   purpose: Extract<SmsPurpose, "share_landed" | "payout_sent" | "payout_failed" | "payment_received">;
   coopId: string | null;
+  accountId: string | null;
 };
 
 /** Best-effort. A failed text never undoes the payout. */
@@ -33,6 +34,7 @@ async function sendPayoutAlerts(alerts: PayoutAlert[]): Promise<void> {
         reference: alert.reference,
         purpose: alert.purpose,
         coopId: alert.coopId,
+        accountId: alert.accountId,
       });
     } catch (err) {
       console.warn("[SMS Warning] payout alert failed:", err);
@@ -45,7 +47,7 @@ export class PipelineService {
    * Resolves the FX rate for a given currency pair.
    */
   public getFxRate(currency: string): number {
-    return kesPerUnit(currency);
+    return activeKesPerUnit(currency);
   }
 
   /**
@@ -188,6 +190,7 @@ export class PipelineService {
             reference: invoice.reference,
             purpose: "payment_received",
             coopId: null,
+            accountId: exporter.id,
           });
         }
       }
@@ -340,6 +343,7 @@ export class PipelineService {
           reference: result.invoice.reference,
           purpose: "share_landed",
           coopId: result.invoice.coop_id,
+          accountId: account.id,
         });
       }
     }
@@ -410,6 +414,7 @@ export class PipelineService {
           reference: invoice.reference,
           purpose: "payout_failed",
           coopId: invoice.coop_id,
+          accountId: account.id,
         },
       ]);
     } else {
@@ -531,6 +536,7 @@ export class PipelineService {
           reference: invoice.reference,
           purpose: "share_landed",
           coopId: invoice.coop_id,
+          accountId: farmer.id,
         });
       }
     }
@@ -578,6 +584,7 @@ export class PipelineService {
               reference: "Withdrawal",
               purpose: "payout_sent",
               coopId: account.coop_id,
+              accountId: account.id,
             },
           ]);
         }
@@ -833,6 +840,7 @@ export class PipelineService {
           reference: input.alertReference,
           purpose: "payout_sent",
           coopId: account.coop_id,
+          accountId: account.id,
         },
       ],
     };

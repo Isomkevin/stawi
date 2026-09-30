@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { motion } from "motion/react";
 import {
   ArrowLeft,
@@ -171,6 +171,14 @@ function UnpaidView({
   const [phase, setPhase] = useState<Phase>("idle");
   const [payError, setPayError] = useState<string | null>(null);
   const queryClient = useQueryClient();
+  const fx = useQuery({
+    queryKey: ["fx"],
+    queryFn: () => api.getFxQuote(),
+    enabled: !isMock,
+    staleTime: 6 * 60 * 60 * 1000,
+    retry: 1,
+  });
+  const rates = fx.data?.rates;
   const demoBlocked = !isMock && invoice.is_demo === true;
   const pay = useMutation({
     mutationFn: async (): Promise<{ invoice: Invoice | null; declined?: boolean }> => {
@@ -221,9 +229,9 @@ function UnpaidView({
     },
   });
 
-  const due = checkoutAmount(invoice.amount, invoice.currency, payCurrency);
+  const due = checkoutAmount(invoice.amount, invoice.currency, payCurrency, rates);
   const dueLabel = formatPayAmount(due, payCurrency);
-  const kesGross = Math.round(invoice.amount * kesPerUnit(invoice.currency) * 100);
+  const kesGross = Math.round(invoice.amount * kesPerUnit(invoice.currency, rates) * 100);
   const feeKes = Math.round(kesGross * 0.008);
   const sellerKes = kesGross - feeKes;
 
@@ -250,7 +258,7 @@ function UnpaidView({
         </div>
 
         <dl className="mt-6 space-y-3 border-t border-border pt-4 text-sm">
-          <Row label="Converted at" value={formatKesRate(payCurrency)} />
+          <Row label="Converted at" value={formatKesRate(payCurrency, rates)} />
           <Row label="Shilling equivalent" value={formatKesCents(kesGross)} />
           <Row label="Stawi fee (0.8%)" value={formatKesCents(feeKes)} />
           <Row label="Reaching the seller" value={formatKesCents(sellerKes)} accent />

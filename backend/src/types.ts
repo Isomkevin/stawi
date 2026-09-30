@@ -35,6 +35,8 @@ export type Account = {
   demo_data_enabled?: boolean | null;
   /** Effective switch for this account, including the env default. Response-only. */
   demo_data_visible?: boolean;
+  /** Direct exporter texts. Login codes are not included and always send. */
+  sms_settings?: ExporterSmsSettings;
   pin_hash?: string | null;
   pin_failed_attempts?: number;
   pin_locked_until?: string | null;
@@ -44,14 +46,18 @@ export type PublicAccount = Omit<Account, "pin_hash" | "pin_failed_attempts" | "
 
 export const SMS_TOGGLE_KEYS = ["invite", "invite_summary", "share_landed", "payout_sent", "payout_failed"] as const;
 export type SmsToggleKey = (typeof SMS_TOGGLE_KEYS)[number];
-/** `otp` always sends. `payment_received` is a Direct exporter text and is not a co-op switch. */
-export type SmsPurpose = SmsToggleKey | "otp" | "payment_received";
 export type CoopSmsSettings = Record<SmsToggleKey, boolean>;
+export const EXPORTER_SMS_TOGGLE_KEYS = ["payment_received"] as const;
+export type ExporterSmsToggleKey = (typeof EXPORTER_SMS_TOGGLE_KEYS)[number];
+export type ExporterSmsSettings = Record<ExporterSmsToggleKey, boolean>;
+/** `otp` always sends. `payment_received` is the Direct exporter switch. */
+export type SmsPurpose = SmsToggleKey | "otp" | ExporterSmsToggleKey;
 export type SmsLogStatus = "sent" | "skipped" | "failed";
 
 export type SmsLogEntry = {
   id: string;
   coop_id: string | null;
+  account_id: string | null;
   purpose: SmsPurpose;
   phone_number: string;
   message: string;

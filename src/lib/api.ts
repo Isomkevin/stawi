@@ -8,6 +8,7 @@ import {
   type Coop,
   type CoopMember,
   type CoopSmsSettings,
+  type ExporterSmsSettings,
   type SmsLogEntry,
   type CoopMetrics,
   type CreateAccountBody,
@@ -76,6 +77,12 @@ export type RosterApplyResult = {
 };
 
 export type InviteSmsProgress = { done: number; total: number; sent: number; failed: number };
+
+export type FxQuote = {
+  source: "frankfurter" | "fallback";
+  as_of: string | null;
+  rates: Record<string, number>;
+};
 
 export type AppRole = "farmer" | "exporter" | "treasurer";
 
@@ -159,6 +166,14 @@ export const api = {
   listSmsLogs: (coopId: string): Promise<SmsLogEntry[]> =>
     isMock ? mockApi.listSmsLogs(coopId) : request(`/coops/${coopId}/sms-logs?limit=50`),
 
+  updateExporterSmsSettings: (accountId: string, patch: Partial<ExporterSmsSettings>): Promise<ExporterSmsSettings> =>
+    isMock
+      ? mockApi.updateExporterSmsSettings(accountId, patch)
+      : request(`/accounts/${accountId}/sms-settings`, { method: "PATCH", body: JSON.stringify(patch) }),
+
+  listAccountSmsLogs: (accountId: string): Promise<SmsLogEntry[]> =>
+    isMock ? mockApi.listAccountSmsLogs(accountId) : request(`/accounts/${accountId}/sms-logs?limit=50`),
+
   // GET /coops/{id}/members
   getCoopMembers: (coopId: string): Promise<CoopMember[]> =>
     isMock ? mockApi.getCoopMembers(coopId) : request(`/coops/${coopId}/members`),
@@ -199,6 +214,9 @@ export const api = {
   // GET /invoices/{id}/receipt — only after the payment is recorded
   getPaymentReceipt: (invoiceId: string): Promise<PaymentReceipt> =>
     isMock ? mockApi.getPaymentReceipt(invoiceId) : request(`/invoices/${invoiceId}/receipt`),
+
+  // GET /fx — live KES-per-unit quotes, or the illustrative table when the feed is down
+  getFxQuote: (): Promise<FxQuote> => request("/fx"),
 
   // POST /invoices/{id}/checkout-session { currency_code? }
   createCheckoutSession: (invoiceId: string, currencyCode?: string): Promise<CheckoutSession> =>

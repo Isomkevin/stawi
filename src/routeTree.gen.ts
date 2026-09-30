@@ -35,6 +35,7 @@ import { Route as DemoUssdRouteImport } from './routes/demo.ussd'
 import { Route as DirectIndexRouteImport } from './routes/direct.index'
 import { Route as DirectOverviewRouteImport } from './routes/direct.overview'
 import { Route as DirectPaymentsRouteImport } from './routes/direct.payments'
+import { Route as DirectSettingsRouteImport } from './routes/direct.settings'
 import { Route as DirectShipmentsRouteImport } from './routes/direct.shipments'
 import { Route as PayInvoiceIdRouteImport } from './routes/pay.$invoiceId'
 import { Route as CoopInvoicesIndexRouteImport } from './routes/coop.invoices.index'
@@ -172,6 +173,11 @@ const DirectPaymentsRoute = DirectPaymentsRouteImport.update({
   path: '/payments',
   getParentRoute: () => DirectRoute,
 } as any)
+const DirectSettingsRoute = DirectSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => DirectRoute,
+} as any)
 const DirectShipmentsRoute = DirectShipmentsRouteImport.update({
   id: '/shipments',
   path: '/shipments',
@@ -227,6 +233,7 @@ export interface FileRoutesByFullPath {
   '/demo/ussd': typeof DemoUssdRoute
   '/direct/overview': typeof DirectOverviewRoute
   '/direct/payments': typeof DirectPaymentsRoute
+  '/direct/settings': typeof DirectSettingsRoute
   '/direct/shipments': typeof DirectShipmentsRoute
   '/pay/$invoiceId': typeof PayInvoiceIdRoute
   '/app/': typeof AppIndexRoute
@@ -258,6 +265,7 @@ export interface FileRoutesByTo {
   '/demo/ussd': typeof DemoUssdRoute
   '/direct/overview': typeof DirectOverviewRoute
   '/direct/payments': typeof DirectPaymentsRoute
+  '/direct/settings': typeof DirectSettingsRoute
   '/direct/shipments': typeof DirectShipmentsRoute
   '/pay/$invoiceId': typeof PayInvoiceIdRoute
   '/app': typeof AppIndexRoute
@@ -293,6 +301,7 @@ export interface FileRoutesById {
   '/demo/ussd': typeof DemoUssdRoute
   '/direct/overview': typeof DirectOverviewRoute
   '/direct/payments': typeof DirectPaymentsRoute
+  '/direct/settings': typeof DirectSettingsRoute
   '/direct/shipments': typeof DirectShipmentsRoute
   '/pay/$invoiceId': typeof PayInvoiceIdRoute
   '/app/': typeof AppIndexRoute
@@ -329,6 +338,7 @@ export interface FileRouteTypes {
     | '/demo/ussd'
     | '/direct/overview'
     | '/direct/payments'
+    | '/direct/settings'
     | '/direct/shipments'
     | '/pay/$invoiceId'
     | '/app/'
@@ -360,6 +370,7 @@ export interface FileRouteTypes {
     | '/demo/ussd'
     | '/direct/overview'
     | '/direct/payments'
+    | '/direct/settings'
     | '/direct/shipments'
     | '/pay/$invoiceId'
     | '/app'
@@ -394,6 +405,7 @@ export interface FileRouteTypes {
     | '/demo/ussd'
     | '/direct/overview'
     | '/direct/payments'
+    | '/direct/settings'
     | '/direct/shipments'
     | '/pay/$invoiceId'
     | '/app/'
@@ -602,6 +614,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DirectPaymentsRouteImport
       parentRoute: typeof DirectRoute
     }
+    '/direct/settings': {
+      id: '/direct/settings'
+      path: '/settings'
+      fullPath: '/direct/settings'
+      preLoaderRoute: typeof DirectSettingsRouteImport
+      parentRoute: typeof DirectRoute
+    }
     '/direct/shipments': {
       id: '/direct/shipments'
       path: '/shipments'
@@ -698,6 +717,7 @@ const CoopRouteWithChildren = CoopRoute._addFileChildren(CoopRouteChildren)
 interface DirectRouteChildren {
   DirectOverviewRoute: typeof DirectOverviewRoute
   DirectPaymentsRoute: typeof DirectPaymentsRoute
+  DirectSettingsRoute: typeof DirectSettingsRoute
   DirectShipmentsRoute: typeof DirectShipmentsRoute
   DirectIndexRoute: typeof DirectIndexRoute
   DirectInvoicesIdRoute: typeof DirectInvoicesIdRoute
@@ -707,6 +727,7 @@ interface DirectRouteChildren {
 const DirectRouteChildren: DirectRouteChildren = {
   DirectOverviewRoute: DirectOverviewRoute,
   DirectPaymentsRoute: DirectPaymentsRoute,
+  DirectSettingsRoute: DirectSettingsRoute,
   DirectShipmentsRoute: DirectShipmentsRoute,
   DirectIndexRoute: DirectIndexRoute,
   DirectInvoicesIdRoute: DirectInvoicesIdRoute,

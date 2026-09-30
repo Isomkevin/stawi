@@ -5,7 +5,8 @@ import { SplitLine } from "../types";
  * USD, NGN, GHS: checkout and payment-page examples.
  * KES, UGX, TZS, ZAR, XOF, ZMW, LRD, CDF, XAF: mobile-money and local rails.
  * EUR and GBP: Stawi invoices are already charged in these.
- * Rates are KES per 1 unit. Payaza publishes no FX endpoint, so these match the illustrative table.
+ * Rates are KES per 1 unit. Payaza publishes no FX endpoint.
+ * This table is the fallback when the Frankfurter cache has no quote for a code.
  */
 export const PAY_CURRENCIES = [
   "USD",
@@ -52,10 +53,23 @@ export function kesPerUnit(currency: string): number {
   return KES_PER_UNIT[currency.toUpperCase()] ?? 129;
 }
 
+type RateFn = (currency: string) => number;
+let rateSource: RateFn = kesPerUnit;
+
+/** Checkout and settlement read this. The FX service points it at the live cache. */
+export function setKesRateSource(fn: RateFn): void {
+  rateSource = fn;
+}
+
+/** Live KES per 1 unit when a quote is cached, otherwise the illustrative table. */
+export function activeKesPerUnit(currency: string): number {
+  return rateSource(currency);
+}
+
 /** Invoice amount restated in the currency the buyer chose, so Payaza charges the same shilling value. */
 export function checkoutAmount(invoiceAmount: number, fromCurrency: string, toCurrency: string): number {
   const to = toCurrency.toUpperCase();
-  const raw = (invoiceAmount * kesPerUnit(fromCurrency)) / kesPerUnit(to);
+  const raw = (invoiceAmount * activeKesPerUnit(fromCurrency)) / activeKesPerUnit(to);
   if (!Number.isFinite(raw) || raw <= 0) return 0;
   if (WHOLE_UNIT.has(to)) return Math.round(raw);
   return Math.round(raw * 100) / 100;

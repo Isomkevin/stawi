@@ -7,6 +7,8 @@ import {
   type CoopMember,
   type CoopSmsSettings,
   DEFAULT_SMS_SETTINGS,
+  DEFAULT_EXPORTER_SMS_SETTINGS,
+  type ExporterSmsSettings,
   type SmsLogEntry,
   type CoopMetrics,
   type CoopMetricsBucket,
@@ -156,6 +158,7 @@ const smsLogs: SmsLogEntry[] = [
   {
     id: "sms_demo_invite",
     coop_id: COOP_ID,
+    account_id: null,
     purpose: "invite",
     phone_number: "+254711000101",
     message: "Hi Amina, Kiambu Highlands Coffee Co-op invites you to Stawi to get paid for your deliveries on M-Pesa.",
@@ -166,6 +169,7 @@ const smsLogs: SmsLogEntry[] = [
   {
     id: "sms_demo_share",
     coop_id: COOP_ID,
+    account_id: null,
     purpose: "share_landed",
     phone_number: "+254711000102",
     message: "Stawi: Mary Wanjiru, KES 4,820.00 is done in your Stawi balance. Ref INV-2413.",
@@ -176,6 +180,7 @@ const smsLogs: SmsLogEntry[] = [
   {
     id: "sms_demo_payout",
     coop_id: COOP_ID,
+    account_id: null,
     purpose: "payout_sent",
     phone_number: "+254711000103",
     message: "Stawi: Peter Kamau, KES 3,150.00 is done in M-Pesa. Ref INV-2413.",
@@ -186,12 +191,24 @@ const smsLogs: SmsLogEntry[] = [
   {
     id: "sms_demo_otp",
     coop_id: COOP_ID,
+    account_id: TREASURER_ID,
     purpose: "otp",
     phone_number: "+254711000000",
     message: "Stawi login code: ******. It expires in 5 minutes.",
     status: "sent",
     dry_run: false,
     created_at: new Date(Date.now() - 2 * 3600_000).toISOString(),
+  },
+  {
+    id: "sms_demo_exporter_paid",
+    coop_id: null,
+    account_id: EXPORTER_ID,
+    purpose: "payment_received",
+    phone_number: "+254712000002",
+    message: "Stawi: Wanjiru Njoroge, KES 127,968.00 is done in your Stawi balance. Ref INV-DIR.",
+    status: "sent",
+    dry_run: false,
+    created_at: new Date(Date.now() - 3 * 3600_000).toISOString(),
   },
 ];
 
@@ -654,6 +671,19 @@ export const mockApi = {
   async listSmsLogs(coopId: string): Promise<SmsLogEntry[]> {
     await latency(200);
     return structuredClone(smsLogs.filter((row) => row.coop_id === coopId));
+  },
+
+  async updateExporterSmsSettings(accountId: string, patch: Partial<ExporterSmsSettings>): Promise<ExporterSmsSettings> {
+    await latency(150);
+    const account = accounts.find((a) => a.id === accountId);
+    if (!account) throw new ApiError(404, "Account not found");
+    account.sms_settings = { ...DEFAULT_EXPORTER_SMS_SETTINGS, ...account.sms_settings, ...patch };
+    return structuredClone(account.sms_settings);
+  },
+
+  async listAccountSmsLogs(accountId: string): Promise<SmsLogEntry[]> {
+    await latency(200);
+    return structuredClone(smsLogs.filter((row) => row.account_id === accountId));
   },
 
   async getCoopMembers(coopId: string): Promise<CoopMember[]> {

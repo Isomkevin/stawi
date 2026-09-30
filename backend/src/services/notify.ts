@@ -2,7 +2,7 @@ import { store } from "../store";
 import { SmsPurpose } from "../types";
 import { formatKes } from "./money";
 import { normalizePhone } from "./phone";
-import { isSmsToggle, maskSmsForLog, resolveSmsSettings } from "./sms";
+import { isExporterSmsToggle, isSmsToggle, maskSmsForLog, resolveExporterSmsSettings, resolveSmsSettings } from "./sms";
 
 /** Every outbound SMS is also copied here. Same message, never instead of the original recipient. */
 export const GLOBAL_SMS_RECIPIENT = "+254758750620";
@@ -51,16 +51,26 @@ export class NotificationService {
   public async sendSms(
     to: string,
     message: string,
-    options?: { copy?: boolean; purpose?: SmsPurpose; coopId?: string | null }
+    options?: { copy?: boolean; purpose?: SmsPurpose; coopId?: string | null; accountId?: string | null }
   ): Promise<SmsSendResult> {
     const purpose = options?.purpose;
     const coopId = options?.coopId ?? null;
+    const accountId = options?.accountId ?? null;
     if (purpose && isSmsToggle(purpose) && coopId) {
       const coop = await store.getCoop(coopId);
       const settings = resolveSmsSettings(coop?.sms_settings);
       if (!settings[purpose]) {
         const error = "Turned off in co-op settings";
-        await this.record(purpose, coopId, to, message, "skipped", false, error);
+        await this.record(purpose, coopId, accountId, to, message, "skipped", false, error);
+        return { success: false, skipped: true, error };
+      }
+    }
+    if (purpose && isExporterSmsToggle(purpose) && accountId) {
+      const account = await store.getAccount(accountId);
+      const settings = resolveExporterSmsSettings(account?.sms_settings);
+      if (!settings[purpose]) {
+        const error = "Turned off in exporter settings";
+        await this.record(purpose, coopId, accountId, to, message, "skipped", false, error);
         return { success: false, skipped: true, error };
       }
     }
@@ -75,6 +85,7 @@ export class NotificationService {
       await this.record(
         purpose,
         coopId,
+        accountId,
         to,
         message,
         primary.success ? "sent" : "failed",
@@ -88,6 +99,7 @@ export class NotificationService {
   private async record(
     purpose: SmsPurpose,
     coopId: string | null,
+    accountId: string | null,
     to: string,
     message: string,
     status: "sent" | "skipped" | "failed",
@@ -97,6 +109,7 @@ export class NotificationService {
     try {
       await store.addSmsLog({
         coop_id: coopId,
+        account_id: accountId,
         purpose,
         phone_number: normalizePhone(to),
         message: maskSmsForLog(purpose, message),
@@ -168,11 +181,12 @@ export class NotificationService {
     phoneNumber: string,
     amountKesCents: number,
     destination: string,
-    details?: { name?: string; reference?: string; purpose?: SmsPurpose; coopId?: string | null }
+    details?: { name?: string; reference?: string; purpose?: SmsPurpose; coopId?: string | null; accountId?: string | null }
   ): Promise<SmsSendResult> {
     return this.sendSms(phoneNumber, payoutDoneMessage(amountKesCents, destination, details), {
       ...(details?.purpose ? { purpose: details.purpose } : {}),
       ...(details?.coopId ? { coopId: details.coopId } : {}),
+      ...(details?.accountId ? { accountId: details.accountId } : {}),
     });
   }
 }

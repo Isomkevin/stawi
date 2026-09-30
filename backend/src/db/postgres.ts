@@ -4,7 +4,7 @@ import path from "path";
 import { Pool, PoolClient, QueryResult, QueryResultRow } from "pg";
 import { normalizeBuyerCode, randomBuyerCode } from "../services/buyerCode";
 import { InMemoryStore } from "../store";
-import { completeSmsLog, resolveSmsSettings } from "../services/sms";
+import { completeSmsLog, resolveExporterSmsSettings, resolveSmsSettings } from "../services/sms";
 import { ACCOUNT_TYPES, Account, AccountType, Coop, CoopMember, Invoice, PaymentProof, Payout, PayoutDestination, Shipment, ShipmentFarmer, ShipmentStatus, SmsLogEntry, Transaction } from "../types";
 
 const txClient = new AsyncLocalStorage<PoolClient>();
@@ -87,6 +87,9 @@ export class PostgresStore extends InMemoryStore {
       pin_hash: row.pin_hash,
       pin_failed_attempts: num(row.pin_failed_attempts),
       pin_locked_until: iso(row.pin_locked_until),
+      sms_settings: resolveExporterSmsSettings({
+        payment_received: row.sms_payment_received !== false,
+      }),
     };
   }
 
@@ -96,8 +99,8 @@ export class PostgresStore extends InMemoryStore {
       `INSERT INTO accounts (
          id, full_name, phone_number, phone_normalized, id_number, coop_id, channel_capability,
          balance_kes_cents, incoming_kes_cents, demo_balance_kes_cents, demo_incoming_kes_cents,
-         is_demo, demo_data_enabled, pin_hash, pin_failed_attempts, pin_locked_until
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+         is_demo, demo_data_enabled, pin_hash, pin_failed_attempts, pin_locked_until, sms_payment_received
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,COALESCE($17, TRUE))
        ON CONFLICT (id) DO UPDATE SET
          full_name = EXCLUDED.full_name,
          phone_number = EXCLUDED.phone_number,
@@ -113,7 +116,8 @@ export class PostgresStore extends InMemoryStore {
          demo_data_enabled = EXCLUDED.demo_data_enabled,
          pin_hash = EXCLUDED.pin_hash,
          pin_failed_attempts = EXCLUDED.pin_failed_attempts,
-         pin_locked_until = EXCLUDED.pin_locked_until`,
+         pin_locked_until = EXCLUDED.pin_locked_until,
+         sms_payment_received = COALESCE($17, accounts.sms_payment_received)`,
       [
         account.id,
         account.full_name,
@@ -131,6 +135,7 @@ export class PostgresStore extends InMemoryStore {
         account.pin_hash ?? null,
         account.pin_failed_attempts ?? 0,
         account.pin_locked_until,
+        account.sms_settings ? account.sms_settings.payment_received : null,
       ]
     );
     await this.q("DELETE FROM payout_destinations WHERE account_id = $1", [account.id]);
@@ -228,13 +233,17 @@ export class PostgresStore extends InMemoryStore {
   }
 
   public async addSmsLog(
-    entry: Omit<SmsLogEntry, "id" | "created_at"> & { id?: string; created_at?: string }
+    entry: Omit<SmsLogEntry, "id" | "created_at" | "account_id"> & {
+      id?: string;
+      created_at?: string;
+      account_id?: string | null;
+    }
   ): Promise<SmsLogEntry> {
     const row = completeSmsLog(entry);
     await this.q(
-      `INSERT INTO sms_logs (id, coop_id, purpose, phone_number, message, status, dry_run, error, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-      [row.id, row.coop_id, row.purpose, row.phone_number, row.message, row.status, row.dry_run, row.error ?? null, row.created_at]
+      `INSERT INTO sms_logs (id, coop_id, account_id, purpose, phone_number, message, status, dry_run, error, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [row.id, row.coop_id, row.account_id, row.purpose, row.phone_number, row.message, row.status, row.dry_run, row.error ?? null, row.created_at]
     );
     return row;
   }
@@ -247,6 +256,26 @@ export class PostgresStore extends InMemoryStore {
     return result.rows.map((row) => ({
       id: String(row.id),
       coop_id: row.coop_id == null ? null : String(row.coop_id),
+      account_id: row.account_id == null ? null : String(row.account_id),
+      purpose: row.purpose,
+      phone_number: String(row.phone_number),
+      message: String(row.message),
+      status: row.status,
+      dry_run: row.dry_run === true,
+      created_at: iso(row.created_at) ?? new Date().toISOString(),
+      ...(row.error ? { error: String(row.error) } : {}),
+    }));
+  }
+
+  public async listAccountSmsLogs(accountId: string, limit: number): Promise<SmsLogEntry[]> {
+    const result = await this.q(
+      `SELECT * FROM sms_logs WHERE account_id = $1 ORDER BY created_at DESC LIMIT $2`,
+      [accountId, limit]
+    );
+    return result.rows.map((row) => ({
+      id: String(row.id),
+      coop_id: row.coop_id == null ? null : String(row.coop_id),
+      account_id: row.account_id == null ? null : String(row.account_id),
       purpose: row.purpose,
       phone_number: String(row.phone_number),
       message: String(row.message),

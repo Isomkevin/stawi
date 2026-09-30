@@ -49,13 +49,21 @@ export function defaultPayCurrency(invoiceCurrency: string): PayCurrency {
   return isPayCurrency(code) ? code : "USD";
 }
 
-export function kesPerUnit(currency: string): number {
-  return KES_PER_UNIT[currency.toUpperCase()] ?? 129;
+export function kesPerUnit(currency: string, rates?: Record<string, number>): number {
+  const code = currency.toUpperCase();
+  const quoted = rates?.[code];
+  if (quoted != null && Number.isFinite(quoted) && quoted > 0) return quoted;
+  return KES_PER_UNIT[code] ?? 129;
 }
 
-export function checkoutAmount(invoiceAmount: number, fromCurrency: string, toCurrency: string): number {
+export function checkoutAmount(
+  invoiceAmount: number,
+  fromCurrency: string,
+  toCurrency: string,
+  rates?: Record<string, number>,
+): number {
   const to = toCurrency.toUpperCase();
-  const raw = (invoiceAmount * kesPerUnit(fromCurrency)) / kesPerUnit(to);
+  const raw = (invoiceAmount * kesPerUnit(fromCurrency, rates)) / kesPerUnit(to, rates);
   if (!Number.isFinite(raw) || raw <= 0) return 0;
   if (WHOLE_UNIT.has(to)) return Math.round(raw);
   return Math.round(raw * 100) / 100;
@@ -75,8 +83,8 @@ export function formatPayAmount(amount: number, currency: string): string {
   }
 }
 
-export function formatKesRate(currency: string): string {
-  const rate = kesPerUnit(currency);
+export function formatKesRate(currency: string, rates?: Record<string, number>): string {
+  const rate = kesPerUnit(currency, rates);
   const text = rate >= 1 ? rate.toFixed(2) : rate.toFixed(4).replace(/0+$/, "");
   return `1 ${currency.toUpperCase()} = KES ${text}`;
 }

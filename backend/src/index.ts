@@ -3,6 +3,7 @@ import { connectPostgres } from "./db/postgres";
 import { CANONICAL } from "./data/catalog";
 import { repairPlaceholderShipmentReferences, seedDatabase, seedShipments, tagLegacyDemoLedger } from "./data/seed";
 import { demoDataDefault } from "./services/demoData";
+import { fxFeedEnabled, startFxRefresh } from "./services/fx";
 import { authRequired } from "./services/auth";
 import { ensureFullAccessPhone } from "./services/phoneMappings";
 import { setStore, store } from "./store";
@@ -56,6 +57,7 @@ async function main() {
   console.log(`[Map] ${fullAccess.phone_number} -> ${fullAccess.account_types.join(", ")}`);
 
   const app = createApp();
+  startFxRefresh();
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log("==================================================");
@@ -66,6 +68,7 @@ async function main() {
     console.log(` AT_ENV:        ${process.env.AT_ENV || "sandbox"}`);
     console.log(` Database:      ${process.env.DATABASE_URL ? "postgres" : "memory"}`);
     console.log(` Auth:          ${authRequired() ? "required" : "open (mock/dev only)"}`);
+    console.log(` FX feed:       ${fxFeedEnabled() ? "frankfurter" : "off (illustrative rates)"}`);
     console.log(` Master login:  ${process.env.MASTER_LOGIN_CODE?.trim() ? "on" : "off"}`);
     console.log(` USSD Secret:   ${process.env.AT_CALLBACK_SECRET ? "configured" : "none"}`);
     console.log("==================================================");

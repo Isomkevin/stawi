@@ -33,7 +33,7 @@ This folder is the full context set for building Stawi end-to-end with AI coding
 Payaza's public docs are Nigeria/NGN-centric in places. Decisions already made, and still open:
 
 1. **Settled.** Do not create a Payaza sub-account per farmer. Sub-accounts are for internal business units. Stawi splits on its own ledger and pays out on withdrawal. See `skills/payaza/SKILL.md` and `skills/stawi-domain/SKILL.md`.
-2. **Open.** Payaza has no documented FX conversion endpoint. Stawi records an illustrative rate (USD 129, EUR 142, GBP 168 at payment time).
+2. **Open.** Payaza has no documented FX conversion endpoint. Stawi quotes Frankfurter v2 and, if that fetch fails, records the illustrative rate (USD 129, EUR 142, GBP 168, KES 1 at payment time).
 3. **Open.** Confirm KES checkout and M-Pesa payout bank codes in the sandbox before calling a live payment successful. Kenya collection is the intended corridor.
 
 Don't invent a Payaza endpoint. Mark it TODO in `backend/src/services/payaza.ts`, confirm it against Payaza's sandbox docs, then update `skills/payaza/SKILL.md`.

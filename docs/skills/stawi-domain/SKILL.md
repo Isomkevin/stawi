@@ -33,7 +33,7 @@ A co-op invoice does not split by roster share. It pays the farmers on the shipm
 
 Sample rows carry `is_demo: true`. Their funds sit in `demo_balance_kes_cents` and `demo_incoming_kes_cents`. Sandbox and live Payaza payouts never spend sample funds. Mock mode may spend them, because mock does not move real money. A new invoice, collection, or withdrawal is live even when Demo Data is on. A sample invoice is not sent to Payaza unless `PAYAZA_MODE=mock`.
 
-Illustrative FX used when a payment is processed (`pipeline.getFxRate`): USD 129, EUR 142, GBP 168. The demo ledger stores its own historical rates (USD 129, EUR 140.5, GBP 168.2). Payaza publishes no FX endpoint, so both tables are Stawi's, not a live quote.
+`getFxRate` reads a cached Frankfurter v2 quote when `FX_FEED` is not `off`. The feed is `https://api.frankfurter.dev/v2/rates` with base USD and no API key. KES per 1 unit is 1 for KES, the USD→KES quote for USD, and that quote divided by the code's USD quote for every other currency. A missing code, a failed fetch with no earlier cache, or `FX_FEED=off` uses the illustrative table: USD 129, EUR 142, GBP 168, KES 1, plus the other Payaza checkout rates in `money.ts`. The cache lasts `FX_CACHE_TTL_MS` (default 6 hours). A failed refresh keeps the last good cache. The demo ledger stores its own historical rates (USD 129, EUR 140.5, GBP 168.2) and is not overwritten. Payaza publishes no FX endpoint. `GET /fx` is public and returns `{ source: "frankfurter" | "fallback", as_of, rates }` for every checkout currency.
 
 ## Pipeline
 
@@ -184,7 +184,7 @@ Sessions are required when `NODE_ENV` is `production`, or `PAYAZA_MODE` is `sand
 
 `POST /auth/logout` clears the cookie.
 
-When auth is on, these stay public: `GET /health`, `POST /accounts`, `POST /name-enquiry`, `POST /auth/otp`, `POST /auth/verify`, `GET /invoices/{id}`, `POST /invoices/{id}/checkout-session`, `POST /webhooks/payaza`, `POST /ussd/callback`, `/dev/*`, and `/admin/*`. The admin page uses `ADMIN_SECRET`, not a user session.
+When auth is on, these stay public: `GET /health`, `GET /fx`, `POST /accounts`, `POST /name-enquiry`, `POST /auth/otp`, `POST /auth/verify`, `GET /invoices/{id}`, `POST /invoices/{id}/checkout-session`, `POST /webhooks/payaza`, `POST /ussd/callback`, `/dev/*`, and `/admin/*`. The admin page uses `ADMIN_SECRET`, not a user session.
 
 Everyone else must be signed in. You can read and write your own account. A treasurer can read member accounts in their co-op, but cannot withdraw for them. Co-op routes and co-op invoices require the treasurer. A direct invoice must name the caller's own account.
 
@@ -194,6 +194,9 @@ Errors are JSON `{ error: string }` with 400, 401, 403, 404, or 409.
 
 ```
 GET  /health
+GET  /fx                                 -> { source: "frankfurter" | "fallback", as_of: string | null, rates }
+                                        Public. rates is KES per 1 unit for every Payaza checkout currency.
+                                        source is frankfurter when the cache holds a successful v2 fetch. Otherwise fallback, and rates are the illustrative table.
 
 POST /auth/otp                          { phone_number } -> { sent: true, dev_code? }
 POST /auth/verify                       { phone_number, code } -> { token, account_id, role, roles, account_types, account }
@@ -213,6 +216,10 @@ GET  /accounts/{id}/transactions?limit  -> Payout[]  (sample payouts omitted whe
 POST /accounts/{id}/destinations        { type, details, account_name, bank_code? } -> 201 PayoutDestination, 409 if duplicate
 DELETE /accounts/{id}/destinations/{destId} -> 204, 400 if it is the last destination
 POST /accounts/{id}/withdraw            { destination_id, amount_kes_cents, pin, idempotency_key? }
+GET  /accounts/{id}/sms-settings        -> { payment_received }
+PATCH /accounts/{id}/sms-settings       { payment_received }
+                                        The Direct exporter switch. Login codes are not a switch and always send.
+GET  /accounts/{id}/sms-logs?limit=     -> SmsLogEntry[] for this account, newest first, default 50, max 200.
 
 POST /coops                             { name, treasurer_account_id }
 GET  /coops/{id}                         includes sms_settings. Missing switches default to on.
@@ -273,7 +280,7 @@ GET  /invoices/{id}                     -> { invoice, transactions, split_previe
                                         The buyer page uses these fields. It does not call GET /coops or GET /accounts.
 POST /invoices/{id}/checkout-session    { currency_code? } -> { reference, checkoutUrl | null, public_key, transaction_reference, link_id | null, connection_mode: "Test" | "Live", checkout_amount, currency_code }
                                         currency_code must be a Payaza checkout currency, or EUR or GBP. 400 otherwise. Omitted uses the invoice currency.
-                                        checkout_amount is the invoice converted into that currency. The buyer page opens the Payaza Web SDK with that amount, currency_code, public_key, and transaction_reference.
+                                        checkout_amount is the invoice converted into that currency at the cached Frankfurter quote, or the illustrative KES table when that quote is missing. The buyer page opens the Payaza Web SDK with that amount, currency_code, public_key, and transaction_reference.
                                         connection_mode is Live only when PAYAZA_MODE=live. The webhook marks the invoice paid.
 POST /invoices/{id}/approve-split       { treasurer_id, pin }
 PATCH /invoices/{id}                   { buyer_name?, buyer_email?, amount?, currency?, description?, shipment_id? }

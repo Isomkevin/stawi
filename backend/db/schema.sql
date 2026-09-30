@@ -22,6 +22,7 @@ ALTER TABLE coops ADD COLUMN IF NOT EXISTS sms_payout_failed BOOLEAN NOT NULL DE
 CREATE TABLE IF NOT EXISTS sms_logs (
   id VARCHAR(64) PRIMARY KEY,
   coop_id VARCHAR(64) REFERENCES coops(id) ON DELETE CASCADE,
+  account_id VARCHAR(64),
   purpose VARCHAR(32) NOT NULL,
   phone_number VARCHAR(32) NOT NULL,
   message TEXT NOT NULL,
@@ -30,7 +31,9 @@ CREATE TABLE IF NOT EXISTS sms_logs (
   error TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+ALTER TABLE sms_logs ADD COLUMN IF NOT EXISTS account_id VARCHAR(64);
 CREATE INDEX IF NOT EXISTS idx_sms_logs_coop_created ON sms_logs (coop_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sms_logs_account_created ON sms_logs (account_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS accounts (
   id VARCHAR(64) PRIMARY KEY,
@@ -49,8 +52,11 @@ CREATE TABLE IF NOT EXISTS accounts (
   pin_hash VARCHAR(255),
   pin_failed_attempts INT NOT NULL DEFAULT 0,
   pin_locked_until TIMESTAMP WITH TIME ZONE,
+  sms_payment_received BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS sms_payment_received BOOLEAN NOT NULL DEFAULT TRUE;
 
 CREATE TABLE IF NOT EXISTS payout_destinations (
   id VARCHAR(64) PRIMARY KEY,

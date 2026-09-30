@@ -26,11 +26,15 @@ export type Account = {
   /** Saved override. Null follows the server default. */
   demo_data_enabled?: boolean | null;
   demo_data_visible?: boolean;
+  sms_settings?: ExporterSmsSettings;
 }; // pin_hash is never returned
 
 export const SMS_TOGGLE_KEYS = ["invite", "invite_summary", "share_landed", "payout_sent", "payout_failed"] as const;
 export type SmsToggleKey = (typeof SMS_TOGGLE_KEYS)[number];
-export type SmsPurpose = SmsToggleKey | "otp" | "payment_received";
+export const EXPORTER_SMS_TOGGLE_KEYS = ["payment_received"] as const;
+export type ExporterSmsToggleKey = (typeof EXPORTER_SMS_TOGGLE_KEYS)[number];
+export type ExporterSmsSettings = Record<ExporterSmsToggleKey, boolean>;
+export type SmsPurpose = SmsToggleKey | "otp" | ExporterSmsToggleKey;
 export type CoopSmsSettings = Record<SmsToggleKey, boolean>;
 export type SmsLogStatus = "sent" | "skipped" | "failed";
 
@@ -42,9 +46,14 @@ export const DEFAULT_SMS_SETTINGS: CoopSmsSettings = {
   payout_failed: true,
 };
 
+export const DEFAULT_EXPORTER_SMS_SETTINGS: ExporterSmsSettings = {
+  payment_received: true,
+};
+
 export type SmsLogEntry = {
   id: string;
   coop_id: string | null;
+  account_id: string | null;
   purpose: SmsPurpose;
   phone_number: string;
   message: string;

@@ -1,5 +1,5 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
-import { FileText, Landmark, LayoutDashboard, Package } from "lucide-react";
+import { FileText, Landmark, LayoutDashboard, Package, Settings } from "lucide-react";
 import { RoleGate } from "@/components/stawi/RoleGate";
 import { DashboardShell } from "@/features/shared/DashboardShell";
 
@@ -28,6 +28,7 @@ function DirectLayout() {
           { to: "/direct/invoices", label: "Invoices", icon: FileText },
           { to: "/direct/shipments", label: "Shipments", icon: Package },
           { to: "/direct/payments", label: "Buyer payments", icon: Landmark },
+          { to: "/direct/settings", label: "Settings", icon: Settings },
         ]}
       >
         <Outlet />

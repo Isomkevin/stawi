@@ -62,10 +62,13 @@ export class InMemoryStore {
 
   // Account
   public async saveAccount(account: Account): Promise<Account> {
-    this.accounts.set(account.id, account);
-    const normalized = this.normalizePhone(account.phone_number);
-    this.accountPhones.set(normalized, account.id);
-    return account;
+    const prev = this.accounts.get(account.id);
+    const next: Account = { ...account };
+    if (!next.sms_settings && prev?.sms_settings) next.sms_settings = prev.sms_settings;
+    this.accounts.set(next.id, next);
+    const normalized = this.normalizePhone(next.phone_number);
+    this.accountPhones.set(normalized, next.id);
+    return next;
   }
 
   public async getAccount(id: string): Promise<Account | undefined> {
@@ -101,7 +104,11 @@ export class InMemoryStore {
   }
 
   public async addSmsLog(
-    entry: Omit<SmsLogEntry, "id" | "created_at"> & { id?: string; created_at?: string }
+    entry: Omit<SmsLogEntry, "id" | "created_at" | "account_id"> & {
+      id?: string;
+      created_at?: string;
+      account_id?: string | null;
+    }
   ): Promise<SmsLogEntry> {
     const row = completeSmsLog(entry);
     this.smsLogs.unshift(row);
@@ -111,6 +118,10 @@ export class InMemoryStore {
 
   public async listSmsLogs(coopId: string, limit: number): Promise<SmsLogEntry[]> {
     return this.smsLogs.filter((row) => row.coop_id === coopId).slice(0, limit);
+  }
+
+  public async listAccountSmsLogs(accountId: string, limit: number): Promise<SmsLogEntry[]> {
+    return this.smsLogs.filter((row) => row.account_id === accountId).slice(0, limit);
   }
 
   // CoopMember

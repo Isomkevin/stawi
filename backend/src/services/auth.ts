@@ -102,6 +102,7 @@ export async function requestOtp(
   const sms = await notify.sendSms(account.phone_number, `Stawi login code: ${code}. It expires in 5 minutes.`, {
     purpose: "otp",
     coopId: account.coop_id,
+    accountId: account.id,
   });
   const showCode = devCodesEnabled();
   if (!showCode && (sms.dryRun || !sms.success)) {
@@ -185,7 +186,7 @@ export async function ownsAccount(actor: Account, accountId: string, write: bool
 }
 
 export function isPublicRoute(method: string, path: string): boolean {
-  if (method === "GET" && path === "/health") return true;
+  if (method === "GET" && (path === "/health" || path === "/fx")) return true;
   if (method === "POST" && path === "/accounts") return true;
   if (method === "POST" && path === "/name-enquiry") return true;
   if (method === "POST" && (path === "/auth/otp" || path === "/auth/verify")) return true;

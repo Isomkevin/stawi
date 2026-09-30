@@ -44,6 +44,9 @@ export const coopOptions = (coopId: string) =>
 export const smsLogsOptions = (coopId: string) =>
   queryOptions({ queryKey: ["coop", coopId, "sms-logs"], queryFn: () => api.listSmsLogs(coopId) });
 
+export const accountSmsLogsOptions = (accountId: string) =>
+  queryOptions({ queryKey: ["account", accountId, "sms-logs"], queryFn: () => api.listAccountSmsLogs(accountId) });
+
 export const coopMembersOptions = (coopId: string) =>
   queryOptions({ queryKey: ["coop", coopId, "members"], queryFn: () => api.getCoopMembers(coopId) });
 

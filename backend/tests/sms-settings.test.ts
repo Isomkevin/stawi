@@ -129,4 +129,33 @@ describe("Co-op SMS settings and usage log", () => {
     const otpRow = logs.find((row) => row.purpose === "otp");
     expect(otpRow?.message).toBe("Stawi login code: ******. It expires in 5 minutes.");
   });
+
+  it("turns off the exporter payment text without blocking the login code", async () => {
+    const off = await request(app).patch("/accounts/acc_amina/sms-settings").send({ payment_received: false });
+    expect(off.status).toBe(200);
+    expect(off.body).toEqual({ payment_received: false });
+
+    const skipped = await notify.sendSms("+254711222333", "buyer paid", {
+      copy: false,
+      purpose: "payment_received",
+      accountId: "acc_amina",
+    });
+    expect(skipped.skipped).toBe(true);
+
+    const otp = await notify.sendSms("+254711222333", "Stawi login code: 111222. It expires in 5 minutes.", {
+      copy: false,
+      purpose: "otp",
+      accountId: "acc_amina",
+    });
+    expect(otp.success).toBe(true);
+
+    const logs = await request(app).get("/accounts/acc_amina/sms-logs");
+    expect(logs.status).toBe(200);
+    expect(logs.body.find((row: { purpose: string }) => row.purpose === "payment_received")).toMatchObject({
+      status: "skipped",
+      account_id: "acc_amina",
+    });
+    const otpRow = logs.body.find((row: { purpose: string }) => row.purpose === "otp");
+    expect(otpRow.message).toBe("Stawi login code: ******. It expires in 5 minutes.");
+  });
 });
