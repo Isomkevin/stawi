@@ -263,7 +263,7 @@ function UnpaidView({
         Pay via stablecoins
       </Button>
       <p className="text-center text-xs text-muted-foreground">
-        Stablecoin payments are not available yet. Card and bank transfer run through our payment partner.
+        Stablecoin payments are not available yet. Card and bank transfer run through our payment partners.
       </p>
 
       <PayazaCheckout
