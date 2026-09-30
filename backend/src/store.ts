@@ -1,5 +1,6 @@
 import { normalizeBuyerCode, randomBuyerCode } from "./services/buyerCode";
 import { normalizePhone as normalizeKenyanPhone } from "./services/phone";
+import { completeSmsLog } from "./services/sms";
 import {
   ACCOUNT_TYPES,
   Account,
@@ -10,6 +11,7 @@ import {
   Payout,
   PaymentProof,
   Shipment,
+  SmsLogEntry,
   Transaction,
 } from "./types";
 
@@ -31,6 +33,7 @@ export class InMemoryStore {
   private paymentProofs = new Map<string, PaymentProof>();
   /** Present key means an admin saved this phone. The set may be empty. */
   private explicitTypes = new Map<string, Set<AccountType>>();
+  private smsLogs: SmsLogEntry[] = [];
 
   public normalizePhone(phone: string): string {
     return normalizeKenyanPhone(phone);
@@ -82,8 +85,11 @@ export class InMemoryStore {
 
   // Coop
   public async saveCoop(coop: Coop): Promise<Coop> {
-    this.coops.set(coop.id, coop);
-    return coop;
+    const prev = this.coops.get(coop.id);
+    const next: Coop = { ...coop };
+    if (!next.sms_settings && prev?.sms_settings) next.sms_settings = prev.sms_settings;
+    this.coops.set(coop.id, next);
+    return next;
   }
 
   public async getCoop(id: string): Promise<Coop | undefined> {
@@ -92,6 +98,19 @@ export class InMemoryStore {
 
   public async getAllCoops(): Promise<Coop[]> {
     return Array.from(this.coops.values());
+  }
+
+  public async addSmsLog(
+    entry: Omit<SmsLogEntry, "id" | "created_at"> & { id?: string; created_at?: string }
+  ): Promise<SmsLogEntry> {
+    const row = completeSmsLog(entry);
+    this.smsLogs.unshift(row);
+    if (this.smsLogs.length > 2000) this.smsLogs.length = 2000;
+    return row;
+  }
+
+  public async listSmsLogs(coopId: string, limit: number): Promise<SmsLogEntry[]> {
+    return this.smsLogs.filter((row) => row.coop_id === coopId).slice(0, limit);
   }
 
   // CoopMember
@@ -432,6 +451,7 @@ export class InMemoryStore {
     this.sessions.clear();
     this.shipments.clear();
     this.explicitTypes.clear();
+    this.smsLogs = [];
   }
 }
 

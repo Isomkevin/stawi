@@ -99,7 +99,10 @@ export async function requestOtp(
   const expires = new Date(Date.now() + OTP_TTL_MS).toISOString();
   await store.saveOtp(phone, hashCode(phone, code), expires);
 
-  const sms = await notify.sendSms(account.phone_number, `Stawi login code: ${code}. It expires in 5 minutes.`);
+  const sms = await notify.sendSms(account.phone_number, `Stawi login code: ${code}. It expires in 5 minutes.`, {
+    purpose: "otp",
+    coopId: account.coop_id,
+  });
   const showCode = devCodesEnabled();
   if (!showCode && (sms.dryRun || !sms.success)) {
     await store.deleteOtp(phone);

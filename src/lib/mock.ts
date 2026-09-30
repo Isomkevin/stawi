@@ -5,6 +5,9 @@ import {
   type CheckoutSession,
   type Coop,
   type CoopMember,
+  type CoopSmsSettings,
+  DEFAULT_SMS_SETTINGS,
+  type SmsLogEntry,
   type CoopMetrics,
   type CoopMetricsBucket,
   type CreateAccountBody,
@@ -147,6 +150,49 @@ export const TREASURER_ID = "acc_treasurer";
 
 const coops: Coop[] = [
   { id: COOP_ID, name: "Kiambu Highlands Coffee Co-op", treasurer_account_id: TREASURER_ID },
+];
+
+const smsLogs: SmsLogEntry[] = [
+  {
+    id: "sms_demo_invite",
+    coop_id: COOP_ID,
+    purpose: "invite",
+    phone_number: "+254711000101",
+    message: "Hi Amina, Kiambu Highlands Coffee Co-op invites you to Stawi to get paid for your deliveries on M-Pesa.",
+    status: "sent",
+    dry_run: false,
+    created_at: new Date(Date.now() - 26 * 3600_000).toISOString(),
+  },
+  {
+    id: "sms_demo_share",
+    coop_id: COOP_ID,
+    purpose: "share_landed",
+    phone_number: "+254711000102",
+    message: "Stawi: Mary Wanjiru, KES 4,820.00 is done in your Stawi balance. Ref INV-2413.",
+    status: "sent",
+    dry_run: false,
+    created_at: new Date(Date.now() - 5 * 3600_000).toISOString(),
+  },
+  {
+    id: "sms_demo_payout",
+    coop_id: COOP_ID,
+    purpose: "payout_sent",
+    phone_number: "+254711000103",
+    message: "Stawi: Peter Kamau, KES 3,150.00 is done in M-Pesa. Ref INV-2413.",
+    status: "sent",
+    dry_run: false,
+    created_at: new Date(Date.now() - 4 * 3600_000).toISOString(),
+  },
+  {
+    id: "sms_demo_otp",
+    coop_id: COOP_ID,
+    purpose: "otp",
+    phone_number: "+254711000000",
+    message: "Stawi login code: ******. It expires in 5 minutes.",
+    status: "sent",
+    dry_run: false,
+    created_at: new Date(Date.now() - 2 * 3600_000).toISOString(),
+  },
 ];
 
 const members: CoopMember[] = farmerSeed.map((f, i) => ({
@@ -594,7 +640,20 @@ export const mockApi = {
     await latency(150);
     const coop = coops.find((c) => c.id === coopId);
     if (!coop) throw new ApiError(404, "Co-op not found");
-    return structuredClone(coop);
+    return structuredClone({ ...coop, sms_settings: { ...DEFAULT_SMS_SETTINGS, ...coop.sms_settings } });
+  },
+
+  async updateSmsSettings(coopId: string, patch: Partial<CoopSmsSettings>): Promise<CoopSmsSettings> {
+    await latency(150);
+    const coop = coops.find((c) => c.id === coopId);
+    if (!coop) throw new ApiError(404, "Co-op not found");
+    coop.sms_settings = { ...DEFAULT_SMS_SETTINGS, ...coop.sms_settings, ...patch };
+    return structuredClone(coop.sms_settings);
+  },
+
+  async listSmsLogs(coopId: string): Promise<SmsLogEntry[]> {
+    await latency(200);
+    return structuredClone(smsLogs.filter((row) => row.coop_id === coopId));
   },
 
   async getCoopMembers(coopId: string): Promise<CoopMember[]> {

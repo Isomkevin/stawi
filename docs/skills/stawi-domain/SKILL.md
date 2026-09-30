@@ -215,7 +215,12 @@ DELETE /accounts/{id}/destinations/{destId} -> 204, 400 if it is the last destin
 POST /accounts/{id}/withdraw            { destination_id, amount_kes_cents, pin, idempotency_key? }
 
 POST /coops                             { name, treasurer_account_id }
-GET  /coops/{id}
+GET  /coops/{id}                         includes sms_settings. Missing switches default to on.
+GET  /coops/{id}/sms-settings           -> { invite, invite_summary, share_landed, payout_sent, payout_failed }
+PATCH /coops/{id}/sms-settings          { invite?, invite_summary?, share_landed?, payout_sent?, payout_failed? }
+                                        Each switch is its own boolean. Login codes are not a switch and always send.
+GET  /coops/{id}/sms-logs?limit=        -> SmsLogEntry[], newest first, default 50, max 200.
+                                        status is sent, skipped, or failed. Login-code rows omit the digits.
 GET  /coops/{id}/members
 POST /coops/{id}/members                { account_id, contribution_share, kilos? }
                                         409 if that account already belongs to another co-op.
@@ -234,6 +239,7 @@ POST /coops/{id}/invites/sms            { recipients } -> { sent, failed, result
                                         Up to 5000 farmers in one call, sent in chunks of 100.
                                         One summary text goes to the operator number. Farmer texts are not copied one by one.
                                         Link must be an https://…/onboarding? URL.
+                                        Invite links and the summary each follow that co-op's SMS switch. A turned-off text is skipped and logged.
 GET  /coops/{id}/payouts                -> Payout[] for this co-op's invoices, newest first
 GET  /coops/{id}/shipments              -> Shipment[] for this co-op, latest ship date first
 POST /shipments/{id}/farmers            { account_id, kilos } -> Shipment

@@ -41,6 +41,9 @@ export const invoiceOptions = (invoiceId: string) =>
 export const coopOptions = (coopId: string) =>
   queryOptions({ queryKey: ["coop", coopId], queryFn: () => api.getCoop(coopId) });
 
+export const smsLogsOptions = (coopId: string) =>
+  queryOptions({ queryKey: ["coop", coopId, "sms-logs"], queryFn: () => api.listSmsLogs(coopId) });
+
 export const coopMembersOptions = (coopId: string) =>
   queryOptions({ queryKey: ["coop", coopId, "members"], queryFn: () => api.getCoopMembers(coopId) });
 

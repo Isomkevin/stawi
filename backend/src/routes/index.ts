@@ -25,17 +25,20 @@ import {
   removeShipmentFarmer,
   updateShipmentDetails,
 } from "../services/shipments";
+import { resolveSmsSettings } from "../services/sms";
 import { store } from "../store";
 import { randomUUID } from "crypto";
 import {
   Account,
   PaymentProof,
+  CoopSmsSettings,
   CoopMetrics,
   CoopMetricsBucket,
   CoopMember,
   DemoDataSettings,
   Invoice,
   PublicAccount,
+  SMS_TOGGLE_KEYS,
   UNRESOLVED_ACCOUNT_NAME,
 } from "../types";
 import {
@@ -476,7 +479,57 @@ apiRouter.get("/coops/:id", async (req: Request, res: Response) => {
     res.status(404).json({ error: "Co-op not found" });
     return;
   }
-  res.status(200).json(coop);
+  res.status(200).json({ ...coop, sms_settings: resolveSmsSettings(coop.sms_settings) });
+});
+
+function readSmsPatch(body: unknown): Partial<CoopSmsSettings> | null {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return null;
+  const record = body as Record<string, unknown>;
+  const patch: Partial<CoopSmsSettings> = {};
+  let seen = false;
+  for (const key of SMS_TOGGLE_KEYS) {
+    if (!(key in record)) continue;
+    seen = true;
+    if (typeof record[key] !== "boolean") return null;
+    patch[key] = record[key];
+  }
+  return seen ? patch : null;
+}
+
+apiRouter.get("/coops/:id/sms-settings", async (req: Request, res: Response) => {
+  const coop = await store.getCoop(getParam(req.params.id));
+  if (!coop) {
+    res.status(404).json({ error: "Co-op not found" });
+    return;
+  }
+  res.status(200).json(resolveSmsSettings(coop.sms_settings));
+});
+
+apiRouter.patch("/coops/:id/sms-settings", async (req: Request, res: Response) => {
+  const coop = await store.getCoop(getParam(req.params.id));
+  if (!coop) {
+    res.status(404).json({ error: "Co-op not found" });
+    return;
+  }
+  const patch = readSmsPatch(req.body);
+  if (!patch) {
+    res.status(400).json({ error: "Send at least one SMS switch as true or false" });
+    return;
+  }
+  const sms_settings = resolveSmsSettings({ ...coop.sms_settings, ...patch });
+  await store.saveCoop({ ...coop, sms_settings });
+  res.status(200).json(sms_settings);
+});
+
+apiRouter.get("/coops/:id/sms-logs", async (req: Request, res: Response) => {
+  const coop = await store.getCoop(getParam(req.params.id));
+  if (!coop) {
+    res.status(404).json({ error: "Co-op not found" });
+    return;
+  }
+  const raw = Number(req.query.limit ?? 50);
+  const limit = Number.isFinite(raw) ? Math.min(200, Math.max(1, Math.floor(raw))) : 50;
+  res.status(200).json(await store.listSmsLogs(coop.id, limit));
 });
 
 apiRouter.get("/coops/:id/members", async (req: Request, res: Response) => {
@@ -787,7 +840,7 @@ apiRouter.post("/coops/:id/invites/sms", async (req: Request, res: Response) => 
       const greeting = name ? `Hi ${name.split(" ")[0]}, ` : "";
       const message = `${greeting}${coop.name} invites you to Stawi to get paid for your deliveries on M-Pesa. Join here: ${link}`;
       try {
-        const sent = await notify.sendSms(phone, message, { copy: false });
+        const sent = await notify.sendSms(phone, message, { copy: false, purpose: "invite", coopId: coop.id });
         results.push({
           phone_number: phone,
           sent: sent.success,
@@ -806,7 +859,7 @@ apiRouter.post("/coops/:id/invites/sms", async (req: Request, res: Response) => 
   const failed = results.filter((r) => !r.sent).length;
   const summary = `${coop.name}: Stawi texted ${sent} invite ${sent === 1 ? "link" : "links"}${failed ? ` (${failed} failed)` : ""}.`;
   try {
-    await notify.sendSms(GLOBAL_SMS_RECIPIENT, summary);
+    await notify.sendSms(GLOBAL_SMS_RECIPIENT, summary, { copy: false, purpose: "invite_summary", coopId: coop.id });
   } catch {
     // The farmer texts already went out. The operator summary is best-effort.
   }

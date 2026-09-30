@@ -28,10 +28,37 @@ export type Account = {
   demo_data_visible?: boolean;
 }; // pin_hash is never returned
 
+export const SMS_TOGGLE_KEYS = ["invite", "invite_summary", "share_landed", "payout_sent", "payout_failed"] as const;
+export type SmsToggleKey = (typeof SMS_TOGGLE_KEYS)[number];
+export type SmsPurpose = SmsToggleKey | "otp" | "payment_received";
+export type CoopSmsSettings = Record<SmsToggleKey, boolean>;
+export type SmsLogStatus = "sent" | "skipped" | "failed";
+
+export const DEFAULT_SMS_SETTINGS: CoopSmsSettings = {
+  invite: true,
+  invite_summary: true,
+  share_landed: true,
+  payout_sent: true,
+  payout_failed: true,
+};
+
+export type SmsLogEntry = {
+  id: string;
+  coop_id: string | null;
+  purpose: SmsPurpose;
+  phone_number: string;
+  message: string;
+  status: SmsLogStatus;
+  dry_run: boolean;
+  error?: string;
+  created_at: string;
+};
+
 export type Coop = {
   id: string;
   name: string;
   treasurer_account_id: string;
+  sms_settings?: CoopSmsSettings;
 };
 
 export type CoopMember = {

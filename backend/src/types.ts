@@ -42,10 +42,30 @@ export type Account = {
 
 export type PublicAccount = Omit<Account, "pin_hash" | "pin_failed_attempts" | "pin_locked_until">;
 
+export const SMS_TOGGLE_KEYS = ["invite", "invite_summary", "share_landed", "payout_sent", "payout_failed"] as const;
+export type SmsToggleKey = (typeof SMS_TOGGLE_KEYS)[number];
+/** `otp` always sends. `payment_received` is a Direct exporter text and is not a co-op switch. */
+export type SmsPurpose = SmsToggleKey | "otp" | "payment_received";
+export type CoopSmsSettings = Record<SmsToggleKey, boolean>;
+export type SmsLogStatus = "sent" | "skipped" | "failed";
+
+export type SmsLogEntry = {
+  id: string;
+  coop_id: string | null;
+  purpose: SmsPurpose;
+  phone_number: string;
+  message: string;
+  status: SmsLogStatus;
+  dry_run: boolean;
+  error?: string;
+  created_at: string;
+};
+
 export type Coop = {
   id: string;
   name: string;
   treasurer_account_id: string;
+  sms_settings?: CoopSmsSettings;
 };
 
 export type CoopMember = {

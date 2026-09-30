@@ -7,6 +7,8 @@ import {
   type CheckoutSession,
   type Coop,
   type CoopMember,
+  type CoopSmsSettings,
+  type SmsLogEntry,
   type CoopMetrics,
   type CreateAccountBody,
   type DemoDataSettings,
@@ -148,6 +150,14 @@ export const api = {
   // GET /coops/{id}
   getCoop: (coopId: string): Promise<Coop> =>
     isMock ? mockApi.getCoop(coopId) : request(`/coops/${coopId}`),
+
+  updateSmsSettings: (coopId: string, patch: Partial<CoopSmsSettings>): Promise<CoopSmsSettings> =>
+    isMock
+      ? mockApi.updateSmsSettings(coopId, patch)
+      : request(`/coops/${coopId}/sms-settings`, { method: "PATCH", body: JSON.stringify(patch) }),
+
+  listSmsLogs: (coopId: string): Promise<SmsLogEntry[]> =>
+    isMock ? mockApi.listSmsLogs(coopId) : request(`/coops/${coopId}/sms-logs?limit=50`),
 
   // GET /coops/{id}/members
   getCoopMembers: (coopId: string): Promise<CoopMember[]> =>

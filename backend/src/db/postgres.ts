@@ -4,7 +4,8 @@ import path from "path";
 import { Pool, PoolClient, QueryResult, QueryResultRow } from "pg";
 import { normalizeBuyerCode, randomBuyerCode } from "../services/buyerCode";
 import { InMemoryStore } from "../store";
-import { ACCOUNT_TYPES, Account, AccountType, Coop, CoopMember, Invoice, PaymentProof, Payout, PayoutDestination, Shipment, ShipmentFarmer, ShipmentStatus, Transaction } from "../types";
+import { completeSmsLog, resolveSmsSettings } from "../services/sms";
+import { ACCOUNT_TYPES, Account, AccountType, Coop, CoopMember, Invoice, PaymentProof, Payout, PayoutDestination, Shipment, ShipmentFarmer, ShipmentStatus, SmsLogEntry, Transaction } from "../types";
 
 const txClient = new AsyncLocalStorage<PoolClient>();
 
@@ -165,7 +166,48 @@ export class PostgresStore extends InMemoryStore {
     return result.rows.map((row) => this.mapAccount(row, destinations.get(row.id) || []));
   }
 
+  private mapCoop(row: QueryResultRow): Coop {
+    return {
+      id: row.id,
+      name: row.name,
+      treasurer_account_id: row.treasurer_account_id,
+      sms_settings: resolveSmsSettings({
+        invite: row.sms_invite !== false,
+        invite_summary: row.sms_invite_summary !== false,
+        share_landed: row.sms_share_landed !== false,
+        payout_sent: row.sms_payout_sent !== false,
+        payout_failed: row.sms_payout_failed !== false,
+      }),
+    };
+  }
+
   public async saveCoop(coop: Coop): Promise<Coop> {
+    if (coop.sms_settings) {
+      const settings = resolveSmsSettings(coop.sms_settings);
+      await this.q(
+        `INSERT INTO coops (id, name, treasurer_account_id, sms_invite, sms_invite_summary, sms_share_landed, sms_payout_sent, sms_payout_failed)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         ON CONFLICT (id) DO UPDATE SET
+           name = EXCLUDED.name,
+           treasurer_account_id = EXCLUDED.treasurer_account_id,
+           sms_invite = EXCLUDED.sms_invite,
+           sms_invite_summary = EXCLUDED.sms_invite_summary,
+           sms_share_landed = EXCLUDED.sms_share_landed,
+           sms_payout_sent = EXCLUDED.sms_payout_sent,
+           sms_payout_failed = EXCLUDED.sms_payout_failed`,
+        [
+          coop.id,
+          coop.name,
+          coop.treasurer_account_id,
+          settings.invite,
+          settings.invite_summary,
+          settings.share_landed,
+          settings.payout_sent,
+          settings.payout_failed,
+        ]
+      );
+      return { ...coop, sms_settings: settings };
+    }
     await this.q(
       `INSERT INTO coops (id, name, treasurer_account_id) VALUES ($1,$2,$3)
        ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, treasurer_account_id = EXCLUDED.treasurer_account_id`,
@@ -177,13 +219,42 @@ export class PostgresStore extends InMemoryStore {
   public async getCoop(id: string): Promise<Coop | undefined> {
     const result = await this.q("SELECT * FROM coops WHERE id = $1", [id]);
     if (result.rows.length === 0) return undefined;
-    const row = result.rows[0];
-    return { id: row.id, name: row.name, treasurer_account_id: row.treasurer_account_id };
+    return this.mapCoop(result.rows[0]);
   }
 
   public async getAllCoops(): Promise<Coop[]> {
     const result = await this.q("SELECT * FROM coops");
-    return result.rows.map((row) => ({ id: row.id, name: row.name, treasurer_account_id: row.treasurer_account_id }));
+    return result.rows.map((row) => this.mapCoop(row));
+  }
+
+  public async addSmsLog(
+    entry: Omit<SmsLogEntry, "id" | "created_at"> & { id?: string; created_at?: string }
+  ): Promise<SmsLogEntry> {
+    const row = completeSmsLog(entry);
+    await this.q(
+      `INSERT INTO sms_logs (id, coop_id, purpose, phone_number, message, status, dry_run, error, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [row.id, row.coop_id, row.purpose, row.phone_number, row.message, row.status, row.dry_run, row.error ?? null, row.created_at]
+    );
+    return row;
+  }
+
+  public async listSmsLogs(coopId: string, limit: number): Promise<SmsLogEntry[]> {
+    const result = await this.q(
+      `SELECT * FROM sms_logs WHERE coop_id = $1 ORDER BY created_at DESC LIMIT $2`,
+      [coopId, limit]
+    );
+    return result.rows.map((row) => ({
+      id: String(row.id),
+      coop_id: row.coop_id == null ? null : String(row.coop_id),
+      purpose: row.purpose,
+      phone_number: String(row.phone_number),
+      message: String(row.message),
+      status: row.status,
+      dry_run: row.dry_run === true,
+      created_at: iso(row.created_at) ?? new Date().toISOString(),
+      ...(row.error ? { error: String(row.error) } : {}),
+    }));
   }
 
   public async getCoopMembers(coopId: string): Promise<CoopMember[]> {
@@ -812,7 +883,7 @@ export class PostgresStore extends InMemoryStore {
 
   public async reset(): Promise<void> {
     await this.q(
-      `TRUNCATE webhook_events, otp_codes, sessions, payouts, transactions, shipment_farmers, shipments, invoices, coop_members, payout_destinations, phone_account_types, phone_mappings, accounts, coops RESTART IDENTITY CASCADE`
+      `TRUNCATE sms_logs, webhook_events, otp_codes, sessions, payouts, transactions, shipment_farmers, shipments, invoices, coop_members, payout_destinations, phone_account_types, phone_mappings, accounts, coops RESTART IDENTITY CASCADE`
     );
   }
 }

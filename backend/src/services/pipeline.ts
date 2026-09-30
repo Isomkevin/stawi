@@ -1,5 +1,5 @@
 import { store } from "../store";
-import { FarmerShareConfirmation, Invoice, Payout, SplitLine, Transaction, Shipment } from "../types";
+import { FarmerShareConfirmation, Invoice, Payout, SmsPurpose, SplitLine, Transaction, Shipment } from "../types";
 import {
   allocateWithdrawal,
   applyWithdrawal,
@@ -20,6 +20,8 @@ type PayoutAlert = {
   amountKesCents: number;
   where: string;
   reference?: string;
+  purpose: Extract<SmsPurpose, "share_landed" | "payout_sent" | "payout_failed" | "payment_received">;
+  coopId: string | null;
 };
 
 /** Best-effort. A failed text never undoes the payout. */
@@ -29,6 +31,8 @@ async function sendPayoutAlerts(alerts: PayoutAlert[]): Promise<void> {
       await notify.notifyPayoutLanded(alert.phone, alert.amountKesCents, alert.where, {
         name: alert.name,
         reference: alert.reference,
+        purpose: alert.purpose,
+        coopId: alert.coopId,
       });
     } catch (err) {
       console.warn("[SMS Warning] payout alert failed:", err);
@@ -182,6 +186,8 @@ export class PipelineService {
             amountKesCents: netKesCents,
             where: "your Stawi balance",
             reference: invoice.reference,
+            purpose: "payment_received",
+            coopId: null,
           });
         }
       }
@@ -332,6 +338,8 @@ export class PipelineService {
           amountKesCents: credit.amount_kes_cents,
           where: alert?.where ?? "your Stawi balance",
           reference: result.invoice.reference,
+          purpose: "share_landed",
+          coopId: result.invoice.coop_id,
         });
       }
     }
@@ -400,6 +408,8 @@ export class PipelineService {
           amountKesCents: amount,
           where: "your Stawi balance",
           reference: invoice.reference,
+          purpose: "payout_failed",
+          coopId: invoice.coop_id,
         },
       ]);
     } else {
@@ -519,6 +529,8 @@ export class PipelineService {
           amountKesCents: line.net_kes_cents,
           where: "your Stawi balance",
           reference: invoice.reference,
+          purpose: "share_landed",
+          coopId: invoice.coop_id,
         });
       }
     }
@@ -564,6 +576,8 @@ export class PipelineService {
               amountKesCents: payout.amount_kes_cents,
               where,
               reference: "Withdrawal",
+              purpose: "payout_sent",
+              coopId: account.coop_id,
             },
           ]);
         }
@@ -817,6 +831,8 @@ export class PipelineService {
           amountKesCents: current.amount_kes_cents,
           where: destination.type === "bank" ? "your bank" : destination.type === "momo" ? "mobile money" : "M-Pesa",
           reference: input.alertReference,
+          purpose: "payout_sent",
+          coopId: account.coop_id,
         },
       ],
     };
