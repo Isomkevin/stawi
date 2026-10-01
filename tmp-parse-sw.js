@@ -1,0 +1,13 @@
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+const s = fs.readFileSync(path.join(os.tmpdir(), "stawi-sw.js"), "utf8");
+const i = s.indexOf("precacheAndRoute([");
+const j = s.indexOf("],", i);
+const arr = s.slice(i, j + 1);
+const urls = [...arr.matchAll(/url:"([^"]+)"/g)].map((m) => m[1]);
+console.log("count", urls.length);
+console.log(urls.join("\n"));
+const nav = s.indexOf("createHandlerBoundToURL");
+console.log("--- around navigate ---");
+console.log(s.slice(Math.max(0, nav - 200), nav + 200));

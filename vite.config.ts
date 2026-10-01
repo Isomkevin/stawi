@@ -17,10 +17,21 @@ export default defineConfig({
         manifest: false,
         devOptions: { enabled: false },
         workbox: {
-          navigateFallbackDenylist: [/^\/~oauth(?:\/|$)/],
+          // TanStack Start has no static index.html. The default fallback
+          // throws non-precached-url during service-worker startup.
+          navigateFallback: null,
+          // The build folders are client/ and server/. The site serves client
+          // files from /. Without this rewrite, precache fetches /client/assets/*
+          // (404) and Workbox aborts install — the "zig-*.js" console error.
+          modifyURLPrefix: { "client/": "/" },
+          // Shell only. Hashed JS is cached when a page requests it. Precaching
+          // every chunk includes Shiki and Mermaid grammars, and one 404 fails
+          // the whole install.
+          globPatterns: ["**/*.{css,ico,png,svg,webp,woff,woff2,webmanifest}"],
           runtimeCaching: [
             {
-              urlPattern: ({ request }) => request.mode === "navigate",
+              urlPattern: ({ request, url }) =>
+                request.mode === "navigate" && !/^\/~oauth(?:\/|$)/.test(url.pathname),
               handler: "NetworkFirst",
               options: {
                 cacheName: "stawi-pages",
