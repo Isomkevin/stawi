@@ -107,6 +107,8 @@ Always respond `200` to the callback even on internal errors — return a gracef
 
 ## Stawi's USSD menu tree (mirrors the webapp's three actions)
 
+The menu is `backend/src/ussd/menu.ts`. Session binding, expiry, and replay are `backend/src/ussd/session.ts`. The callback is `backend/src/ussd/handler.ts`.
+
 ```
 Root (text = "")
    CON Welcome to Stawi
@@ -116,8 +118,9 @@ Root (text = "")
   0. Exit
 
 Option 1 (text = "1")
-  → the phone number selects the account, then that account's balance
+  → the phone number selects the account, then that account's live balance
   END Your Stawi balance: KES {amount}
+  When Demo Data is on and the account has sample funds, a second line reads Sample: KES {amount}. That sample is not part of the live balance.
 
 Option 2 (text = "2")
   → the same payout list the web app reads, last 3

@@ -7,8 +7,8 @@ Team: LESOM · Product: Stawi Direct + Stawi Co-op
 
 Stawi replaces a slow, manual, fee-heavy cross-border collection process with one transparent, automatic flow, in two shapes:
 
-- **Stawi Direct**: a solo Kenyan exporter (agriculture, crafts, digital services) sends a Payaza checkout link instead of a bank wire request. Buyer pays in their own currency → multi-currency converts to KES → settlement pays the exporter same-day.
-- **Stawi Co-op**: a Kenyan export co-op (coffee, tea, macadamia, flowers) collects once from a buyer. Same pipe as Direct, plus one step — Stawi splits the converted net across each farmer's contribution share into their Stawi balance. The farmer withdraws to M-Pesa or a bank. Payaza sub-accounts are not used for farmers.
+- **Stawi Direct**: a solo Kenyan exporter (agriculture, crafts, digital services) sends a Payaza checkout instead of a bank wire request. Buyer pays in their own currency → Stawi converts to KES → the exporter's balance is credited, then they withdraw.
+- **Stawi Co-op**: a Kenyan export co-op (coffee, tea, macadamia, flowers) collects once from a buyer. Same pipe as Direct, plus one step — Stawi splits the converted net across the farmers on that shipment, by kilos, into their Stawi balance, and Payaza pays each farmer who has a verified destination when the treasurer approves. Payaza sub-accounts are not used for farmers.
 
 Both products share one backend, one data model, and one payment integration layer. Co-op is Direct with a split step inserted before payout.
 
@@ -27,32 +27,34 @@ Note: "Farmer/Exporter Account app" is one surface serving two personas (solo ex
 
 See `skills/stawi-domain/SKILL.md` for entities, the pipeline, auth, and every route. Summary:
 
-- **Account** — a payee (solo exporter, farmer, or treasurer). Phone, national ID, M-Pesa and/or bank destinations, `channel_capability` (`webapp` or `webapp+ussd`), a 4-digit PIN, `balance_kes_cents`, and `incoming_kes_cents`.
+- **Account** — a payee (solo exporter, farmer, or treasurer). Phone, national ID, M-Pesa, other mobile-money (`momo`), and/or bank destinations, `channel_capability` (`webapp` or `webapp+ussd`), a 4-digit PIN, `balance_kes_cents`, and `incoming_kes_cents`. Sample funds sit in `demo_balance_kes_cents` and are not sent through sandbox or live Payaza payouts.
 - **Coop** — a named group with one treasurer Account.
 - **CoopMember** — links an Account to a Coop with a `contribution_share` (a percentage from 0 to 100; the roster total may pass 100) and optional kilos. A shipment pays the farmers selected for that lot. Their kilos must add up to the shipment quantity before the draft can move on.
 - **Invoice** — Direct (one account) or Co-op. Buyer, amount, currency, reference, and a status from `pending` through `completed` or `failed`.
 - **Transaction** — append-only steps on an invoice: collection, conversion, settlement. Fee is integer KES cents on conversion and settlement.
-- **Payout** — money for one account. `credit` lands in the Stawi balance. `withdrawal` sends that balance to M-Pesa or a bank.
+- **Shipment** — a co-op lot, or a Direct exporter's own lot. The split pays the farmers listed on it, weighted by kilos. `buyer_code` opens `/buyer?code=`.
+- **Payout** — money for one account. `credit` lands in the Stawi balance. On co-op approval, a verified destination is paid through Payaza in the same step. `withdrawal` sends whatever balance remains to M-Pesa, another wallet, or a bank.
+- **Payment proof** — a bank-transfer receipt the buyer submits. Confirming it records the collection the same way a Payaza webhook does.
 
 ## 4. The two flows, step by step
 
 ### Stawi Direct
-1. Exporter creates an Invoice (amount, currency, buyer) and the backend opens a Payaza checkout session.
-2. Buyer pays in the Buyer Portal. Payaza's webhook (or `POST /dev/simulate-payment/{id}` in mock mode) records a collection.
-3. Stawi converts to KES at its illustrative rate and takes a 0.8% fee. There is no documented Payaza FX endpoint.
-4. Stawi settles immediately: one credit payout, and the exporter's `balance_kes_cents` increases by the net.
-5. The exporter withdraws to a verified M-Pesa or bank destination with a PIN. That withdrawal is the Payaza payout.
+1. Exporter creates an Invoice (amount, currency, buyer). That also opens their shipment. Checkout is `POST /invoices/{id}/checkout-session`.
+2. Buyer pays in the Buyer Portal through the Payaza Web SDK, or submits a bank-transfer proof that the exporter confirms. Payaza's webhook, a confirmed proof, or `POST /dev/simulate-payment/{id}` in mock mode records a collection.
+3. Stawi converts to KES from the Frankfurter cache (`FX_FEED`, default on) and takes a 0.8% fee. `FX_FEED=off`, a failed fetch, or a missing code uses the illustrative table in `backend/src/services/money.ts`. Payaza publishes no FX endpoint.
+4. Stawi credits the exporter at once: one confirmed `credit` payout, and `balance_kes_cents` increases by the net.
+5. The exporter withdraws to a verified M-Pesa, other mobile-money, or bank destination with a PIN. That withdrawal is a Payaza payout.
 
 ### Stawi Co-op
-Steps 1–3 are the same, with the invoice tied to a co-op. Then:
-4. Status becomes `settling`. Each member's net share is added to `incoming_kes_cents`. Nothing is spendable yet.
-5. The treasurer reviews the split and calls `POST /invoices/{id}/approve-split` with their PIN. Stawi allocates with largest-remainder so the lines sum exactly to the net, writes one credit payout per member, and moves incoming into balance.
-6. Each farmer withdraws on the web app or USSD, same endpoint, same balance. A second approval is rejected.
+Steps 1–3 are the same, with the invoice tied to a co-op and to a shipment. Then:
+4. Status becomes `settling`. The net is booked to `incoming_kes_cents` for the farmers on that shipment, weighted by kilos. A roster member who is not on the shipment is not paid. Nothing is spendable yet.
+5. The treasurer reviews the split and calls `POST /invoices/{id}/approve-split` with their PIN. `splitByKilos` uses largest-remainder so the lines sum exactly to the net. Stawi writes one confirmed `credit` payout per shipment farmer, moves incoming into balance, and calls Payaza once per farmer who has a verified destination. Mock confirms that transfer. Sandbox and live stay `sent` until the payout webhook. A farmer with no destination keeps the credit. A second approval is rejected.
+6. Each farmer withdraws whatever remains on the web app or USSD, same endpoint, same balance.
 
 ## 5. Three surfaces
 
 ### 5a. Farmer/Exporter Account surface (webapp + USSD/SMS parity)
-**Onboarding (webapp only):** name, ID, phone, payout destination (M-Pesa/bank), linked coop (if any) and contribution share.
+**Onboarding (webapp only):** name, ID, phone, payout destination (M-Pesa, other mobile money, or bank), linked coop (if any) and contribution share. The share is the roster figure. The payout uses shipment kilos.
 
 **Ongoing use (webapp AND USSD/SMS — same account, same data):**
 1. View Stawi account details / balance
@@ -63,54 +65,53 @@ USSD/SMS is not a separate account — it's a second read/write channel onto the
 
 ### 5b. Co-op Dashboard surface (treasurer-facing)
 - **Invoicing**: create an Invoice for a shipment, see its checkout link/status
-- **Roster management**: add/edit farmer Accounts, payout destinations, contribution shares (must sum to 100% per active Invoice — validate this)
-- **Metrics**: total collected, total split, per-farmer payout history, average time-to-payout, fee taken (make the fee visible here — it's the revenue-model answer)
-- **Split review**: treasurer sees the calculated per-farmer split before it fires (a manual approve step, not silent automation) — this is a trust feature worth calling out to judges
+- **Roster management**: add, import, and edit farmer accounts. Each `contribution_share` stays between 0 and 100. The roster total may pass 100. It is not the invoice split.
+- **Shipments**: the lot lists the farmers and their kilos. Those kilos are the split. A draft cannot advance until they sum to `quantity_kg`.
+- **Metrics**: total collected, total split, per-farmer payout history, average time-to-payout, and the 0.8% fee, on the dashboard.
+- **Split review**: the treasurer sees the per-farmer lines, then approves with a PIN. Approval is what sends the Payaza transfers.
 
 ### 5c. Buyer/Payer Portal surface
-- View the invoice (amount, currency, what it's for)
-- Pay via embedded Payaza checkout widget
-- See payment confirmation
-- (stretch, optional) confirm goods received, gating payout release
+- Open `/pay/:invoiceId` or `/buyer?code={buyer_code}`
+- Pay via the Payaza Web SDK in the currency they choose
+- Or submit a bank-transfer proof (payer, reference, amount, optional receipt). The payee confirms or rejects it. Confirming records the collection.
+- See payment confirmation and the receipt once a collection has completed
 
 ## 6. Revenue model (make this visible, not just described)
 
-A transparent transaction fee on the converted amount (illustrative: 0.5–1%), framed as replacing — not adding to — the hidden spread the exporter/co-op already loses to banks/intermediaries today. Show this fee line item explicitly in the Co-op Dashboard metrics and in the Invoice breakdown, so judges can see pricing is real and disclosed, not hidden.
+The fee is 0.8% of the converted gross, in integer KES cents, shown on the co-op metrics and on the invoice breakdown. It is the price on the screen, in place of a spread the exporter only sees after a wire lands short.
 
-## 7. Tech stack (flexible — adjust to what the team already knows fastest)
+## 7. Tech stack
 
-- Backend/internal API: Node (Express/Fastify) or Python (FastAPI) — whichever the team is fastest in
-- Database: Postgres (or SQLite for the hackathon if time-constrained — schema is the same)
-- Frontend (Farmer app, Co-op Dashboard, Buyer Portal): React/Next.js, built via Lovable where possible
-- USSD/SMS adapter: thin Node/Python service, calls the internal API, never Payaza directly
-- Payments: Payaza sandbox (see `skills/payaza/SKILL.md`)
-- 2G channel: Africa's Talking sandbox (see `skills/africas-talking/SKILL.md`)
+- Backend: Node, Express, TypeScript (`backend/`). Postgres when `DATABASE_URL` is set; memory otherwise.
+- Frontend: the Lovable app at the repo root (TanStack Start). It calls this API. It does not call Payaza or Africa's Talking except the Payaza Web SDK on the buyer page.
+- USSD and SMS: the same backend (`backend/src/ussd/`, `backend/src/services/notify.ts`).
+- Payments: `backend/src/services/payaza.ts` only. FX quotes: `backend/src/services/fx.ts` (Frankfurter).
 
-## 8. Build order for today
+## 8. What shipped
 
-1. **Internal API first** — Account, Invoice, Transaction, Payout models + CRUD, before any UI. Every surface depends on this.
-2. **Stawi Direct end-to-end, live** — one exporter, one buyer, real Payaza sandbox checkout → conversion → settlement call. This is the guaranteed baseline — do not move on until this actually works with real API calls.
-3. **Buyer Portal + Co-op Dashboard (thin versions)** — enough UI to demo the Direct flow live.
-4. **Stawi Co-op stretch** — sub-account split, farmer roster, per-farmer payout. Layer this on top of the working Direct pipe.
-5. **USSD/SMS channel parity** — wire the same three farmer actions (balance, status, withdraw) into a USSD menu via Africa's Talking's sandbox simulator. Label this clearly as a live sandbox simulation in the demo, not a real telco integration.
-6. **Metrics + fee display on Co-op Dashboard** — answers the revenue-model question directly.
-7. Polish only after all of the above genuinely work — a rough UI with real API calls beats a polished UI with fake data.
+The contract is `skills/stawi-domain/SKILL.md`. In short:
 
-## 9. Acceptance criteria (what "done enough to demo" looks like)
+1. Direct and Co-op run on one pipeline: collection, Frankfurter (or fallback) conversion, 0.8% fee, then credit.
+2. Co-op splits by shipment kilos (`splitByKilos`), after the treasurer's PIN. Payaza then transfers to each farmer with a verified destination.
+3. The buyer can pay in the Payaza Web SDK or submit a bank-transfer proof the payee confirms.
+4. Web and USSD read the same balance and call the same withdraw.
+5. Co-op metrics show the fee. Sample rows are `is_demo` and follow the Demo Data switch.
 
-- [ ] A real Payaza sandbox checkout link can be created and paid
-- [ ] A real conversion + settlement call completes and is visible in Transaction history
-- [ ] At least one real sub-account split payout completes (Co-op stretch)
-- [ ] Farmer can see balance + transaction status on webapp
-- [ ] Farmer can see the same balance + transaction status via a USSD sandbox session (even if only 1–2 of the 3 actions are wired)
-- [ ] Co-op Dashboard shows the fee/revenue line item explicitly
-- [ ] Buyer Portal takes a real payment via embedded checkout
+## 9. What a live pilot still checks
 
-## 10. Environment / config checklist
+- A sandbox or live Payaza checkout completes and the webhook credits the invoice. Mock mode already simulates this.
+- A sandbox or live payout on split approval, and on withdrawal, reaches M-Pesa or a bank. The calls exist; `PAYAZA_MODE` selects them.
+- KES checkout and the M-Pesa payout bank code (`PAYAZA_MPESA_BANK_CODE`, default `SAFKEN`) are accepted by that Payaza account.
+- Africa's Talking live shortcode and sender ID, once approved.
+- Whether holding a balance after the split needs a Kenyan authorisation. Farmers with a destination are already paid at approval.
 
-- `PAYAZA_PUBLIC_KEY`, `PAYAZA_SECRET_KEY` (sandbox) — from Payaza engineers on Build Day
-- `PAYAZA_WEBHOOK_URL` — publicly reachable (ngrok for local dev)
-- `AT_USERNAME=sandbox`, `AT_API_KEY` — from Africa's Talking dashboard
-- `AT_USSD_CALLBACK_URL` — registered in the AT sandbox app's USSD channel settings
-- Database connection string
-- Demo ledger from `backend/src/data/catalog.ts` (see `docs/SCAFFOLD.md`, Demo seed): 4 co-ops, 76 farmers, 6 exporters, PIN `1234`. Each co-op's contribution shares sum to 100%. `GET /dev/seed-ids` still returns the original Kiambu 10.
+## 10. Environment
+
+See `backend/.env.example`. The ones that change behaviour:
+
+- `PAYAZA_MODE` `mock` | `sandbox` | `live`, plus `PAYAZA_PUBLIC_KEY`, `PAYAZA_SECRET_KEY`, `PAYAZA_PIN`
+- `PAYAZA_MPESA_BANK_CODE` (default `SAFKEN`), `PAYAZA_MOMO_BANK_CODE` for other wallets, `PAYAZA_BANK_CODE` for KEPSS
+- `FX_FEED` (`frankfurter` or `off`), `FX_CACHE_TTL_MS` (default 6 hours)
+- `AT_ENV`, `AT_USERNAME`, `AT_API_KEY`, `AT_CALLBACK_SECRET`, `AT_USSD_SERVICE_CODE`, `AT_USSD_SESSION_TTL_MS`, `AT_USSD_RATE_LIMIT`
+- `DATABASE_URL`, `SEED`, `DEMO_DATA_ENABLED`, `AUTH_REQUIRED`, `MASTER_LOGIN_CODE`, `ADMIN_SECRET`
+- Demo ledger: `backend/src/data/catalog.ts` (see `docs/SCAFFOLD.md`). 4 co-ops, 76 farmers, 6 exporters, PIN `1234`. `GET /dev/seed-ids` returns the Kiambu ids.

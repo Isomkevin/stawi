@@ -2,7 +2,7 @@
 
 **One rail. Every exporter paid — solo or co-op — when the buyer pays.**
 
-A buyer in Hamburg, Brooklyn, or Rotterdam pays one invoice in dollars, euros, or pounds. [Payaza](https://docs.payaza.africa) collects it. Stawi converts the amount to Kenya shillings, shows a **0.8%** fee, and credits the person who grew, made, or shipped the goods. A solo exporter is one credit. A co-op is the same credit, split to the cent across every farmer, after the treasurer approves it.
+A buyer in Hamburg, Brooklyn, or Rotterdam pays one invoice in their own currency. [Payaza](https://docs.payaza.africa) collects it, or the buyer reports a bank transfer and the payee confirms it. Stawi converts the amount to Kenya shillings at a live quote, shows a **0.8%** fee, and credits the person who grew, made, or shipped the goods. A solo exporter is one credit. A co-op pays the farmers on that shipment, by the kilos they delivered, after the treasurer approves the split.
 
 Built by **Team LESOM** for **Borderless Kenya** — Payaza × Hackhouse Nairobi × Africa Tech Academy. This is challenge 03, SME and exporter collections, on the World → Nairobi corridor: foreign currency in, KES out to M-Pesa or a Kenyan bank.
 
@@ -17,23 +17,27 @@ The solution narrative is the [Stawi pitch deck](https://docs.google.com/present
 Both jobs run on one pipeline. Direct is that pipeline. Co-op adds a split the treasurer can read before any farmer can spend it.
 
 ```
-Buyer pays USD, EUR, or GBP
+Buyer pays in USD, EUR, GBP, or another checkout currency
+        │
+        ├─ Payaza checkout
+        └─ Bank-transfer proof, confirmed by the payee
         │
         ▼
-Payaza checkout                 collected in the buyer's currency
-        │
-        ▼
-KES cents + 0.8% fee           rate written on the conversion
+KES cents + 0.8% fee           Frankfurter quote, or the fallback table
         │
         ├─ Direct ───────────── exporter balance, immediately
         │
         └─ Co-op ────────────── incoming, until the treasurer's PIN
                                     │
                                     ▼
-                          exact shares on each farmer balance
+                    split by kilos on that shipment
                                     │
                                     ▼
-                    Payaza payout → M-Pesa or bank
+              Payaza transfer to each farmer who has
+              a verified M-Pesa, other wallet, or bank
+                                    │
+                                    ▼
+              anything left is withdrawn later, same rail
 ```
 
 The farmer sees that balance on the web app and on USSD. Both channels call the same withdraw.
@@ -45,22 +49,22 @@ The farmer sees that balance on the web app and on USSD. Both channels call the 
 | **Problem fit** | Both shapes of the exporter, on one model. The demo ledger is 4 Kenyan co-ops, 76 farmers, and 6 solo exporters, with invoices in USD, EUR, and GBP. |
 | **Payaza** | Checkout, KES account enquiry, webhook classification, and payout live in one file, `backend/src/services/payaza.ts`. Nothing else calls Payaza. Underpayment does not settle an invoice. |
 | **Feasibility** | Direct finishes when checkout clears. Co-op is that flow plus one approval. Postgres, a Render blueprint, idempotent webhooks and withdrawals, PIN lockout, and a 17-check end-to-end script are already here. A pilot is the next real invoice. |
-| **User experience** | The buyer pays a link. The treasurer runs a dashboard. The farmer checks a balance and withdraws, on a smartphone or a basic phone. The fee is a line on the co-op metrics. |
+| **User experience** | The buyer opens a shipment code, pays in the Payaza widget, or uploads a bank-transfer proof. The treasurer approves the kilo split. The farmer checks a balance and withdraws, on a smartphone or a basic phone. The fee is a line on the co-op metrics. |
 | **Presentation** | Open a completed Kiambu split, approve one that is still waiting, then show the same shillings on the farmer app and on USSD. |
 
 ## What Payaza does, and what Stawi owns
 
-**Checkout.** Creating an invoice opens a Payaza payment link for a fixed amount in the invoice currency (`POST /invoices/:id/checkout-session` → payment links). The Payaza webhook marks the invoice paid. The browser redirect is the buyer's receipt.
+**Checkout.** The buyer page opens the Payaza Web SDK with the amount in the currency they chose (`POST /invoices/:id/checkout-session`). The Payaza webhook marks the invoice paid. A buyer who paid by bank transfer instead opens `/buyer?code={buyer_code}` and submits a proof. Confirming that proof runs the same collection path.
 
-**Multi-currency.** The invoice is priced in the buyer's currency. Stawi books integer KES cents and stores the rate on the conversion transaction: USD 129, EUR 142, GBP 168. Payaza collects in the invoice currency and pays out in KES from the merchant's KES account. A documented Payaza FX quote replaces `getFxRate` without touching the ledger.
+**Multi-currency.** The invoice is priced in the buyer's currency. Stawi books integer KES cents from a cached [Frankfurter](https://api.frankfurter.dev/v2/rates) quote (`FX_FEED`, on by default) and stores that rate on the conversion. If the feed is off, the fetch fails, or the code is missing, the fallback table in `backend/src/services/money.ts` is used (USD 129, EUR 142, GBP 168, KES 1, and the other checkout currencies). Payaza collects in the invoice currency and pays out in KES. Payaza does not publish an FX endpoint. Seeded invoices keep the historical rate written on them.
 
-**Settlement.** A withdrawal calls Payaza `POST /payout-receptor/payout` to a verified M-Pesa number (`SAFKEN`) or a bank (KEPSS). The farmer's PIN authorises Stawi. Payaza's transfer PIN authorises the rail. Repeating the request does not pay twice.
+**Settlement.** Approving a co-op split calls Payaza once per farmer who has a verified M-Pesa (`SAFKEN`), other mobile-money wallet, or bank destination. Mock mode confirms at once. Sandbox and live stay `sent` until the payout webhook. A farmer with no destination keeps the credit. A later withdrawal of whatever remains is a second Payaza payout, authorised by the farmer's PIN. Repeating either request does not pay twice.
 
-**The co-op split is Stawi's ledger.** Payaza sub-accounts are for internal business units, so each farmer is a Stawi account with a phone, a destination, and a balance. `splitByShares` uses largest-remainder so gross, fee, and net are integer cents and the lines sum exactly to the invoice. Checkout split ratios step in 10% increments; a farmer's share is often finer, and the treasurer has to see every line before it becomes spendable. Until they enter their PIN, the money sits in `incoming_kes_cents`. A second approval is rejected.
+**The co-op split is Stawi's ledger.** Payaza sub-accounts are for internal business units, so each farmer is a Stawi account. `splitByKilos` uses largest-remainder on the farmers attached to that shipment, so gross, fee, and net are integer cents and the lines sum exactly to the invoice. A roster `contribution_share` is not the payout. Checkout split ratios step in 10% increments, which is coarser than a farmer's kilos, and the treasurer sees every line before it becomes spendable. Until they enter their PIN, the money sits in `incoming_kes_cents`. A second approval is rejected.
 
 ## Walk the ledger
 
-Non-production startup seeds this dataset. Every PIN is `1234`. The mock frontend sign-in code is `123456`. `GET /dev/seed-ids` returns the canonical ids while `PAYAZA_MODE=mock`.
+Non-production startup seeds this dataset. Every PIN is `1234`. The mock frontend sign-in code is `123456`. `GET /dev/seed-ids` returns the canonical ids while `PAYAZA_MODE=mock`. Seeded rows are sample data (`is_demo`). The Demo Data switch hides them and does not change `PAYAZA_MODE`. Completed co-op invoices are already split by the kilos on their shipment.
 
 | Open | You will see |
 |---|---|
@@ -74,7 +78,7 @@ The rest of the seed is Kericho tea (28 farmers), Meru macadamia (22), Naivasha 
 
 A Kenyan exporter does not have a payments problem. They have a waiting problem. The buyer has already paid. The shillings are stuck in a wire, or in a treasurer's notebook.
 
-Stawi is one Payaza rail with two products. Direct: one exporter, one invoice, credited when checkout clears. Co-op: the same invoice, then a split the treasurer approves, to the cent, onto each farmer's balance. That farmer withdraws to M-Pesa from a smartphone or from USSD. The fee is 0.8%, on the screen.
+Stawi is one Payaza rail with two products. Direct: one exporter, one invoice, credited when checkout clears. Co-op: the same invoice, then a split by the kilos on that shipment, which the treasurer approves. Each farmer with a verified destination is paid through Payaza at that moment. Anyone still holding a balance withdraws to M-Pesa from a smartphone or from USSD. The fee is 0.8%, on the screen. The rate on the invoice is the Frankfurter quote, with a published fallback if that feed is down.
 
 The ask is a pilot with one Payaza export merchant — a solo seller on Direct, or a co-op on the split — sending their next invoice through this pipe.
 
@@ -105,7 +109,8 @@ To use the API from the app, set `VITE_API_MODE=live` and `VITE_API_BASE_URL=htt
 | Route | Who it is for |
 |---|---|
 | `/` | The product |
-| `/pay/:invoiceId` | The buyer |
+| `/pay/:invoiceId` | The buyer, Payaza checkout |
+| `/buyer?code=` | The buyer, shipment lookup and a bank-transfer proof |
 | `/login`, `/onboarding` | Sign-in and sign-up. An invite link pre-fills the co-op and the share |
 | `/app` | Farmer: home, activity, withdraw, profile |
 | `/coop` | Treasurer: invoices, members, shipments, payouts, the fee |
@@ -119,8 +124,8 @@ Amounts on the API are integer KES cents (`*_kes_cents`). The labelled estimate 
 ## The edge of the prototype
 
 - Checkout and payout are real Payaza calls when `PAYAZA_MODE` is `sandbox` or `live`. Mock mode simulates them so the demo runs with no keys. The webhook handler already distinguishes a full collection, an underpayment, and a payout result.
-- The conversion rate is Stawi's recorded rate. Payaza's published API collects and pays out; it does not yet document an FX quote for this corridor.
-- Holding farmer balances before withdrawal may need a Kenyan authorisation. If that is unresolved for a pilot, pay out at the moment the treasurer approves. The Payaza payout call is already the withdrawal.
+- The conversion rate is a Frankfurter quote, cached for six hours (`FX_CACHE_TTL_MS`). `FX_FEED=off` keeps the illustrative table. Payaza's published API collects and pays out; it does not document an FX quote for this corridor.
+- Holding a balance after the split may need a Kenyan authorisation. The approve step already pays farmers who have a verified destination. What remains can be withdrawn later.
 - USSD and SMS talk to Africa's Talking. Sandbox works against the callback secret. A live shortcode and sender ID are an application. The menu already uses the same balance and the same `withdraw` as the web app.
 - Set `DATABASE_URL` for Postgres (`db/schema.sql` applies on startup, and a balance change is one transaction). With no database URL the process keeps the ledger in memory and reseeds when it restarts.
 
@@ -130,8 +135,9 @@ Amounts on the API are integer KES cents (`*_kes_cents`). The labelled estimate 
 |---|---|
 | `backend/src/services/payaza.ts` | The only Payaza client |
 | `backend/src/services/pipeline.ts` | Collection, conversion, credit or approve-split, withdraw |
-| `backend/src/services/money.ts` | Cents, the 0.8% fee, largest-remainder splits |
-| `backend/src/ussd/handler.ts` | Balance, last payouts, withdraw and PIN |
+| `backend/src/services/money.ts` | Cents, the 0.8% fee, `splitByKilos` |
+| `backend/src/services/fx.ts` | Frankfurter cache and the fallback table |
+| `backend/src/ussd/menu.ts` | Balance, last payouts, withdraw and PIN |
 | `backend/src/data/catalog.ts` | The demo ledger |
 | `docs/SCAFFOLD.md` | Runbook, auth, storage, the full seed |
 | `docs/skills/stawi-domain/SKILL.md` | Data model and HTTP contract |

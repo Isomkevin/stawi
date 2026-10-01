@@ -67,12 +67,17 @@ Account {
   id, full_name, phone_number,          // stored and matched in international form, +254...
   id_number,
   payout_destinations: [{
-    id, type: "mpesa" | "bank", details, account_name,
+    id, type: "mpesa" | "momo" | "bank", details, account_name,
     is_verified, bank_code?             // M-Pesa payouts use SAFKEN unless PAYAZA_MPESA_BANK_CODE is set
+                                        // momo is other mobile money (Airtel). Set PAYAZA_MOMO_BANK_CODE.
   }],
   coop_id: string | null,
   channel_capability: "webapp" | "webapp+ussd",
   balance_kes_cents, incoming_kes_cents,
+  demo_balance_kes_cents?, demo_incoming_kes_cents?,  // sample funds; omitted from responses when Demo Data is off
+  is_demo?,                           // seeded sample account. Live signups are false.
+  demo_data_enabled?,                 // null follows DEMO_DATA_ENABLED. Response also includes demo_data_visible.
+  sms_settings?,                      // Direct exporter: { payment_received }. Login codes always send.
   pin_hash, pin_failed_attempts, pin_locked_until   // never returned by the API
 }
 ```
@@ -104,6 +109,7 @@ Invoice {
   split_approved,
   fx_rate, fee_kes_cents, kes_total_cents,    // null until conversion has a result; kes_total is net
   payaza_checkout_reference, payaza_link_id?,
+  is_demo?,                       // sample invoice. New invoices created through the API are false.
   created_at, due_at
 }
 ```
@@ -120,6 +126,7 @@ Transaction {
   amount, currency,
   payaza_reference, fx_rate,       // fx_rate on conversion
   fee_kes_cents,                   // set on conversion and settlement; this is the revenue line
+  is_demo?,                        // copied from the invoice
   created_at
 }
 ```
@@ -134,6 +141,8 @@ Payout {
   destination_id,                  // null on credits
   status: "pending" | "sent" | "confirmed" | "failed",
   idempotency_key?, payaza_reference?,
+  is_demo?,                        // entirely sample money
+  demo_portion_kes_cents?,         // cents of a withdrawal that came from the sample balance
   created_at
 }
 ```
@@ -154,6 +163,8 @@ Shipment {
   invoice_id: string | null,
   farmers: [{ account_id, kilos }],
   buyer_code,                         // unique per shipment, assigned on save
+  account_id?,                        // set on a Direct exporter's own shipment; coop_id is then empty
+  is_demo?,
   updated_at
 }
 ```
@@ -184,7 +195,7 @@ Sessions are required when `NODE_ENV` is `production`, or `PAYAZA_MODE` is `sand
 
 `POST /auth/logout` clears the cookie.
 
-When auth is on, these stay public: `GET /health`, `GET /fx`, `POST /accounts`, `POST /name-enquiry`, `POST /auth/otp`, `POST /auth/verify`, `GET /invoices/{id}`, `POST /invoices/{id}/checkout-session`, `POST /webhooks/payaza`, `POST /ussd/callback`, `/dev/*`, and `/admin/*`. The admin page uses `ADMIN_SECRET`, not a user session.
+When auth is on, these stay public: `GET /health`, `GET /fx`, `POST /accounts`, `POST /name-enquiry`, `POST /auth/otp`, `POST /auth/verify`, `GET /invoices/{id}`, `GET /invoices/{id}/receipt`, `POST /invoices/{id}/checkout-session`, `POST /buyer/lookup`, `POST /buyer/payment-proofs`, `POST /webhooks/payaza`, `POST /ussd/callback`, `/dev/*`, and `/admin/*`. The admin page uses `ADMIN_SECRET`, not a user session. Confirming or rejecting a payment proof is the payee only.
 
 Everyone else must be signed in. You can read and write your own account. A treasurer can read member accounts in their co-op, but cannot withdraw for them. Co-op routes and co-op invoices require the treasurer. A direct invoice must name the caller's own account.
 
@@ -249,9 +260,15 @@ POST /coops/{id}/invites/sms            { recipients } -> { sent, failed, result
                                         Invite links and the summary each follow that co-op's SMS switch. A turned-off text is skipped and logged.
 GET  /coops/{id}/payouts                -> Payout[] for this co-op's invoices, newest first
 GET  /coops/{id}/shipments              -> Shipment[] for this co-op, latest ship date first
-POST /shipments/{id}/farmers            { account_id, kilos } -> Shipment
+POST /coops/{id}/shipments              { buyer_name, product, quantity_kg, destination?, value?, currency?, ship_date? }
+                                        -> Shipment, draft, no invoice
+GET  /accounts/{id}/shipments           -> Shipment[] for a Direct exporter (account_id set, coop_id empty)
+POST /shipments/{id}/farmers            { account_id, kilos, mpesa? } -> Shipment plus confirmation
+                                        confirmation: { account_id, kilos, share, net_kes_cents, mpesa, payout }
+                                        payout is mpesa_on_approval, sample_balance, balance, or awaiting_payment
+                                        Optional mpesa is saved when the farmer has no verified mobile number. The response masks it.
                                         201 when the farmer is new, 200 when kilos change.
-                                        400 if they are not a member, kilos are not a positive integer, or the total would exceed quantity_kg.
+                                        400 if they are not a member, kilos are not a positive integer, the M-Pesa number is not Kenyan, or the total would exceed quantity_kg.
                                         409 once the linked invoice split is approved.
 DELETE /shipments/{id}/farmers/{accountId} -> Shipment. 404 if they are not on it. Same 409 lock.
 PATCH /shipments/{id}                   { buyer_name?, product?, quantity_kg?, destination?, value?, currency?, ship_date? } -> Shipment
@@ -282,11 +299,26 @@ POST /invoices/{id}/checkout-session    { currency_code? } -> { reference, check
                                         currency_code must be a Payaza checkout currency, or EUR or GBP. 400 otherwise. Omitted uses the invoice currency.
                                         checkout_amount is the invoice converted into that currency at the cached Frankfurter quote, or the illustrative KES table when that quote is missing. The buyer page opens the Payaza Web SDK with that amount, currency_code, public_key, and transaction_reference.
                                         connection_mode is Live only when PAYAZA_MODE=live. The webhook marks the invoice paid.
-POST /invoices/{id}/approve-split       { treasurer_id, pin }
+POST /invoices/{id}/approve-split       { treasurer_id, pin } -> { success, invoice, payouts, transfers }
+                                        transfers are the Payaza payouts sent to farmers with a verified destination.
+                                        status sent until the payout webhook, confirmed in mock, failed restores the balance.
+                                        A farmer with no verified destination is in payouts only.
 PATCH /invoices/{id}                   { buyer_name?, buyer_email?, amount?, currency?, description?, shipment_id? }
                                         Only while status is pending. 409 once the buyer has paid (or the invoice has left pending).
                                         Buyer, amount, and currency are copied onto the linked shipment. shipment_id moves a co-op invoice onto another free lot.
 DELETE /invoices/{id}                   -> 204 when status is pending. 409 otherwise.
+
+POST /buyer/lookup                      { access_code, shipment_reference? } -> { shipment, invoice, payee_name, proofs }
+                                        Public. The code alone selects the shipment. A shipment number, when sent, must match.
+                                        403 when the code is wrong. 404 when that shipment has no invoice.
+POST /buyer/payment-proofs              { access_code, shipment_reference?, payer_name, payer_email, bank_reference, amount, currency, paid_at, note?, receipt_name?, receipt_data? }
+                                        Public. 201 PaymentProof. receipt_data is a data URL: PNG, JPG, WEBP, or PDF, under 2 MB.
+                                        409 if the invoice is no longer pending.
+GET  /coops/{id}/payment-proofs         -> PaymentProof[] with has_receipt. receipt_data is omitted.
+GET  /accounts/{id}/payment-proofs      -> PaymentProof[] for a Direct exporter, same shape.
+GET  /payment-proofs/{id}/receipt       -> { receipt_name, receipt_data }. Payee only.
+POST /payment-proofs/{id}/confirm       Payee only. Records the collection through the same path as a Payaza webhook, then the co-op split can be approved.
+POST /payment-proofs/{id}/reject        Payee only. 409 if the proof is no longer submitted.
 
 POST /webhooks/payaza                   Payaza collection and payout notifications. HMAC when a secret is configured.
 POST /ussd/callback                     Africa's Talking. See skills/africas-talking/SKILL.md.
@@ -298,6 +330,8 @@ GET  /dev/seed-ids                      Mock mode only. Canonical Kiambu ids. Th
 ```
 
 `SplitLine` is `{ account_id, share, gross_kes_cents, fee_kes_cents, net_kes_cents }`.
+
+`PaymentProof` is `{ id, invoice_id, shipment_id, shipment_reference, coop_id, account_id, payer_name, payer_email, bank_reference, amount, currency, paid_at, note, receipt_name, receipt_data?, status: "submitted" | "confirmed" | "rejected", reviewed_by, reviewed_at, created_at }`. `amount` is a buyer-currency decimal. List responses replace `receipt_data` with `has_receipt`.
 
 ## Channel parity
 

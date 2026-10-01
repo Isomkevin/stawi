@@ -224,11 +224,13 @@ Your Payaza account holds **one account per currency**, each with its own `payaz
 
 `GET /payaza-account/api/v1/mainaccounts/merchant/enquiry/main` (headers §1) → array of `{ payazaAccountReference, currency, accountBalance, status, postNoDebit, virtualAccounts[] }`. Pick the entry whose `currency` matches. If `postNoDebit: true`, payouts are blocked (see §8 go-live).
 
-## 6. Split payout for Stawi Co-op: decision ladder
+## 6. Split payout for Stawi Co-op
 
-The Co-op flow must divide one collection across farmers by `contribution_share`. Payaza offers three workable paths. **Prefer them in this order:**
+**Shipped.** Stawi splits the converted net on its own ledger with `splitByKilos`: the farmers on that shipment, weighted by kilos, largest-remainder, so the lines sum exactly to the net. A roster `contribution_share` is not the payout. When the treasurer approves, the backend calls Payaza Transfers **once per farmer** who has a verified M-Pesa, `momo`, or bank destination (one person per call, unique `transaction_reference`). Mock mode confirms immediately. Sandbox and live stay `sent` until the payout webhook. A farmer with no destination keeps the credit. A later withdrawal of whatever remains is a second one-person payout. Payaza sub-accounts are not used: the guide limits them to internal business units.
 
-### Option A (recommended): one bulk payout with many beneficiaries
+The two Payaza features below can also divide a collection. This build does not use them.
+
+### Option A (not used): one bulk payout with many beneficiaries
 
 The Transfers endpoint accepts a `payout_beneficiaries[]` array, so a single settlement call can pay every farmer their own KES amount. Each beneficiary carries its own `transaction_reference`; the response returns a `batch_reference`. This gives exact, arbitrary per-farmer amounts, one PIN-authorised call, and one `payout` Transaction per farmer.
 
@@ -245,7 +247,7 @@ export function allocate(totalMinor, shares) {
 ```
 ⚠️ **CONFIRM** whether KES payouts accept decimals or whole shillings only (allocate in whole KES if unsure), and whether webhooks and status queries are per beneficiary `transaction_reference` (assumed) or per batch.
 
-### Option B: Split Settlements at checkout
+### Option B (not used): Split Settlements at checkout
 
 Payaza can route the remainder of a checkout payment to beneficiary accounts automatically at settlement.
 1. `POST /settlement/settlement/merchant/split-account` (headers §1, `X-TenantID`) with `{ account_no, account_name, bank_code, name, email, currency, country, split_type: "PERCENTAGE"|"FLAT", split_value }`. Returns `data.code` (`SSA_...`, **save it**; used in checkout) and `data.id` (integer; used for update/delete). One split account per beneficiary; create once, reuse.
@@ -254,19 +256,21 @@ Payaza can route the remainder of a checkout payment to beneficiary accounts aut
 
 **Gotcha: `split_value` is what YOU (the Payaza account owner) keep; the beneficiary receives the remainder.** To give a beneficiary 10%, set `split_value: 90`.
 
-Checkout SDK reference adds `ratio` per split account: an integer where `1` = 10%, and **the ratios must sum to exactly 10**. That means 10% granularity, so exact `contribution_share` values will not fit. The split-settlements guide only shows `code` (no `ratio`), and the SDK page's TypeScript example contains smart quotes, so ⚠️ **CONFIRM** semantics with engineers. Also ⚠️ **CONFIRM** that split accounts work for **KES and M-Pesa** beneficiaries: the docs describe them with bank accounts, NGN, and `NGA`.
+Checkout SDK reference adds `ratio` per split account: an integer where `1` = 10%, and **the ratios must sum to exactly 10**. That means 10% granularity, so a farmer's kilo weight will not fit. The split-settlements guide only shows `code` (no `ratio`), and the SDK page's TypeScript example contains smart quotes, so ⚠️ **CONFIRM** semantics with engineers. Also ⚠️ **CONFIRM** that split accounts work for **KES and M-Pesa** beneficiaries: the docs describe them with bank accounts, NGN, and `NGA`.
 
-### Option C (fallback): per-farmer payout loop
+### Option C: per-farmer payout loop — this is what shipped
 
-Backend computes each farmer's amount from `contribution_share` and fires one payout call per farmer. Functionally identical for the demo and satisfies the "use of Payaza infrastructure" criterion. Use when Option A is not accepted for KES. Use a unique `transaction_reference` per call so a retry never pays twice.
+The amount comes from `splitByKilos`, not from `contribution_share`. One Payaza call per farmer, on approval and again on withdrawal. Each call has its own `transaction_reference`, so a retry does not pay twice.
 
-## 7. Multi-currency conversion ⚠️ CONFIRM
+## 7. Multi-currency conversion
 
-The public docs and the `llms.txt` index contain **no FX or conversion endpoint**. What is documented: accounts are per currency, and payouts are made from the account in the payout currency. So how a buyer's USD (or other) collection becomes KES available for payout, at what rate, and whether it is automatic or a separate step, must come from engineers. Ask before building the Direct settlement step.
+The public docs and the `llms.txt` index contain **no FX or conversion endpoint**. Accounts are per currency, and payouts are made from the account in the payout currency.
 
-Regardless of mechanism, the Transaction record Stawi keeps should log: source currency, source amount, converted currency (KES), converted amount, rate applied, and fee. This feeds the Co-op Dashboard's transparent-fee display.
+Stawi does not wait on a Payaza FX call. `backend/src/services/fx.ts` caches a Frankfurter v2 quote (`FX_FEED`, default `frankfurter`, no API key, `FX_CACHE_TTL_MS` default 6 hours). KES per 1 unit is 1 for KES, the USD→KES quote for USD, and that quote divided by the code's USD quote for every other currency. A missing code, a failed fetch with no earlier cache, or `FX_FEED=off` uses the illustrative table in `money.ts` (USD 129, EUR 142, GBP 168, KES 1, plus the other checkout currencies). The conversion transaction stores the rate, the gross KES cents, and the 0.8% fee. Payaza still collects in the invoice currency and pays out in KES from the merchant's KES account.
 
-## 8. Settlement / payout (Stawi Direct, and Co-op Option A)
+## 8. Settlement / payout
+
+Shipped calls send one beneficiary per request: a Direct withdrawal, a co-op transfer on split approval, or a later withdrawal of a remaining balance. The same endpoint accepts many beneficiaries (option A in §6). This build does not send that array.
 
 Flow: (1) optional account-name check, (2) get the KES `payazaAccountReference`, (3) initiate transfer, (4) confirm via webhook or status query.
 

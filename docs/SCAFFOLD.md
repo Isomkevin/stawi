@@ -6,17 +6,19 @@
 <your-lovable-repo>/
 ├─ src/ public/ index.html package.json ...   Lovable frontend (unchanged; edit via Lovable)
 ├─ backend/                                    Express + TypeScript API — its own package.json, deployed on its own
-│  ├─ src/services/money.ts                    toKesCents, feeCents, splitByShares (largest-remainder, exact sums) + tests
-│  ├─ src/services/pipeline.ts                 collection -> conversion -> credit (Direct) | approve split (Co-op); withdraw()
-│  ├─ src/services/payaza.ts                   THE ONLY file that talks to Payaza. mock works; sandbox/live are marked TODO
-│  ├─ src/services/notify.ts                   Africa's Talking SMS (best-effort; dry-run without a key)
+│  ├─ src/services/money.ts                    toKesCents, feeCents, splitByKilos (largest-remainder, exact sums)
+│  ├─ src/services/fx.ts                       Frankfurter v2 cache; illustrative table when the feed is off
+│  ├─ src/services/pipeline.ts                 collection -> conversion -> credit (Direct) | approve split + Payaza transfer (Co-op); withdraw()
+│  ├─ src/services/payaza.ts                   THE ONLY file that talks to Payaza. mock, sandbox, and live
+│  ├─ src/services/notify.ts, src/services/sms.ts   Africa's Talking SMS (dry-run without a key)
 │  ├─ src/services/pin.ts                      bcrypt PIN, 5 attempts then 15 min lockout
-│  ├─ src/ussd/handler.ts                      USSD menu (balance / status / withdraw + PIN), secret-checked callback
-│  ├─ src/routes/index.ts                      REST API (the contract in docs/LOVABLE_PROMPT.md §8)
+│  ├─ src/services/shipments.ts, buyerCode.ts, receipt.ts, demoData.ts, rosterImport.ts, phoneMappings.ts
+│  ├─ src/ussd/handler.ts, menu.ts, session.ts USSD menu, stored sessions, rate limit, callback secret
+│  ├─ src/routes/index.ts, routes/admin.ts     REST API (the contract in docs/LOVABLE_PROMPT.md §8)
 │  ├─ src/types.ts                             Domain types (money = integer cents) — mirror in the frontend
-│  ├─ src/store.ts, src/data/seed.ts           In-memory store. seed.ts writes the demo ledger; catalog.ts is the deterministic dataset
+│  ├─ src/store.ts, src/data/seed.ts           Store. seed.ts writes the demo ledger; catalog.ts is the dataset
 │  ├─ src/data/catalog.ts                      4 co-ops, 76 farmers, 6 exporters, 78 invoices (PIN 1234)
-│  ├─ db/schema.sql                            Postgres schema for the store swap
+│  ├─ db/schema.sql                            Postgres schema, applied on startup when DATABASE_URL is set
 │  ├─ scripts/e2e.py                           17-check end-to-end verification
 │  ├─ Dockerfile, .env.example
 ├─ render.yaml                                 One-click Render blueprint for backend/ (optional)
@@ -45,7 +47,7 @@ The contract, entities, and route list are `docs/skills/stawi-domain/SKILL.md`. 
 
 ## How the backend works
 
-**Money.** KES is integer cents. A paid invoice is converted at an illustrative rate, then a 0.8% fee is taken. Direct credits the exporter at once. Co-op waits in `settling` until the treasurer approves; `splitByShares` gives each member a net that sums exactly to the invoice net. That credit is the Stawi balance. A withdrawal, with PIN, sends balance to a verified M-Pesa (`SAFKEN`) or bank destination through Payaza. Farmers are not Payaza sub-accounts.
+**Money.** KES is integer cents. A paid invoice is converted from the Frankfurter cache (`FX_FEED`, default on). `FX_FEED=off`, a failed fetch, or a missing code uses the illustrative table in `money.ts` (USD 129, EUR 142, GBP 168, KES 1, plus the other checkout currencies). A 0.8% fee is taken. Direct credits the exporter at once. Co-op waits in `settling` until the treasurer approves. `splitByKilos` pays the farmers on that shipment so the lines sum exactly to the net. Approval then calls Payaza once per farmer with a verified M-Pesa (`SAFKEN`), other mobile-money, or bank destination. A farmer with no destination keeps the credit. A later withdrawal, with PIN, sends whatever balance remains through Payaza. Farmers are Stawi accounts. Payaza sub-accounts are for internal business units.
 
 **Auth.** Off in local mock. On in production and when `PAYAZA_MODE` is `sandbox` or `live`. `POST /auth/otp` then `POST /auth/verify`. Send `Authorization: Bearer <token>` or the `stawi_session` cookie. If `MASTER_LOGIN_CODE` is set, that one code signs in any existing account; a texted code still works. Leave it empty before real users. A treasurer can read their members and manage that co-op. They cannot withdraw on a member's behalf. Buyer invoice view, checkout, webhooks, account creation, and USSD stay public.
 
@@ -61,7 +63,7 @@ To try a dial without a phone, post the Africa's Talking fields to the callback 
 
 ## Demo seed
 
-`backend/src/data/catalog.ts` is the dataset. `backend/src/data/seed.ts` writes it through the store and `splitByShares`, so every co-op's shares sum to 100 and every completed invoice's credit payouts sum to its net. Money is integer KES cents. The fee on settled invoices is 0.8%. Historical FX stored on those invoices is USD 129, EUR 140.5, GBP 168.2. Every seeded account uses PIN `1234`.
+`backend/src/data/catalog.ts` is the dataset. `backend/src/data/seed.ts` writes it through the store and `splitByKilos`, so every completed invoice's credit payouts sum to its net. The split uses the kilos on that shipment, not the roster share. Money is integer KES cents. The fee on settled invoices is 0.8%. Historical FX stored on those invoices is USD 129, EUR 140.5, GBP 168.2, and is not overwritten by the live feed. Every seeded account uses PIN `1234`.
 
 The ledger is 4 co-ops, 76 farmers, 4 treasurers, 6 exporters (86 accounts), and 78 invoices over about nine months. Statuses cover `pending`, `paid`, `converting`, `settling`, `completed`, and `failed`. Completed co-op invoices are split to members. Settling invoices sit in `incoming_kes_cents` until a treasurer approves the split. A slice of farmers and every exporter also have withdrawals (`confirmed`, `sent`, `pending`, or `failed`). Kipkemoi Kosgei (`acc_kericho_8`) has an unverified M-Pesa destination and a failed withdrawal. Balances are the ledger: confirmed credits minus confirmed and sent withdrawals. They are not the old hand-set KES 18,450 figure.
 
@@ -103,9 +105,9 @@ Co-op shipments are part of that ledger. Each co-op invoice has one shipment who
 Verified (production build, `node dist`): exact-sum splits, Direct and Co-op flows, treasurer-PIN split approval, double-approve rejection, idempotent webhooks and withdrawals, overdraw rejection, USSD menu + PIN handling, callback-secret rejection, clean JSON errors, CORS allow/deny. The Dockerfile has **not** been built or run (no Docker in the build environment) — test it before relying on it.
 
 Not done, on purpose and clearly marked:
-1. **Payaza FX conversion** has no documented endpoint. Stawi records an illustrative rate on the conversion transaction. Payment links, KES payouts, webhook HMAC, and KES account enquiry follow `docs/skills/payaza/SKILL.md`. Do not create a Payaza sub-account per farmer.
+1. **Payaza has no FX endpoint.** Stawi quotes Frankfurter (`backend/src/services/fx.ts`) and falls back to the illustrative table. Checkout, KES payouts, webhook HMAC, and KES account enquiry are implemented in `payaza.ts` for `sandbox` and `live`. Do not create a Payaza sub-account per farmer.
 2. **Auth is on for production and for Payaza sandbox/live.** `POST /auth/otp` then `POST /auth/verify` with the SMS code. The Lovable login screen still uses a hardcoded demo code and must be pointed at these endpoints (see `docs/LOVABLE_PROMPT.md`). Set `SEED=false` outside demos.
 3. **Persistence.** Set `DATABASE_URL`. The API applies `db/schema.sql` on startup and keeps balance changes and payout rows in one database transaction. Without `DATABASE_URL` the process uses memory and resets on restart.
 4. **M-Pesa name enquiry** is not in Payaza's docs (NGN and GHS only). Destinations can be added and removed; the account holder confirms the name. Invite links are still open.
 5. **Africa's Talking live**: shortcode + sender-ID approvals (start now; lead times), permanent HTTPS callback, IP allowlist.
-6. **Licensing**: holding farmer balances before withdrawal may require authorisation in Kenya. Confirm with Payaza and a Kenyan fintech lawyer; a safer design if unclear is paying out directly at split time.
+6. **Licensing**: holding a balance after the split may require authorisation in Kenya. Confirm with Payaza and a Kenyan fintech lawyer. Farmers with a verified destination are already paid when the treasurer approves.

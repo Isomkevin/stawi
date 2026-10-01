@@ -141,7 +141,7 @@ Roles: `farmer`, `exporter`, `treasurer`, `buyer` (no login). A phone number can
 **Money rule: every money field from the API is an integer number of KES cents (`*_kes_cents`). Format with `amount / 100`; never use floats for money. Buyer-currency invoice `amount` is a plain decimal in that currency.** The backend types live in `backend/src/types.ts`; mirror them exactly in `src/lib/types.ts`.
 
 ```ts
-type PayoutDestination = { id: string; type: "mpesa" | "bank"; details: string; account_name: string; is_verified: boolean; bank_code?: string };
+type PayoutDestination = { id: string; type: "mpesa" | "momo" | "bank"; details: string; account_name: string; is_verified: boolean; bank_code?: string };
 type Account = { id: string; full_name: string; phone_number: string; id_number: string; payout_destinations: PayoutDestination[];
   coop_id: string | null; channel_capability: "webapp" | "webapp+ussd"; balance_kes_cents: number; incoming_kes_cents: number;
   demo_balance_kes_cents?: number; demo_incoming_kes_cents?: number; is_demo?: boolean;
@@ -158,10 +158,10 @@ type Transaction = { id: string; invoice_id: string; type: "collection" | "conve
 type Payout = { id: string; invoice_id: string; account_id: string; kind: "credit" | "withdrawal"; // credit = split landed in Stawi balance
   amount_kes_cents: number; destination_id: string | null; status: "pending" | "sent" | "confirmed" | "failed"; created_at: string; payaza_reference?: string | null; is_demo?: boolean };
 type SplitLine = { account_id: string; share: number; gross_kes_cents: number; fee_kes_cents: number; net_kes_cents: number };
-type Shipment = { id: string; reference: string; coop_id: string; buyer_name: string; product: string; quantity_kg: number;
+type Shipment = { id: string; reference: string; coop_id: string; account_id?: string | null; buyer_name: string; product: string; quantity_kg: number;
   destination: string; value: number; currency: string; ship_date: string; shipped_at: string | null;
   status: "draft" | "preparing" | "ready" | "in_transit" | "delivered" | "completed";
-  invoice_id: string | null; farmers: { account_id: string; kilos: number }[]; updated_at: string; is_demo?: boolean };
+  invoice_id: string | null; farmers: { account_id: string; kilos: number }[]; buyer_code?: string; updated_at: string; is_demo?: boolean };
 ```
 
 Endpoints (client methods mirror these 1:1):
@@ -174,7 +174,7 @@ POST /auth/verify                      { phone_number, code } -> { token, accoun
                                         A phone may have more than one. One role routes as before. Several roles: chooser, then the account switcher.
                                         (a server MASTER_LOGIN_CODE, when set, also signs in any existing account; the login page does not change)
 POST /auth/logout                      clears the session cookie
-Authorization: Bearer <token> is required on every route except health, account creation, name enquiry, OTP, buyer invoice view, checkout, Payaza webhooks, and USSD, whenever the API is in production or PAYAZA_MODE is sandbox/live.
+Authorization: Bearer <token> is required on every route except health, FX, account creation, name enquiry, OTP, buyer invoice view, the receipt, checkout, buyer lookup, payment-proof submit, Payaza webhooks, and USSD, whenever the API is in production or PAYAZA_MODE is sandbox/live. Confirming or rejecting a proof still requires the payee.
 POST /accounts                          body: { full_name, phone_number, id_number, pin(4 digits), destination:{type,details,account_name}, ussd:boolean, coop_id? }
                                         -> 201 Account plus { token, role, roles, account_types } and a stawi_session cookie. Pass token into signIn. A missing token falls back to a demo token and live account reads return 401. When roles has more than one entry, keep them on the session and show the account switcher.
 GET  /accounts/{id}                     GET /accounts/{id}/balance -> { balance_kes_cents, incoming_kes_cents, demo_balance_kes_cents?, demo_incoming_kes_cents? }
@@ -201,7 +201,9 @@ POST /invoices/{id}/checkout-session    { currency_code? } -> { reference, check
                                         checkout_amount is the invoice converted into that currency at the cached Frankfurter quote, or the illustrative KES rates when that quote is missing. The pay page shows that amount and sends it to the Payaza Web SDK.
                                         Live mode opens the Payaza Web SDK (checkout-v2.payaza.africa) with public_key, connection_mode, transaction_reference, checkout_amount, and currency_code.
                                         Do not call POST /dev/simulate-payment unless the backend is in mock mode. Poll GET /invoices/{id} after the widget callback; the webhook marks the invoice paid.
-POST /invoices/{id}/approve-split       { treasurer_id, pin } -> { success, invoice, payouts }
+POST /invoices/{id}/approve-split       { treasurer_id, pin } -> { success, invoice, payouts, transfers }
+                                        transfers: Payaza payouts to farmers with a verified M-Pesa, momo, or bank destination.
+                                        sent until the payout webhook, confirmed in mock, failed leaves the money in the balance.
 POST /dev/simulate-payment/{invoiceId}  -> { success, invoice, transactions, payouts } (mock backend only)
 GET  /coops/{id}                        GET /coops/{id}/payouts -> Payout[] (members' payouts for this co-op's invoices, newest first)
 GET  /coops/{id}/shipments              -> Shipment[]
@@ -223,7 +225,8 @@ PATCH /shipments/{id}                   { buyer_name?, product?, quantity_kg?, d
 DELETE /shipments/{id}                  -> 204  409 if the linked invoice is no longer pending
 DELETE /invoices/{id}                   -> 204  409 unless the invoice is still pending
 DELETE /coops/{id}/members/{accountId}  -> 204
-PATCH /coops/{id}/members/{accountId}   { contribution_share } -> CoopMember
+PATCH /coops/{id}/members/{accountId}   { contribution_share?, kilos? } -> CoopMember
+                                        409 when POST /coops/{id}/members names an account that already belongs to another co-op.
 POST /name-enquiry                      { type, details } -> { account_name }
                                         Public. A known Stawi account returns full_name.
                                         An unknown number before sign-in returns account_name "Pending name check" (no KES carrier lookup). Treat that as "use the name the person typed", not as a verified carrier name.
@@ -232,7 +235,7 @@ POST /accounts/{id}/destinations        { type, details, account_name, bank_code
 DELETE /accounts/{id}/destinations/{destId} -> 204  400 if it is the last one
 ```
 Canonical demo ids exist in both the frontend mock and the backend seed: coop_kiambu, acc_treasurer, acc_exporter, acc_farmer_1..10, buyer invoice inv_2413. The live backend ledger is larger; see `docs/SCAFFOLD.md` (Demo seed). `GET /dev/seed-ids` returns only those Kiambu ids.
-Errors are JSON `{ error: string }` with 400/401/403/404. The narrative for pipeline, auth, and money is `docs/skills/stawi-domain/SKILL.md`. Anything the UI needs that is not in the list above, mark in `src/lib/api.ts` under `// TODO(backend): add to contract` and add it to that skill in the same change.
+Errors are JSON `{ error: string }` with 400/401/403/404/409. The narrative for pipeline, auth, and money is `docs/skills/stawi-domain/SKILL.md`. Payment proofs, `momo`, and `buyer_code` are in the additions below and in that skill. Anything the UI needs that is not in the list above, mark in `src/lib/api.ts` under `// TODO(backend): add to contract` and add it to that skill in the same change.
 
 ## 9. Mock data (make the demo feel real)
 This section is the in-app mock (`VITE_API_MODE=mock` only). Keep it small so every screen is reviewable without the API.
@@ -283,6 +286,6 @@ When `VITE_API_MODE=live`, ignore this mock and read the backend. That ledger is
 ### Buyer portal and payment proofs (added)
 - `Shipment` includes `buyer_code`: an 8-character code, unique per shipment. The share text is `Pay or report a transfer: {origin}/buyer?code={buyer_code}`. Opening that URL looks the shipment up and shows its buyer portal. Every shipment of a co-op has a different code and the same URL shape.
 - `POST /buyer/lookup` (public) `{ access_code, shipment_reference? }` → `{ shipment, invoice, payee_name, proofs }`. The code alone selects the shipment. A shipment number, when sent, must match that shipment.
-- `POST /buyer/payment-proofs` (public) `{ access_code, shipment_reference, payer_name, payer_email, bank_reference, amount, currency, paid_at, note?, receipt_name?, receipt_data? (data URL, PNG/JPG/WEBP/PDF ≤2 MB) }` → `PaymentProof` (201).
+- `POST /buyer/payment-proofs` (public) `{ access_code, shipment_reference?, payer_name, payer_email, bank_reference, amount, currency, paid_at, note?, receipt_name?, receipt_data? (data URL, PNG/JPG/WEBP/PDF ≤2 MB) }` → `PaymentProof` (201). `shipment_reference`, when sent, must match the shipment that owns the code. 409 if the invoice is no longer pending.
 - `GET /coops/{id}/payment-proofs`, `GET /accounts/{id}/payment-proofs` → `PaymentProof[]` with `has_receipt`.
 - `GET /payment-proofs/{id}/receipt`; `POST /payment-proofs/{id}/confirm` (records the collection via `processPayment`, so the co-op split can then be approved) ; `POST /payment-proofs/{id}/reject`. Payee only.
