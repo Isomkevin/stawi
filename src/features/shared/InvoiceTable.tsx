@@ -1,12 +1,16 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { FileText, Search } from "lucide-react";
+import { Download, FileText, Loader2, Search } from "lucide-react";
+import { toast } from "sonner";
 import { DemoBadge } from "@/components/stawi/DemoDataControl";
 import { EmptyState } from "@/components/stawi/EmptyState";
 import { StatusChip } from "@/components/stawi/StatusChip";
 import { ConfirmDelete } from "@/components/stawi/ConfirmDelete";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { api } from "@/lib/api";
+import { downloadPaidInvoicesCsv, downloadPaymentReceiptPdf, isPaidInvoice } from "@/lib/documents";
 import { formatCurrency, formatDate, formatKesCents } from "@/lib/format";
 import type { Invoice } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -29,6 +33,9 @@ export function InvoiceTable({
   const navigate = useNavigate();
   const [f, setF] = useState<(typeof filters)[number]>("all");
   const [q, setQ] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const paid = useMemo(() => (invoices ?? []).filter((i) => isPaidInvoice(i.status)), [invoices]);
   const rows = useMemo(
     () =>
       (invoices ?? [])
@@ -37,6 +44,37 @@ export function InvoiceTable({
         .sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at)),
     [invoices, f, q],
   );
+
+  const downloadReceipt = async (invoice: Invoice) => {
+    setDownloadingId(invoice.id);
+    try {
+      const receipt = await api.getPaymentReceipt(invoice.id);
+      await downloadPaymentReceiptPdf(receipt);
+    } catch (e) {
+      toast.error(e instanceof Error && e.message ? e.message : "Couldn't download that receipt");
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  const exportPaid = async () => {
+    setExporting(true);
+    try {
+      const settled = await Promise.allSettled(paid.map((invoice) => api.getPaymentReceipt(invoice.id)));
+      const receipts = settled.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
+      if (!receipts.length) {
+        toast.error("Couldn't load those receipts");
+        return;
+      }
+      downloadPaidInvoicesCsv(receipts);
+      const missed = settled.length - receipts.length;
+      if (missed > 0) toast.error(`${missed} paid invoice${missed === 1 ? "" : "s"} had no receipt and were left out`);
+    } catch (e) {
+      toast.error(e instanceof Error && e.message ? e.message : "Couldn't export paid invoices");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -61,6 +99,16 @@ export function InvoiceTable({
               </button>
             ))}
           </div>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-10"
+            disabled={paid.length === 0 || exporting}
+            onClick={() => void exportPaid()}
+          >
+            {exporting ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+            Export paid invoices
+          </Button>
         </div>
       )}
       <div className="overflow-x-auto rounded-2xl border border-border bg-card">
@@ -80,6 +128,7 @@ export function InvoiceTable({
                 <th className="hidden px-4 py-3 text-right font-normal sm:table-cell">KES</th>
                 <th className="px-4 py-3 font-normal">Status</th>
                 <th className="hidden px-4 py-3 font-normal md:table-cell">Created</th>
+                <th className="w-12 px-2 py-3"><span className="sr-only">Receipt</span></th>
                 {onDelete && <th className="w-12 px-2 py-3"><span className="sr-only">Delete</span></th>}
               </tr>
             </thead>
@@ -105,6 +154,24 @@ export function InvoiceTable({
                   </td>
                   <td className="px-4 py-3"><StatusChip status={i.status} /></td>
                   <td className="hidden px-4 py-3 text-muted-foreground md:table-cell">{formatDate(i.created_at)}</td>
+                  <td className="px-2 py-2 text-right">
+                    {isPaidInvoice(i.status) && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={`Download receipt RCP-${i.reference}`}
+                        disabled={downloadingId === i.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void downloadReceipt(i);
+                        }}
+                        onKeyDown={(e) => e.stopPropagation()}
+                      >
+                        {downloadingId === i.id ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+                      </Button>
+                    )}
+                  </td>
                   {onDelete && (
                     <td className="px-2 py-2 text-right">
                       <ConfirmDelete

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { AlertTriangle, ArrowLeft, ShieldCheck } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Download, ShieldCheck } from "lucide-react";
 import { CopyLink } from "@/components/stawi/CopyLink";
 import { DemoBadge } from "@/components/stawi/DemoDataControl";
 import { PinPad } from "@/components/stawi/PinPad";
@@ -16,7 +16,8 @@ import { EditInvoiceSheet } from "./NewInvoiceSheet";
 import { invoiceSteps } from "./invoiceSteps";
 import { PaymentReceiptCard } from "./PaymentReceiptCard";
 import { api, ApiError } from "@/lib/api";
-import { coopMembersOptions, invoiceOptions } from "@/lib/queries";
+import { downloadPayoutAdviceCsv, downloadPayoutAdvicePdf, type PayoutAdviceLine } from "@/lib/documents";
+import { coopMembersOptions, coopPayoutsOptions, invoiceOptions } from "@/lib/queries";
 import { accountName } from "@/lib/mock";
 import { useAccountId } from "@/lib/session";
 import { formatCurrency, formatDateTime, formatKesCents } from "@/lib/format";
@@ -27,7 +28,9 @@ export function InvoiceDetailView({ invoiceId, backTo }: { invoiceId: string; ba
   const treasurerId = useAccountId();
   const detail = useQuery(invoiceOptions(invoiceId));
   const coopId = detail.data?.invoice.coop_id ?? "";
+  const splitApproved = detail.data?.invoice.type === "coop" && detail.data.invoice.split_approved === true;
   const members = useQuery({ ...coopMembersOptions(coopId || "none"), enabled: Boolean(coopId) });
+  const payouts = useQuery({ ...coopPayoutsOptions(coopId || "none"), enabled: Boolean(coopId) && splitApproved });
   const nameOf = (accountId: string) =>
     members.data?.find((member) => member.account_id === accountId)?.full_name ?? accountName(accountId);
   const [pinOpen, setPinOpen] = useState(false);
@@ -58,6 +61,20 @@ export function InvoiceDetailView({ invoiceId, backTo }: { invoiceId: string; ba
   }
 
   const { invoice, transactions, split_preview } = detail.data;
+  const advice: PayoutAdviceLine[] = (payouts.data ?? [])
+    .filter((payout) => payout.invoice_id === invoice.id && payout.kind === "credit")
+    .map((payout) => {
+      const line = split_preview?.find((entry) => entry.account_id === payout.account_id);
+      return {
+        farmer: nameOf(payout.account_id),
+        share: line?.share ?? 0,
+        grossKesCents: line?.gross_kes_cents ?? payout.amount_kes_cents,
+        feeKesCents: line?.fee_kes_cents ?? 0,
+        netKesCents: line?.net_kes_cents ?? payout.amount_kes_cents,
+        status: payout.status,
+        date: payout.created_at.slice(0, 10),
+      };
+    });
   const total = (split_preview ?? []).reduce((s, l) => s + l.share, 0);
   const canApprove = invoice.type === "coop" && !invoice.split_approved && ["paid", "converting"].includes(invoice.status);
   const url = typeof window !== "undefined" ? `${window.location.origin}/pay/${invoice.id}` : `/pay/${invoice.id}`;
@@ -131,7 +148,29 @@ export function InvoiceDetailView({ invoiceId, backTo }: { invoiceId: string; ba
                 </Button>
               )}
               {invoice.split_approved && (
-                <p className="mt-4 text-sm text-lime">Approved — payouts released.</p>
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-sm text-lime">Approved — payouts released.</p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={advice.length === 0}
+                      onClick={() => downloadPayoutAdviceCsv(invoice.reference, advice)}
+                    >
+                      <Download className="size-4" /> Download CSV
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={advice.length === 0}
+                      onClick={() => void downloadPayoutAdvicePdf({ reference: invoice.reference, buyerName: invoice.buyer_name, lines: advice })}
+                    >
+                      <Download className="size-4" /> Download PDF
+                    </Button>
+                  </div>
+                </div>
               )}
               {invoice.status === "pending" && (
                 <p className="mt-4 text-sm text-muted-foreground">You can approve once the buyer has paid.</p>
