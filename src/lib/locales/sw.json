@@ -45,5 +45,10 @@
   "status.settling": "Inatumwa",
   "status.completed": "Imelipwa nje",
   "status.failed": "Imeshindwa",
-  "common.signOut": "Toka"
+  "common.signOut": "Toka",
+  "pwa.title": "Skrini ya nyumbani",
+  "pwa.install": "Weka Stawi kwenye skrini ya nyumbani",
+  "pwa.done": "Stawi iko kwenye skrini yako ya nyumbani",
+  "pwa.ios": "Kwenye Safari, gusa Shiriki, kisha Ongeza kwenye Skrini ya Nyumbani.",
+  "pwa.manual": "Fungua menyu ya kivinjari kisha chagua Sakinisha programu."
 }

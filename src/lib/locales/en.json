@@ -45,5 +45,10 @@
   "status.settling": "Sending",
   "status.completed": "Paid out",
   "status.failed": "Failed",
-  "common.signOut": "Sign out"
+  "common.signOut": "Sign out",
+  "pwa.title": "Home screen",
+  "pwa.install": "Add Stawi to your home screen",
+  "pwa.done": "Stawi is on your home screen",
+  "pwa.ios": "In Safari, tap Share, then Add to Home Screen.",
+  "pwa.manual": "Open the browser menu and choose Install app."
 }

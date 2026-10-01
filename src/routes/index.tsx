@@ -14,6 +14,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { FlowDiagram } from "@/components/stawi/FlowDiagram";
+import { InstallAppButton } from "@/components/stawi/InstallAppButton";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/")({
@@ -391,6 +392,7 @@ function AnyPhone() {
               <p className="mt-2 text-sm text-muted-foreground">
                 Balance, incoming payments, withdrawals and a full activity trail.
               </p>
+              <InstallAppButton className="mt-4" />
             </div>
             <div className="rounded-2xl border border-border bg-card p-6 shadow-soft">
               <LockKeyhole className="size-6 text-sage" strokeWidth={1.75} />

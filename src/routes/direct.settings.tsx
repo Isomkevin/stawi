@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { InstallAppButton } from "@/components/stawi/InstallAppButton";
 import { PageHeader } from "@/features/shared/DashboardShell";
 import { api } from "@/lib/api";
 import { EXPORTER_ID } from "@/lib/mock";
@@ -51,6 +52,11 @@ function ExporterSettings() {
     <div className="max-w-3xl">
       <PageHeader title="Settings" />
       <div className="space-y-6">
+        <section className="rounded-2xl border border-border bg-card p-5">
+          <h2 className="font-medium">App</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Add the Stawi shortcut to this phone&apos;s home screen.</p>
+          <InstallAppButton className="mt-4" />
+        </section>
         <section className="rounded-2xl border border-border bg-card p-5">
           <h2 className="font-medium">SMS</h2>
           <p className="mt-1 text-sm text-muted-foreground">This text is for the exporter. Login codes always send.</p>

@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DemoDataControl } from "@/components/stawi/DemoDataControl";
+import { InstallAppButton } from "@/components/stawi/InstallAppButton";
 import { PageHeader } from "@/features/shared/DashboardShell";
 import { api } from "@/lib/api";
 import { maskDestination } from "@/lib/format";
@@ -66,6 +67,11 @@ function Settings() {
       <PageHeader title="Settings" />
       <div className="space-y-6">
         <DemoDataControl accountId={accountId} />
+        <section className="rounded-2xl border border-border bg-card p-5">
+          <h2 className="font-medium">App</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Add the Stawi shortcut to this phone&apos;s home screen.</p>
+          <InstallAppButton className="mt-4" />
+        </section>
         <section className="space-y-4 rounded-2xl border border-border bg-card p-5">
           <h2 className="font-medium">Co-op</h2>
           <div className="space-y-1.5">

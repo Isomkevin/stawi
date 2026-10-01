@@ -3,6 +3,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { LifeBuoy, LogOut } from "lucide-react";
+import { InstallAppButton } from "@/components/stawi/InstallAppButton";
 import { DemoDataControl } from "@/components/stawi/DemoDataControl";
 import { PinPad } from "@/components/stawi/PinPad";
 import { DestinationManager } from "@/features/farmer/DestinationManager";
@@ -115,6 +116,10 @@ function ProfileTab() {
           </span>
           <Switch checked={ussdOn} onCheckedChange={(v) => setUssd(v)} />
         </label>
+      </Card>
+
+      <Card title={t("pwa.title")}>
+        <InstallAppButton />
       </Card>
 
       <Card title={t("profile.support")}>

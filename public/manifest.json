@@ -32,16 +32,23 @@
   ],
   "shortcuts": [
     {
+      "name": "Stawi home",
+      "short_name": "Stawi",
+      "description": "Open your Stawi home screen",
+      "url": "/app/home",
+      "icons": [{ "src": "/stawi-icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
       "name": "Sign in",
       "short_name": "Sign in",
       "url": "/login",
-      "icons": [{ "src": "/stawi-icon-192.png", "sizes": "192x192" }]
+      "icons": [{ "src": "/stawi-icon-192.png", "sizes": "192x192", "type": "image/png" }]
     },
     {
       "name": "Buyer portal",
       "short_name": "Pay shipment",
       "url": "/buyer",
-      "icons": [{ "src": "/stawi-icon-192.png", "sizes": "192x192" }]
+      "icons": [{ "src": "/stawi-icon-192.png", "sizes": "192x192", "type": "image/png" }]
     }
   ]
 }

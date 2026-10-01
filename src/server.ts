@@ -2,6 +2,7 @@ import "./lib/error-capture";
 
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
+import { webManifest } from "./lib/pwa-manifest";
 
 type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
@@ -44,8 +45,20 @@ function isH3SwallowedErrorBody(body: string): boolean {
   }
 }
 
+const MANIFEST_PATHS = new Set(["/manifest.json", "/manifest.webmanifest"]);
+
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
+    const { pathname } = new URL(request.url);
+    if (MANIFEST_PATHS.has(pathname)) {
+      return new Response(JSON.stringify(webManifest), {
+        headers: {
+          "content-type": "application/manifest+json; charset=utf-8",
+          "cache-control": "public, max-age=3600",
+        },
+      });
+    }
+
     try {
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
