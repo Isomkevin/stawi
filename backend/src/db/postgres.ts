@@ -5,7 +5,7 @@ import { Pool, PoolClient, QueryResult, QueryResultRow } from "pg";
 import { normalizeBuyerCode, randomBuyerCode } from "../services/buyerCode";
 import { InMemoryStore } from "../store";
 import { completeSmsLog, resolveExporterSmsSettings, resolveSmsSettings } from "../services/sms";
-import { ACCOUNT_TYPES, Account, AccountType, Coop, CoopMember, Invoice, PaymentProof, Payout, PayoutDestination, Shipment, ShipmentFarmer, ShipmentStatus, SmsLogEntry, Transaction } from "../types";
+import { ACCOUNT_TYPES, Account, AccountType, Coop, CoopMember, Invoice, PaymentProof, Payout, PayoutDestination, Shipment, ShipmentFarmer, ShipmentStatus, SmsLogEntry, Transaction, UssdSession } from "../types";
 
 const txClient = new AsyncLocalStorage<PoolClient>();
 
@@ -910,11 +910,94 @@ export class PostgresStore extends InMemoryStore {
     }));
   }
 
+  public async getUssdSession(sessionId: string): Promise<UssdSession | undefined> {
+    const result = await this.q("SELECT * FROM ussd_sessions WHERE session_id = $1", [sessionId]);
+    const row = result.rows[0];
+    return row ? ussdSessionFrom(row) : undefined;
+  }
+
+  public async saveUssdSession(session: UssdSession): Promise<UssdSession> {
+    await this.q(
+      `INSERT INTO ussd_sessions (
+         session_id, phone_number, account_id, service_code, last_text, text_hash, last_response, state, created_at, updated_at, expires_at
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       ON CONFLICT (session_id) DO UPDATE SET
+         phone_number = EXCLUDED.phone_number,
+         account_id = EXCLUDED.account_id,
+         service_code = EXCLUDED.service_code,
+         last_text = EXCLUDED.last_text,
+         text_hash = EXCLUDED.text_hash,
+         last_response = EXCLUDED.last_response,
+         state = EXCLUDED.state,
+         updated_at = EXCLUDED.updated_at,
+         expires_at = EXCLUDED.expires_at`,
+      [
+        session.session_id,
+        session.phone_number,
+        session.account_id,
+        session.service_code,
+        session.last_text,
+        session.text_hash,
+        session.last_response,
+        session.state,
+        session.created_at,
+        session.updated_at,
+        session.expires_at,
+      ]
+    );
+    return session;
+  }
+
+  public async listUssdSessions(limit: number): Promise<UssdSession[]> {
+    const result = await this.q("SELECT * FROM ussd_sessions ORDER BY updated_at DESC LIMIT $1", [limit]);
+    return result.rows.map((row) => ussdSessionFrom(row));
+  }
+
+  public async consumeUssdRate(
+    phone: string,
+    limit: number,
+    windowMs: number
+  ): Promise<{ hits: number; limited: boolean }> {
+    const result = await this.q(
+      `INSERT INTO ussd_rate (phone_number, window_start, hits)
+       VALUES ($1, NOW(), 1)
+       ON CONFLICT (phone_number) DO UPDATE SET
+         hits = CASE
+           WHEN ussd_rate.window_start <= NOW() - ($2::double precision * INTERVAL '1 millisecond') THEN 1
+           ELSE ussd_rate.hits + 1
+         END,
+         window_start = CASE
+           WHEN ussd_rate.window_start <= NOW() - ($2::double precision * INTERVAL '1 millisecond') THEN NOW()
+           ELSE ussd_rate.window_start
+         END
+       RETURNING hits`,
+      [phone, windowMs]
+    );
+    const hits = num(result.rows[0]?.hits);
+    return { hits, limited: hits > limit };
+  }
+
   public async reset(): Promise<void> {
     await this.q(
-      `TRUNCATE sms_logs, webhook_events, otp_codes, sessions, payouts, transactions, shipment_farmers, shipments, invoices, coop_members, payout_destinations, phone_account_types, phone_mappings, accounts, coops RESTART IDENTITY CASCADE`
+      `TRUNCATE ussd_rate, ussd_sessions, sms_logs, webhook_events, otp_codes, sessions, payouts, transactions, shipment_farmers, shipments, invoices, coop_members, payout_destinations, phone_account_types, phone_mappings, accounts, coops RESTART IDENTITY CASCADE`
     );
   }
+}
+
+function ussdSessionFrom(row: QueryResultRow): UssdSession {
+  return {
+    session_id: String(row.session_id),
+    phone_number: String(row.phone_number),
+    account_id: row.account_id ? String(row.account_id) : null,
+    service_code: row.service_code ? String(row.service_code) : null,
+    last_text: String(row.last_text ?? ""),
+    text_hash: String(row.text_hash ?? ""),
+    last_response: row.last_response ? String(row.last_response) : null,
+    state: String(row.state),
+    created_at: iso(row.created_at) || new Date().toISOString(),
+    updated_at: iso(row.updated_at) || new Date().toISOString(),
+    expires_at: iso(row.expires_at) || new Date().toISOString(),
+  };
 }
 
 export async function connectPostgres(connectionString: string): Promise<PostgresStore> {

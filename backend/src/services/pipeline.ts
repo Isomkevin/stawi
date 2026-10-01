@@ -706,6 +706,9 @@ export class PipelineService {
     if (idempotencyKey) {
       const existing = await store.getPayoutByIdempotency(idempotencyKey);
       if (existing) {
+        if (existing.account_id !== accountId) {
+          return { success: false, error: "idempotency_conflict" };
+        }
         return { success: true, payout: existing, replay: true };
       }
     }

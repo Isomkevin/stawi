@@ -83,6 +83,17 @@ export function formatPayAmount(amount: number, currency: string): string {
   }
 }
 
+/** Built-in KES rates used when the app is in mock mode or the live feed is down. */
+export function illustrativeFxQuote(): {
+  source: "fallback";
+  as_of: null;
+  rates: Record<string, number>;
+} {
+  const rates: Record<string, number> = {};
+  for (const code of PAY_CURRENCIES) rates[code] = kesPerUnit(code);
+  return { source: "fallback", as_of: null, rates };
+}
+
 export function formatKesRate(currency: string, rates?: Record<string, number>): string {
   const rate = kesPerUnit(currency, rates);
   const text = rate >= 1 ? rate.toFixed(2) : rate.toFixed(4).replace(/0+$/, "");

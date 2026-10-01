@@ -291,6 +291,7 @@ DELETE /invoices/{id}                   -> 204 when status is pending. 409 other
 POST /webhooks/payaza                   Payaza collection and payout notifications. HMAC when a secret is configured.
 POST /ussd/callback                     Africa's Talking. See skills/africas-talking/SKILL.md.
                                         Rejected with 401 unless ?s= or the x-ussd-secret header matches AT_CALLBACK_SECRET.
+                                        The phone must already be an account with USSD on. Dial state is ussd_sessions on this same database. It does not hold a balance.
 
 POST /dev/simulate-payment/{invoiceId}  Mock mode only. Runs the same collection path as a webhook.
 GET  /dev/seed-ids                      Mock mode only. Canonical Kiambu ids. The rest of the ledger is in docs/SCAFFOLD.md.
@@ -300,7 +301,7 @@ GET  /dev/seed-ids                      Mock mode only. Canonical Kiambu ids. Th
 
 ## Channel parity
 
-Web and USSD both read `balance_kes_cents` and the same payout list. USSD only changes presentation (for example `KES 1,200.00` instead of cents). The menu is balance, last three payouts, and withdraw-with-PIN to a verified M-Pesa or bank destination. A confirmed credit or withdrawal texts that account. The same text is copied to `+254758750620`. USSD option 2 on the paid account's phone shows that payout as done.
+Web and USSD both read `balance_kes_cents` and the same payout list. USSD only changes presentation (for example `KES 1,200.00` instead of cents). The menu is balance, last three payouts, withdraw-with-PIN to a verified M-Pesa or bank destination, and exit. A confirmed credit or withdrawal texts that account. The same text is copied to `+254758750620`. USSD option 2 on the paid account's phone shows that payout as done. USSD sessions do not keep a separate balance.
 
 ## Where the demo data lives
 

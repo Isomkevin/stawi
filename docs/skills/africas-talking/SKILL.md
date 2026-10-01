@@ -28,6 +28,8 @@ AT_CALLBACK_SECRET=<shared secret>
 AT_USSD_CALLBACK_URL=https://<host>/ussd/callback?s=<AT_CALLBACK_SECRET>
 AT_SENDER_ID=STAWI        # live only, after approval (see below)
 AT_USSD_SERVICE_CODE=*384*1#   # placeholder; live value is whatever AT/telcos assign you
+AT_USSD_SESSION_TTL_MS=180000  # one dial stays open for 3 minutes
+AT_USSD_RATE_LIMIT=30          # callback hits per phone in 5 minutes
 ```
 
 Wire the SDK from these variables and nothing else:
@@ -96,7 +98,7 @@ User picks "2": text = "1*2"           → show sub-menu for option 1 → option
 - `END ` — session terminates, gateway shows this text and closes
 
 ```
-res.send("CON Welcome to Stawi\n1. My balance\n2. Transaction status\n3. Withdraw");
+res.send("CON Welcome to Stawi\n1. My balance\n2. Transaction status\n3. Withdraw\n0. Exit");
 // ...later, on a terminal action...
 res.send("END Withdrawal of KES 1,200 to M-Pesa initiated.");
 ```
@@ -107,17 +109,18 @@ Always respond `200` to the callback even on internal errors — return a gracef
 
 ```
 Root (text = "")
-  CON Welcome to Stawi
+   CON Welcome to Stawi
   1. My balance
   2. Transaction status
   3. Withdraw
+  0. Exit
 
 Option 1 (text = "1")
-  → call GET /accounts/{id}/balance on Stawi's internal API (looked up by phoneNumber)
+  → the phone number selects the account, then that account's balance
   END Your Stawi balance: KES {amount}
 
 Option 2 (text = "2")
-  → the phone number selects the account, then the last 3 payouts on that account
+  → the same payout list the web app reads, last 3
   END Transaction done:
   {invoice_ref} - done - KES {amount}
 
@@ -127,17 +130,56 @@ Option 3 (text = "3")
   2. Bank account (registered)
   → on selection ("3*1" or "3*2"):
   CON Enter amount (KES):
-  → on amount ("3*1*1200"):
+  → on a whole number of shillings ("3*1*1200"):
   CON Enter your Stawi PIN:
   → on PIN ("3*1*1200*1234"):
   → verify PIN server-side (rate-limited, lockout after repeated failures)
-  → call POST /accounts/{id}/withdraw { destination, amount, idempotency_key: sessionId }
+  → call pipeline.withdraw with idempotency_key = sessionId
   END Withdrawal of KES {amount} to {destination} initiated.
+
+Option 0 (text = "0")
+  END Goodbye.
 ```
+
+The phone must already belong to a Stawi account with USSD turned on (`channel_capability: webapp+ussd`). An unknown number is told to register on the web app. USSD does not create accounts. Amounts are whole shillings, stored as integer cents. A number that is not a whole shilling, a short PIN, a missing verified destination, a low balance, a wrong PIN, and a Payaza failure each end with a short line. Internal errors stay in the log.
 
 The PIN step is mandatory in live. In sandbox demos it can be stubbed with a fixed test PIN, but build the step in from the start so live needs no menu redesign.
 
-Session state (which menu level, which account) should be looked up fresh from `sessionId` + `phoneNumber` on every request — don't assume in-memory continuity across requests unless you're running a single persistent process; for a hackathon build, a simple `Map<sessionId, state>` in the same process as your USSD handler is fine, but a Redis-backed store is the production-correct pattern if there's time.
+Each dial is a row in `ussd_sessions` on the same store as accounts (memory, or Postgres when `DATABASE_URL` is set). The row holds the session id, the normalized phone, the account, the last screen, and an expiry. It does not hold a balance. The raw PIN is not stored: the path is saved with that segment removed, and a hash of the service code plus the raw text recognizes a gateway retry. A retry of the same step returns the saved screen and does not call `withdraw` again. A `sessionId` that arrives from a different phone is rejected. After `AT_USSD_SESSION_TTL_MS` (default 3 minutes) the next step ends without moving money. `ussd_rate` counts callback hits per phone (default 30 per 5 minutes). `GET /admin/ussd-sessions` lists recent dials for an admin signed in with `ADMIN_SECRET`. It shows a masked phone and the state, not the path or the PIN.
+
+When `AT_USSD_SERVICE_CODE` is set, `serviceCode` must match. Leave it empty for local tests that do not send one.
+
+## Try it locally
+
+The callback is `POST /ussd/callback`. Africa's Talking posts form fields. A shared secret is required once `AT_CALLBACK_SECRET` is set.
+
+```bash
+# Root menu. Seeded Kiambu farmer 1 is +254712000001, PIN 1234, USSD on.
+curl -s -X POST "http://localhost:4100/ussd/callback?s=s3cret" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  --data-urlencode "sessionId=dev-1" \
+  --data-urlencode "phoneNumber=+254712000001" \
+  --data-urlencode "serviceCode=*384*1#" \
+  --data-urlencode "text="
+
+# Balance
+curl -s -X POST "http://localhost:4100/ussd/callback?s=s3cret" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  --data-urlencode "sessionId=dev-2" \
+  --data-urlencode "phoneNumber=+254712000001" \
+  --data-urlencode "text=1"
+
+# Withdraw KES 200 to the registered M-Pesa number
+curl -s -X POST "http://localhost:4100/ussd/callback?s=s3cret" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  --data-urlencode "sessionId=dev-3" \
+  --data-urlencode "phoneNumber=+254712000001" \
+  --data-urlencode "text=3*1*200*1234"
+```
+
+The same balance and the new withdrawal show up on `GET /accounts/{id}` and `GET /accounts/{id}/transactions`.
+
+For the Africa's Talking simulator, expose the local port with ngrok (`ngrok http 4100`) and register `https://<ngrok-host>/ussd/callback?s=<AT_CALLBACK_SECRET>` on the sandbox USSD channel. The simulator is the honest demo until a shortcode is approved. `backend/scripts/e2e.py` check 17 walks the same menu against a running server.
 
 ## SMS (notifications, not the primary interaction channel)
 

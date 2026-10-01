@@ -44,6 +44,23 @@ export type Account = {
 
 export type PublicAccount = Omit<Account, "pin_hash" | "pin_failed_attempts" | "pin_locked_until">;
 
+/** One Africa's Talking dial. Holds navigation only. Money stays on the account. */
+export type UssdSession = {
+  session_id: string;
+  phone_number: string;
+  account_id: string | null;
+  service_code: string | null;
+  /** Path with the PIN segment replaced. The raw text is not stored. */
+  last_text: string;
+  /** Hash of service code plus raw text, used to recognize a gateway retry. */
+  text_hash: string;
+  last_response: string | null;
+  state: string;
+  created_at: string;
+  updated_at: string;
+  expires_at: string;
+};
+
 export const SMS_TOGGLE_KEYS = ["invite", "invite_summary", "share_landed", "payout_sent", "payout_failed"] as const;
 export type SmsToggleKey = (typeof SMS_TOGGLE_KEYS)[number];
 export type CoopSmsSettings = Record<SmsToggleKey, boolean>;

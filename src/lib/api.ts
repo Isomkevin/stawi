@@ -25,6 +25,7 @@ import {
   type PayoutDestination,
   type WithdrawBody,
 } from "./types";
+import { illustrativeFxQuote } from "./payCurrencies";
 
 export const API_MODE = (import.meta.env["VITE_API_MODE"] as "mock" | "live") ?? "mock";
 export const API_BASE_URL = (import.meta.env["VITE_API_BASE_URL"] as string) ?? "";
@@ -216,7 +217,8 @@ export const api = {
     isMock ? mockApi.getPaymentReceipt(invoiceId) : request(`/invoices/${invoiceId}/receipt`),
 
   // GET /fx — live KES-per-unit quotes, or the illustrative table when the feed is down
-  getFxQuote: (): Promise<FxQuote> => request("/fx"),
+  getFxQuote: (): Promise<FxQuote> =>
+    isMock ? Promise.resolve(illustrativeFxQuote()) : request("/fx"),
 
   // POST /invoices/{id}/checkout-session { currency_code? }
   createCheckoutSession: (invoiceId: string, currencyCode?: string): Promise<CheckoutSession> =>

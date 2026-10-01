@@ -254,3 +254,28 @@ CREATE TABLE IF NOT EXISTS payment_proofs (
 );
 CREATE INDEX IF NOT EXISTS idx_payment_proofs_coop ON payment_proofs(coop_id);
 CREATE INDEX IF NOT EXISTS idx_payment_proofs_account ON payment_proofs(account_id);
+
+-- USSD dial state. Balances and payouts stay on accounts. The PIN is not stored;
+-- text_hash recognizes a gateway retry of the same step.
+CREATE TABLE IF NOT EXISTS ussd_sessions (
+  session_id VARCHAR(128) PRIMARY KEY,
+  phone_number VARCHAR(32) NOT NULL,
+  account_id VARCHAR(64) REFERENCES accounts(id) ON DELETE SET NULL,
+  service_code VARCHAR(32),
+  last_text TEXT NOT NULL DEFAULT '',
+  text_hash VARCHAR(64) NOT NULL DEFAULT '',
+  last_response TEXT,
+  state VARCHAR(64) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  expires_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ussd_sessions_phone ON ussd_sessions (phone_number);
+CREATE INDEX IF NOT EXISTS idx_ussd_sessions_expires ON ussd_sessions (expires_at);
+CREATE INDEX IF NOT EXISTS idx_ussd_sessions_updated ON ussd_sessions (updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS ussd_rate (
+  phone_number VARCHAR(32) PRIMARY KEY,
+  window_start TIMESTAMPTZ NOT NULL,
+  hits INT NOT NULL
+);

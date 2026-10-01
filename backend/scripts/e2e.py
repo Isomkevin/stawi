@@ -378,7 +378,7 @@ def check_17():
     status, _, _ = request(
         "POST",
         "/ussd/callback",
-        data={"sessionId": "USSD-SESS-1", "phoneNumber": phone, "text": ""},
+        data={"sessionId": "USSD-SESS-1", "phoneNumber": phone, "serviceCode": "*384*1#", "text": ""},
         expected_status=401,
     )
 
@@ -386,7 +386,7 @@ def check_17():
     status, root_text, _ = request(
         "POST",
         f"/ussd/callback?s={USSD_SECRET}",
-        data={"sessionId": "USSD-SESS-2", "phoneNumber": phone, "text": ""},
+        data={"sessionId": "USSD-SESS-2", "phoneNumber": phone, "serviceCode": "*384*1#", "text": ""},
         expected_status=200,
     )
     assert "CON Welcome to Stawi" in root_text
@@ -396,7 +396,7 @@ def check_17():
     status, bal_text, _ = request(
         "POST",
         f"/ussd/callback?s={USSD_SECRET}",
-        data={"sessionId": "USSD-SESS-2", "phoneNumber": phone, "text": "1"},
+        data={"sessionId": "USSD-SESS-2", "phoneNumber": phone, "serviceCode": "*384*1#", "text": "1"},
         expected_status=200,
     )
     assert "END Your Stawi balance: KES" in bal_text
@@ -405,7 +405,7 @@ def check_17():
     status, tx_text, _ = request(
         "POST",
         f"/ussd/callback?s={USSD_SECRET}",
-        data={"sessionId": "USSD-SESS-2", "phoneNumber": phone, "text": "2"},
+        data={"sessionId": "USSD-SESS-2", "phoneNumber": phone, "serviceCode": "*384*1#", "text": "2"},
         expected_status=200,
     )
     assert (
@@ -418,7 +418,7 @@ def check_17():
     status, wth_res, _ = request(
         "POST",
         f"/ussd/callback?s={USSD_SECRET}",
-        data={"sessionId": "USSD-SESS-3", "phoneNumber": phone, "text": "3*1*200*1234"},
+        data={"sessionId": "USSD-SESS-3", "phoneNumber": phone, "serviceCode": "*384*1#", "text": "3*1*200*1234"},
         expected_status=200,
     )
     assert (

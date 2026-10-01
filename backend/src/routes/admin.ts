@@ -1,6 +1,8 @@
 import crypto from "crypto";
 import { Request, Response, Router } from "express";
+import { maskPhone } from "../services/phone";
 import { isMappingError, addPhoneMapping, grantAccountType, revokeAccountType, searchPhoneMappings } from "../services/phoneMappings";
+import { store } from "../store";
 import { ACCOUNT_TYPES, AccountType, PhoneMapping } from "../types";
 
 const TYPE_LABEL: Record<AccountType, string> = {
@@ -271,6 +273,25 @@ export function registerAdmin(router: Router): void {
       if (!isMappingError(err)) throw err;
       respondError(req, res, query, err);
     }
+  });
+
+  router.get("/admin/ussd-sessions", async (req: Request, res: Response) => {
+    if (!requireAdmin(req, res)) return;
+    const requested = Number(req.query.limit);
+    const limit = Number.isInteger(requested) && requested > 0 ? Math.min(requested, 200) : 50;
+    const sessions = await store.listUssdSessions(limit);
+    res.json({
+      sessions: sessions.map((session) => ({
+        session_id: session.session_id,
+        phone_masked: maskPhone(session.phone_number),
+        account_id: session.account_id,
+        service_code: session.service_code,
+        state: session.state,
+        created_at: session.created_at,
+        updated_at: session.updated_at,
+        expires_at: session.expires_at,
+      })),
+    });
   });
 
   router.post("/admin/phones/revoke", async (req: Request, res: Response) => {

@@ -13,6 +13,7 @@ import {
   Shipment,
   SmsLogEntry,
   Transaction,
+  UssdSession,
 } from "./types";
 
 export class InMemoryStore {
@@ -34,6 +35,8 @@ export class InMemoryStore {
   /** Present key means an admin saved this phone. The set may be empty. */
   private explicitTypes = new Map<string, Set<AccountType>>();
   private smsLogs: SmsLogEntry[] = [];
+  private ussdSessions = new Map<string, UssdSession>();
+  private ussdRates = new Map<string, { windowStart: number; hits: number }>();
 
   public normalizePhone(phone: string): string {
     return normalizeKenyanPhone(phone);
@@ -445,6 +448,37 @@ export class InMemoryStore {
     if (shipment) shipment.is_demo = true;
   }
 
+  public async getUssdSession(sessionId: string): Promise<UssdSession | undefined> {
+    return this.ussdSessions.get(sessionId);
+  }
+
+  public async saveUssdSession(session: UssdSession): Promise<UssdSession> {
+    this.ussdSessions.set(session.session_id, session);
+    return session;
+  }
+
+  public async listUssdSessions(limit: number): Promise<UssdSession[]> {
+    return Array.from(this.ussdSessions.values())
+      .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+      .slice(0, limit);
+  }
+
+  /** Counts one callback inside a sliding window. `limited` is true once hits pass `limit`. */
+  public async consumeUssdRate(
+    phone: string,
+    limit: number,
+    windowMs: number
+  ): Promise<{ hits: number; limited: boolean }> {
+    const now = Date.now();
+    const current = this.ussdRates.get(phone);
+    if (!current || now - current.windowStart >= windowMs) {
+      this.ussdRates.set(phone, { windowStart: now, hits: 1 });
+      return { hits: 1, limited: false };
+    }
+    current.hits += 1;
+    return { hits: current.hits, limited: current.hits > limit };
+  }
+
   // Reset store (for testing)
   public async reset(): Promise<void> {
     this.accounts.clear();
@@ -463,6 +497,8 @@ export class InMemoryStore {
     this.shipments.clear();
     this.explicitTypes.clear();
     this.smsLogs = [];
+    this.ussdSessions.clear();
+    this.ussdRates.clear();
   }
 }
 

@@ -20,6 +20,12 @@ export function isKenyanPhone(phone: string): boolean {
   return /^\+254\d{9}$/.test(normalizePhone(phone));
 }
 
+/** Last four digits only, for logs and the admin session list. */
+export function maskPhone(phone: string): string {
+  const tail = phone.replace(/\D/g, "").slice(-4);
+  return `***${tail}`;
+}
+
 export class PhoneError extends Error {
   status = 400;
   constructor(message: string) {
