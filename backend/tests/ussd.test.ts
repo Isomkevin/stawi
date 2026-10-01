@@ -102,7 +102,7 @@ describe("USSD Gateway Adapter", () => {
     expect(web.body.balance_kes_cents).toBe(250000);
 
     const saved = await store.getUssdSession("S2");
-    expect(saved?.last_text).toBe("3*1*1000****");
+    expect(saved?.last_text).toBe("3*1*1000*****");
     expect(saved?.last_text).not.toContain("1234");
   });
 
