@@ -124,6 +124,26 @@ function Reports() {
     return { ledger, monthly: [...monthly.entries()].sort(), register, t, tax };
   }, [invoices.data, payouts.data, members.data, year, period, whtRate, vatRate, cessRate]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const live = useMemo(() => {
+    const inv = (invoices.data ?? []).filter(
+      (i) => i.is_demo !== true && PAID.includes(i.status) && inPeriod(i.created_at, year, period),
+    );
+    const credits = (payouts.data ?? []).filter(
+      (p: Payout) => p.kind === "credit" && p.is_demo !== true && inPeriod(p.created_at, year, period),
+    );
+    const net = inv.reduce((s, i) => s + (i.kes_total_cents ?? 0), 0);
+    const sent = credits
+      .filter((p) => p.status === "sent" || p.status === "confirmed")
+      .reduce((s, p) => s + p.amount_kes_cents, 0);
+    const unapproved = inv
+      .filter((i) => !i.split_approved)
+      .reduce((s, i) => s + (i.kes_total_cents ?? 0), 0);
+    const stuck = credits
+      .filter((p) => p.status === "pending" || p.status === "failed")
+      .reduce((s, p) => s + p.amount_kes_cents, 0);
+    return { inBank: net - sent, owed: unapproved + stuck };
+  }, [invoices.data, payouts.data, year, period]);
+
   const label = periodLabel(year, period);
   const slug = label.replaceAll(" ", "-").toLowerCase();
   const coopName = coop.data?.name ?? "Co-op";
@@ -230,6 +250,14 @@ function Reports() {
         <Skeleton className="h-64 w-full rounded-2xl" />
       ) : (
         <>
+          <div className="mb-3 grid gap-3 sm:grid-cols-2">
+            <Kpi label="In the co-op's bank" value={live.inBank} />
+            <Kpi label="Owed to farmers" value={live.owed} />
+          </div>
+          <p className="mb-5 text-xs text-muted-foreground">
+            These two figures are live money in {label}. The tables below follow this report’s rows, including sample invoices when Demo data is on.
+          </p>
+
           <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Kpi label="Gross collected" value={r.t.gross} />
             <Kpi label="Paid to farmers" value={r.t.paid} />
