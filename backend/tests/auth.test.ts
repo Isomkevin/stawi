@@ -107,9 +107,21 @@ describe("Phone OTP sessions", () => {
     process.env.MASTER_LOGIN_CODE = "654321";
     try {
       const id = await createFarmer();
+      const second = await request(app).post("/accounts").send({
+        full_name: "Other Person",
+        phone_number: "+254711333444",
+        id_number: "ID904",
+        pin: "1234",
+      });
+      expect(second.status).toBe(201);
+
       const otp = await request(app).post("/auth/otp").send({ phone_number: "+254700111222" });
       expect(otp.status).toBe(200);
       expect(otp.body).toEqual({ sent: false, master_code: "654321" });
+
+      const other = await request(app).post("/auth/otp").send({ phone_number: "0711333444" });
+      expect(other.status).toBe(200);
+      expect(other.body).toEqual({ sent: false, master_code: "654321" });
 
       const verified = await request(app)
         .post("/auth/verify")
@@ -118,7 +130,7 @@ describe("Phone OTP sessions", () => {
       expect(verified.body.account_id).toBe(id);
 
       const unknown = await request(app).post("/auth/otp").send({ phone_number: "+254799000111" });
-      expect(unknown.body).toEqual({ sent: true });
+      expect(unknown.body).toEqual({ sent: false, master_code: "654321" });
     } finally {
       if (previousEnv === undefined) delete process.env.NODE_ENV;
       else process.env.NODE_ENV = previousEnv;

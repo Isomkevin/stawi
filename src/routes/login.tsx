@@ -141,8 +141,12 @@ function LoginPage() {
         roles: granted,
       });
       setStep("role");
-    } catch {
-      setError("That code isn't right or has expired.");
+    } catch (e) {
+      setError(
+        e instanceof ApiError && e.status === 404
+          ? "No Stawi account uses this number."
+          : "That code isn't right or has expired.",
+      );
     } finally {
       setBusy(false);
     }

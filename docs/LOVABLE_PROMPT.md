@@ -168,7 +168,7 @@ Endpoints (client methods mirror these 1:1):
 ```
 POST /auth/otp                         { phone_number } -> { sent: true, dev_code? } | { sent: false, master_code }
                                         texts a 6-digit code; mock mode and OTP_DEV_CODES=true also return dev_code outside production
-                                        When the text is not sent and MASTER_LOGIN_CODE is set, sent is false and master_code is that code. Show it on the code step and let the person submit it. Unknown phones still return { sent: true } with no code.
+                                        When the text is not sent and MASTER_LOGIN_CODE is set, every phone gets sent false and master_code. Show it on the code step and let the person submit it. A phone with no account still gets that code on screen; verify returns 404.
 POST /auth/verify                      { phone_number, code } -> { token, account_id, role, roles, account_types, account }
                                         roles: ("farmer" | "exporter" | "treasurer")[]
                                         account_types: ("farmer" | "exporter" | "coop")[]  (coop is the treasurer / co-op dashboard)

@@ -89,11 +89,18 @@ export async function attachAccount(req: Request): Promise<void> {
   }
 }
 
+/** Shown on the sign-in screen for any phone when the login text is not sent. */
+function masterCodeFallback(): { sent: false; master_code: string } | null {
+  if (devCodesEnabled()) return null;
+  const master = masterLoginCode();
+  return master ? { sent: false, master_code: master } : null;
+}
+
 export async function requestOtp(
   phone: string
 ): Promise<OtpChallenge | { error: string; status: number }> {
   const account = await store.getAccountByPhone(phone);
-  if (!account) return { sent: true };
+  if (!account) return masterCodeFallback() ?? { sent: true };
 
   const code = crypto.randomInt(100000, 1000000).toString();
   const expires = new Date(Date.now() + OTP_TTL_MS).toISOString();
@@ -107,9 +114,7 @@ export async function requestOtp(
   const showCode = devCodesEnabled();
   if (!showCode && (sms.dryRun || !sms.success)) {
     await store.deleteOtp(phone);
-    const master = masterLoginCode();
-    if (master) return { sent: false, master_code: master };
-    return { error: "Could not send the login code", status: 502 };
+    return masterCodeFallback() ?? { error: "Could not send the login code", status: 502 };
   }
   return showCode ? { sent: true, dev_code: code } : { sent: true };
 }
