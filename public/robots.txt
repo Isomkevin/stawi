@@ -62,4 +62,4 @@ Disallow: /app
 Disallow: /coop
 Disallow: /direct
 
-Sitemap: https://stawi.africa/sitemap.xml
+Sitemap: https://stawi-payaza.lovable.app/sitemap.xml
