@@ -4,7 +4,7 @@ import { notify } from "./notify";
 import { payaza } from "./payaza";
 import { sessionAccess, SessionRole } from "./phoneMappings";
 import { store } from "../store";
-import { Account, AccountType } from "../types";
+import { Account, AccountType, OtpChallenge } from "../types";
 
 const OTP_TTL_MS = 5 * 60 * 1000;
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -91,7 +91,7 @@ export async function attachAccount(req: Request): Promise<void> {
 
 export async function requestOtp(
   phone: string
-): Promise<{ sent: true; dev_code?: string } | { error: string; status: number }> {
+): Promise<OtpChallenge | { error: string; status: number }> {
   const account = await store.getAccountByPhone(phone);
   if (!account) return { sent: true };
 
@@ -107,6 +107,8 @@ export async function requestOtp(
   const showCode = devCodesEnabled();
   if (!showCode && (sms.dryRun || !sms.success)) {
     await store.deleteOtp(phone);
+    const master = masterLoginCode();
+    if (master) return { sent: false, master_code: master };
     return { error: "Could not send the login code", status: 502 };
   }
   return showCode ? { sent: true, dev_code: code } : { sent: true };

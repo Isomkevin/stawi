@@ -312,8 +312,8 @@ export const api = {
       ? shipmentsApi.advance(shipmentId)
       : request(`/shipments/${shipmentId}`, { method: "PATCH", body: JSON.stringify({ action: "advance" }) }),
 
-  // POST /auth/otp → { sent, dev_code? }
-  requestOtp: (phone: string): Promise<{ sent: boolean; dev_code?: string }> =>
+  // POST /auth/otp → { sent: true, dev_code? } | { sent: false, master_code }
+  requestOtp: (phone: string): Promise<{ sent: boolean; dev_code?: string; master_code?: string }> =>
     request("/auth/otp", { method: "POST", body: JSON.stringify({ phone_number: phone }) }),
 
   // POST /auth/verify → { token, account_id, role, roles, account_types, account }

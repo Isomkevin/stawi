@@ -187,7 +187,7 @@ Creating a co-op invoice also opens a draft shipment linked to it. The quantity 
 
 Sessions are required when `NODE_ENV` is `production`, or `PAYAZA_MODE` is `sandbox` or `live`, unless `AUTH_REQUIRED=false`. `AUTH_REQUIRED=true` forces it on. Mock local dev is open.
 
-`POST /auth/otp` with `{ phone_number }` always answers `{ sent: true }` when the phone is unknown, so the endpoint does not reveal who has an account. A known phone gets a 6-digit SMS, valid 5 minutes, 5 attempts. Outside production, mock mode and `OTP_DEV_CODES=true` also return `dev_code` so the sign-in screen can show the test code. `MASTER_LOGIN_CODE`, when set, signs in any existing phone with that one code, including in production. Empty means the shortcut is off. Production never returns `dev_code`.
+`POST /auth/otp` with `{ phone_number }` always answers `{ sent: true }` when the phone is unknown, so the endpoint does not reveal who has an account. A known phone gets a 6-digit SMS, valid 5 minutes, 5 attempts. Outside production, mock mode and `OTP_DEV_CODES=true` also return `dev_code` so the sign-in screen can show the test code. `MASTER_LOGIN_CODE`, when set, signs in any existing phone with that one code, including in production. Empty means the shortcut is off. Production never returns `dev_code`. If the login text is not sent and `MASTER_LOGIN_CODE` is set, the response is `{ sent: false, master_code }` with that code so the sign-in screen can show it. The one-time code is discarded in that case. Without a master code, the same failure is 502.
 
 `POST /auth/verify` with `{ phone_number, code }` returns `{ token, account_id, role, roles, account_types, account }`. `account_types` is `farmer`, `exporter`, and/or `coop`. A phone may hold more than one. `roles` is the same set in dashboard names: `coop` is `treasurer`. `role` is the default among those (`treasurer`, then `farmer`, then `exporter`) so older clients still land somewhere. When no admin mapping has been saved, the set is the historical single role: treasurer of a co-op, otherwise farmer when `coop_id` is set, otherwise exporter. The token is also set as an HttpOnly `stawi_session` cookie (7 days). Send `Authorization: Bearer <token>` or the cookie.
 
@@ -209,7 +209,7 @@ GET  /fx                                 -> { source: "frankfurter" | "fallback"
                                         Public. rates is KES per 1 unit for every Payaza checkout currency.
                                         source is frankfurter when the cache holds a successful v2 fetch. Otherwise fallback, and rates are the illustrative table.
 
-POST /auth/otp                          { phone_number } -> { sent: true, dev_code? }
+POST /auth/otp                          { phone_number } -> { sent: true, dev_code? } | { sent: false, master_code }
 POST /auth/verify                       { phone_number, code } -> { token, account_id, role, roles, account_types, account }
 POST /auth/logout
 

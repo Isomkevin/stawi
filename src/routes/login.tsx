@@ -55,6 +55,7 @@ function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [devCode, setDevCode] = useState<string | null>(null);
+  const [masterCode, setMasterCode] = useState<string | null>(null);
   const [choices, setChoices] = useState<AppRole[]>([]);
   const [pending, setPending] = useState<{
     accountId: string;
@@ -87,9 +88,15 @@ function LoginPage() {
     try {
       const r = await api.requestOtp(normalized());
       setDevCode(r.dev_code ?? null);
+      setMasterCode(r.sent === false ? (r.master_code ?? null) : null);
+      if (r.sent === false && r.master_code) setCode(r.master_code.replace(/\D/g, ""));
       setStep("code");
     } catch (e) {
-      setError(e instanceof ApiError && e.status === 404 ? "No Stawi account uses this number." : "Couldn't send the code. Try again.");
+      setError(
+        e instanceof ApiError && e.status === 404
+          ? "No Stawi account uses this number."
+          : "Couldn't send the code. Try again.",
+      );
     } finally {
       setBusy(false);
     }
@@ -117,12 +124,22 @@ function LoginPage() {
       }
       if (granted.length <= 1) {
         const role = granted[0] ?? r.role;
-        signIn(role, { accountId: r.account_id, coopId: r.account.coop_id, token: r.token, roles: [role] });
+        signIn(role, {
+          accountId: r.account_id,
+          coopId: r.account.coop_id,
+          token: r.token,
+          roles: [role],
+        });
         void navigate({ to: homeForRole[role] });
         return;
       }
       setChoices(granted);
-      setPending({ accountId: r.account_id, coopId: r.account.coop_id, token: r.token, roles: granted });
+      setPending({
+        accountId: r.account_id,
+        coopId: r.account.coop_id,
+        token: r.token,
+        roles: granted,
+      });
       setStep("role");
     } catch {
       setError("That code isn't right or has expired.");
@@ -201,11 +218,32 @@ function LoginPage() {
 
           {step === "code" && (
             <div className="mt-5">
-              <h1 className="text-display text-2xl">Check your messages</h1>
+              <h1 className="text-display text-2xl">
+                {masterCode ? "Use this login code" : "Check your messages"}
+              </h1>
               <p className="mt-2 text-sm text-muted-foreground">
-                We sent a 6-digit code to {phone}.
-                {isMock && <> In this demo, use <span className="tabular text-lime">123456</span>.</>}
-                {devCode && <> Test code: <span className="tabular text-lime">{devCode}</span>.</>}
+                {masterCode ? (
+                  <>
+                    We couldn't text a code to {phone}. Use this login code:{" "}
+                    <span className="tabular text-lime">{masterCode}</span>.
+                  </>
+                ) : (
+                  <>
+                    We sent a 6-digit code to {phone}.
+                    {isMock && (
+                      <>
+                        {" "}
+                        In this demo, use <span className="tabular text-lime">123456</span>.
+                      </>
+                    )}
+                    {devCode && (
+                      <>
+                        {" "}
+                        Test code: <span className="tabular text-lime">{devCode}</span>.
+                      </>
+                    )}
+                  </>
+                )}
               </p>
               <label className="mt-6 block text-sm font-medium" htmlFor="code">
                 One-time code
@@ -213,7 +251,7 @@ function LoginPage() {
               <Input
                 id="code"
                 inputMode="numeric"
-                maxLength={10}
+                maxLength={32}
                 placeholder="••••••"
                 value={code}
                 onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
@@ -225,7 +263,12 @@ function LoginPage() {
                   {error}
                 </p>
               )}
-              <Button size="lg" className="mt-5 w-full min-h-[48px] text-base" onClick={verify} disabled={busy}>
+              <Button
+                size="lg"
+                className="mt-5 w-full min-h-[48px] text-base"
+                onClick={verify}
+                disabled={busy}
+              >
                 Verify code
                 <ArrowRight className="size-4" strokeWidth={2} />
               </Button>
@@ -235,6 +278,8 @@ function LoginPage() {
                 onClick={() => {
                   setStep("phone");
                   setError(null);
+                  setMasterCode(null);
+                  setCode("");
                 }}
               >
                 Use a different number
@@ -282,7 +327,9 @@ function LoginPage() {
         </p>
 
         <p className="mt-6 text-center text-xs text-muted-foreground/70">
-          {isMock ? `Demo environment · any phone number works with code ${DEMO_CODE}` : "We'll text a code to the number on your Stawi account."}
+          {isMock
+            ? `Demo environment · any phone number works with code ${DEMO_CODE}`
+            : "We'll text a code to the number on your Stawi account."}
         </p>
       </div>
     </div>

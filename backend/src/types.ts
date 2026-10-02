@@ -350,3 +350,8 @@ export type RosterApplyResult = {
   invites: RosterInvite[];
   failed: Array<{ name: string; reason: string }>;
 };
+
+/** POST /auth/otp when the phone is accepted. Unknown phones are always `{ sent: true }`. */
+export type OtpChallenge =
+  | { sent: true; dev_code?: string }
+  | { sent: false; master_code: string };

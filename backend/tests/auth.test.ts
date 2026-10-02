@@ -99,6 +99,52 @@ describe("Phone OTP sessions", () => {
     expect(texted.body.token).not.toBe(master.body.token);
   });
 
+  it("returns the master login code when the text is not sent", async () => {
+    const previousEnv = process.env.NODE_ENV;
+    const previousKey = process.env.AT_API_KEY;
+    process.env.NODE_ENV = "production";
+    process.env.AT_API_KEY = "";
+    process.env.MASTER_LOGIN_CODE = "654321";
+    try {
+      const id = await createFarmer();
+      const otp = await request(app).post("/auth/otp").send({ phone_number: "+254700111222" });
+      expect(otp.status).toBe(200);
+      expect(otp.body).toEqual({ sent: false, master_code: "654321" });
+
+      const verified = await request(app)
+        .post("/auth/verify")
+        .send({ phone_number: "+254700111222", code: "654321" });
+      expect(verified.status).toBe(200);
+      expect(verified.body.account_id).toBe(id);
+
+      const unknown = await request(app).post("/auth/otp").send({ phone_number: "+254799000111" });
+      expect(unknown.body).toEqual({ sent: true });
+    } finally {
+      if (previousEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = previousEnv;
+      if (previousKey === undefined) delete process.env.AT_API_KEY;
+      else process.env.AT_API_KEY = previousKey;
+    }
+  });
+
+  it("still reports a send failure when no master login code is set", async () => {
+    const previousEnv = process.env.NODE_ENV;
+    const previousKey = process.env.AT_API_KEY;
+    process.env.NODE_ENV = "production";
+    process.env.AT_API_KEY = "";
+    try {
+      await createFarmer();
+      const otp = await request(app).post("/auth/otp").send({ phone_number: "+254700111222" });
+      expect(otp.status).toBe(502);
+      expect(otp.body.error).toMatch(/could not send/i);
+    } finally {
+      if (previousEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = previousEnv;
+      if (previousKey === undefined) delete process.env.AT_API_KEY;
+      else process.env.AT_API_KEY = previousKey;
+    }
+  });
+
   it("accepts the master code in production when the env var is set", async () => {
     const previous = process.env.NODE_ENV;
     process.env.NODE_ENV = "production";

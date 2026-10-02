@@ -166,13 +166,15 @@ type Shipment = { id: string; reference: string; coop_id: string; account_id?: s
 
 Endpoints (client methods mirror these 1:1):
 ```
-POST /auth/otp                         { phone_number } -> { sent: true, dev_code? }  (texts a 6-digit code; mock mode and OTP_DEV_CODES=true also return dev_code outside production)
+POST /auth/otp                         { phone_number } -> { sent: true, dev_code? } | { sent: false, master_code }
+                                        texts a 6-digit code; mock mode and OTP_DEV_CODES=true also return dev_code outside production
+                                        When the text is not sent and MASTER_LOGIN_CODE is set, sent is false and master_code is that code. Show it on the code step and let the person submit it. Unknown phones still return { sent: true } with no code.
 POST /auth/verify                      { phone_number, code } -> { token, account_id, role, roles, account_types, account }
                                         roles: ("farmer" | "exporter" | "treasurer")[]
                                         account_types: ("farmer" | "exporter" | "coop")[]  (coop is the treasurer / co-op dashboard)
                                         role: default among roles, treasurer then farmer then exporter, for older clients
                                         A phone may have more than one. One role routes as before. Several roles: chooser, then the account switcher.
-                                        (a server MASTER_LOGIN_CODE, when set, also signs in any existing account; the login page does not change)
+                                        (a server MASTER_LOGIN_CODE, when set, also signs in any existing account. The login page shows it only when the text was not sent.)
 POST /auth/logout                      clears the session cookie
 Authorization: Bearer <token> is required on every route except health, FX, account creation, name enquiry, OTP, buyer invoice view, the receipt, checkout, buyer lookup, payment-proof submit, Payaza webhooks, and USSD, whenever the API is in production or PAYAZA_MODE is sandbox/live. Confirming or rejecting a proof still requires the payee.
 POST /accounts                          body: { full_name, phone_number, id_number, pin(4 digits), destination:{type,details,account_name}, ussd:boolean, coop_id? }

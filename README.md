@@ -119,7 +119,7 @@ To use the API from the app, set `VITE_API_MODE=live` and `VITE_API_BASE_URL=htt
 
 Amounts on the API are integer KES cents (`*_kes_cents`). The labelled estimate on the new-invoice sheet is the only calculation that runs in the browser.
 
-`PAYAZA_MODE=sandbox` or `live` requires Payaza keys and turns session auth on (`POST /auth/otp`, then `POST /auth/verify`). `MASTER_LOGIN_CODE`, when set, signs in any existing account with that one code; leave it empty before real users. Production will not boot in mock mode. `render.yaml` is the backend blueprint: Node bound to `0.0.0.0:$PORT`, Postgres, `SEED=false`.
+`PAYAZA_MODE=sandbox` or `live` requires Payaza keys and turns session auth on (`POST /auth/otp`, then `POST /auth/verify`). `MASTER_LOGIN_CODE`, when set, signs in any existing account with that one code. If the login text is not sent, the sign-in screen shows it. Leave it empty before real users. Production will not boot in mock mode. `render.yaml` is the backend blueprint: Node bound to `0.0.0.0:$PORT`, Postgres, `SEED=false`.
 
 ## The edge of the prototype
 
