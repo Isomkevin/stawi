@@ -14,8 +14,11 @@ import { Route as AppRouteImport } from './routes/app'
 import { Route as BuyerRouteImport } from './routes/buyer'
 import { Route as CoopRouteImport } from './routes/coop'
 import { Route as DirectRouteImport } from './routes/direct'
+import { Route as IndexDotmdRouteImport } from './routes/index[.]md'
+import { Route as LlmsDottxtRouteImport } from './routes/llms[.]txt'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
+import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as ApiCoopAssistantRouteImport } from './routes/api/coop-assistant'
 import { Route as AppIndexRouteImport } from './routes/app.index'
 import { Route as AppActivityRouteImport } from './routes/app.activity'
@@ -68,6 +71,16 @@ const DirectRoute = DirectRouteImport.update({
   path: '/direct',
   getParentRoute: () => rootRouteImport,
 } as any)
+const IndexDotmdRoute = IndexDotmdRouteImport.update({
+  id: '/index.md',
+  path: '/index.md',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LlmsDottxtRoute = LlmsDottxtRouteImport.update({
+  id: '/llms.txt',
+  path: '/llms.txt',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -76,6 +89,11 @@ const LoginRoute = LoginRouteImport.update({
 const OnboardingRoute = OnboardingRouteImport.update({
   id: '/onboarding',
   path: '/onboarding',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
+  id: '/sitemap.xml',
+  path: '/sitemap.xml',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiCoopAssistantRoute = ApiCoopAssistantRouteImport.update({
@@ -215,8 +233,11 @@ export interface FileRoutesByFullPath {
   '/buyer': typeof BuyerRoute
   '/coop': typeof CoopRouteWithChildren
   '/direct': typeof DirectRouteWithChildren
+  '/index.md': typeof IndexDotmdRoute
+  '/llms.txt': typeof LlmsDottxtRoute
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/api/coop-assistant': typeof ApiCoopAssistantRoute
   '/app/activity': typeof AppActivityRoute
   '/app/home': typeof AppHomeRoute
@@ -247,8 +268,11 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/buyer': typeof BuyerRoute
+  '/index.md': typeof IndexDotmdRoute
+  '/llms.txt': typeof LlmsDottxtRoute
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/api/coop-assistant': typeof ApiCoopAssistantRoute
   '/app/activity': typeof AppActivityRoute
   '/app/home': typeof AppHomeRoute
@@ -283,8 +307,11 @@ export interface FileRoutesById {
   '/buyer': typeof BuyerRoute
   '/coop': typeof CoopRouteWithChildren
   '/direct': typeof DirectRouteWithChildren
+  '/index.md': typeof IndexDotmdRoute
+  '/llms.txt': typeof LlmsDottxtRoute
   '/login': typeof LoginRoute
   '/onboarding': typeof OnboardingRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/api/coop-assistant': typeof ApiCoopAssistantRoute
   '/app/activity': typeof AppActivityRoute
   '/app/home': typeof AppHomeRoute
@@ -320,8 +347,11 @@ export interface FileRouteTypes {
     | '/buyer'
     | '/coop'
     | '/direct'
+    | '/index.md'
+    | '/llms.txt'
     | '/login'
     | '/onboarding'
+    | '/sitemap.xml'
     | '/api/coop-assistant'
     | '/app/activity'
     | '/app/home'
@@ -352,8 +382,11 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/buyer'
+    | '/index.md'
+    | '/llms.txt'
     | '/login'
     | '/onboarding'
+    | '/sitemap.xml'
     | '/api/coop-assistant'
     | '/app/activity'
     | '/app/home'
@@ -387,8 +420,11 @@ export interface FileRouteTypes {
     | '/buyer'
     | '/coop'
     | '/direct'
+    | '/index.md'
+    | '/llms.txt'
     | '/login'
     | '/onboarding'
+    | '/sitemap.xml'
     | '/api/coop-assistant'
     | '/app/activity'
     | '/app/home'
@@ -423,8 +459,11 @@ export interface RootRouteChildren {
   BuyerRoute: typeof BuyerRoute
   CoopRoute: typeof CoopRouteWithChildren
   DirectRoute: typeof DirectRouteWithChildren
+  IndexDotmdRoute: typeof IndexDotmdRoute
+  LlmsDottxtRoute: typeof LlmsDottxtRoute
   LoginRoute: typeof LoginRoute
   OnboardingRoute: typeof OnboardingRoute
+  SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   ApiCoopAssistantRoute: typeof ApiCoopAssistantRoute
   DemoUssdRoute: typeof DemoUssdRoute
   PayInvoiceIdRoute: typeof PayInvoiceIdRoute
@@ -467,6 +506,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DirectRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/index.md': {
+      id: '/index.md'
+      path: '/index.md'
+      fullPath: '/index.md'
+      preLoaderRoute: typeof IndexDotmdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/llms.txt': {
+      id: '/llms.txt'
+      path: '/llms.txt'
+      fullPath: '/llms.txt'
+      preLoaderRoute: typeof LlmsDottxtRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -479,6 +532,13 @@ declare module '@tanstack/react-router' {
       path: '/onboarding'
       fullPath: '/onboarding'
       preLoaderRoute: typeof OnboardingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sitemap.xml': {
+      id: '/sitemap.xml'
+      path: '/sitemap.xml'
+      fullPath: '/sitemap.xml'
+      preLoaderRoute: typeof SitemapDotxmlRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/coop-assistant': {
@@ -743,8 +803,11 @@ const rootRouteChildren: RootRouteChildren = {
   BuyerRoute: BuyerRoute,
   CoopRoute: CoopRouteWithChildren,
   DirectRoute: DirectRouteWithChildren,
+  IndexDotmdRoute: IndexDotmdRoute,
+  LlmsDottxtRoute: LlmsDottxtRoute,
   LoginRoute: LoginRoute,
   OnboardingRoute: OnboardingRoute,
+  SitemapDotxmlRoute: SitemapDotxmlRoute,
   ApiCoopAssistantRoute: ApiCoopAssistantRoute,
   DemoUssdRoute: DemoUssdRoute,
   PayInvoiceIdRoute: PayInvoiceIdRoute,

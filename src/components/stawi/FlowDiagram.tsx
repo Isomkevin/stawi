@@ -1,4 +1,4 @@
-import { motion, useReducedMotion } from "motion/react";
+import { motion } from "motion/react";
 import { ArrowRight, Banknote, CreditCard, RefreshCw, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -10,13 +10,12 @@ const nodes = [
 ];
 
 export function FlowDiagram({ className }: { className?: string }) {
-  const reduced = useReducedMotion();
   return (
     <div className={cn("flex flex-col gap-3 md:flex-row md:items-stretch", className)}>
       {nodes.map((node, index) => (
         <div key={node.label} className="flex flex-1 items-center gap-3">
           <motion.div
-            initial={reduced ? false : { opacity: 0, y: 12 }}
+            initial={false}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, margin: "-60px" }}
             transition={{ delay: index * 0.18, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
@@ -25,7 +24,7 @@ export function FlowDiagram({ className }: { className?: string }) {
             <motion.span
               aria-hidden
               className="absolute inset-x-0 top-0 h-px bg-lime"
-              initial={reduced ? false : { scaleX: 0 }}
+              initial={false}
               whileInView={{ scaleX: 1 }}
               viewport={{ once: true }}
               transition={{ delay: index * 0.18 + 0.2, duration: 0.6 }}
