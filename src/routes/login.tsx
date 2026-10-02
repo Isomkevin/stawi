@@ -8,6 +8,7 @@ import type { Role } from "@/lib/types";
 import { api, ApiError, isMock } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { noindexMeta } from "@/lib/site";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -21,6 +22,7 @@ export const Route = createFileRoute("/login")({
       { property: "og:description", content: "Phone + one-time-code sign in for Stawi." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
+      noindexMeta,
     ],
   }),
   component: LoginPage,

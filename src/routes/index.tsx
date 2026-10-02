@@ -16,26 +16,11 @@ import {
 import { FlowDiagram } from "@/components/stawi/FlowDiagram";
 import { InstallAppButton } from "@/components/stawi/InstallAppButton";
 import { Button } from "@/components/ui/button";
+import { isMock } from "@/lib/api";
+import { homeHead, PRODUCTS_SENTENCE, PUBLIC_FAQS } from "@/lib/site";
 
 export const Route = createFileRoute("/")({
-  head: () => ({
-    meta: [
-      { title: "Stawi — One payment in. Every farmer paid, same day." },
-      {
-        name: "description",
-        content:
-          "A co-op treasurer used to spend days paying farmers in cash. Stawi turns one buyer payment into a same-day split, with a flat 0.8% fee on the invoice.",
-      },
-      { property: "og:title", content: "Stawi — One payment in. Every farmer paid, same day." },
-      {
-        property: "og:description",
-        content:
-          "One buyer payment. A treasurer's approval. Every farmer paid the same day, to M-Pesa or a bank. 0.8% flat, written on the invoice.",
-      },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
-    ],
-  }),
+  head: () => homeHead(),
   component: LandingPage,
 });
 
@@ -52,7 +37,7 @@ function Reveal({
 }) {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 18 }}
+      initial={false}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "-80px" }}
       transition={{ delay, duration: 0.55, ease }}
@@ -74,6 +59,7 @@ function LandingPage() {
         <Join />
         <AnyPhone />
         <Pricing />
+        <Faq />
         <FinalCta />
       </main>
       <Footer />
@@ -122,7 +108,7 @@ function Hero() {
       <div className="mx-auto max-w-6xl">
         <div className="grid items-center gap-10 lg:grid-cols-[1.15fr_0.85fr] lg:gap-14">
           <motion.div
-            initial={{ opacity: 0, y: 24 }}
+            initial={false}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, ease }}
           >
@@ -138,6 +124,7 @@ function Hero() {
               The buyer pays the co-op once. The treasurer sees every farmer’s share and a flat
               0.8% fee, then releases it. Each farmer withdraws to M-Pesa or a bank the same day.
             </p>
+            <p className="mt-4 max-w-xl text-muted-foreground">{PRODUCTS_SENTENCE}</p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <Button asChild size="lg" className="min-h-[48px] text-base">
                 <Link to="/login">
@@ -157,7 +144,7 @@ function Hero() {
           </motion.div>
 
           <motion.div
-            initial={{ opacity: 0, y: 24 }}
+            initial={false}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.15, duration: 0.7, ease }}
             className="relative mx-auto w-full max-w-sm lg:max-w-none"
@@ -177,7 +164,7 @@ function Hero() {
         </div>
 
         <motion.div
-          initial={{ opacity: 0, y: 24 }}
+          initial={false}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.25, duration: 0.7, ease }}
           className="mt-14 grid gap-3 sm:grid-cols-3"
@@ -455,6 +442,31 @@ function Pricing() {
   );
 }
 
+function Faq() {
+  return (
+    <section id="faq" className="scroll-mt-20 px-4 py-16 sm:px-6 sm:py-24">
+      <div className="mx-auto max-w-6xl">
+        <Reveal>
+          <p className="text-sm font-medium tracking-wide text-sage uppercase">Questions</p>
+          <h2 className="text-display mt-2 max-w-2xl text-3xl sm:text-4xl">
+            The fee, the approval, and the phone.
+          </h2>
+        </Reveal>
+        <div className="mt-10 grid gap-4 md:grid-cols-2">
+          {PUBLIC_FAQS.map((item) => (
+            <Reveal key={item.question}>
+              <article className="h-full rounded-2xl border border-border bg-card p-6 shadow-soft">
+                <h3 className="text-display text-xl">{item.question}</h3>
+                <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{item.answer}</p>
+              </article>
+            </Reveal>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function FinalCta() {
   return (
     <section className="px-4 py-16 sm:px-6 sm:py-24">
@@ -508,14 +520,19 @@ function Footer() {
           <a href="#pricing" className="hover:text-foreground">
             Pricing
           </a>
+          <a href="#faq" className="hover:text-foreground">
+            Questions
+          </a>
           <Link to="/login" className="hover:text-foreground">
             Sign in
           </Link>
         </nav>
       </div>
-      <p className="mx-auto mt-6 max-w-6xl text-xs text-muted-foreground/70">
-        Demo environment — payments run against sandbox data and no real money moves.
-      </p>
+      {isMock ? (
+        <p className="mx-auto mt-6 max-w-6xl text-xs text-muted-foreground/70">
+          Demo environment — payments run against sandbox data and no real money moves.
+        </p>
+      ) : null}
     </footer>
   );
 }

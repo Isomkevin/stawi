@@ -12,6 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { api } from "@/lib/api";
 import { homeForRole, useSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
+import { noindexMeta } from "@/lib/site";
 
 const search = z.object({
   coop: z.string().optional(),
@@ -30,6 +31,7 @@ export const Route = createFileRoute("/onboarding")({
       { property: "og:description", content: "Set up Stawi in four quick steps and start getting paid same day." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
+      noindexMeta,
     ],
   }),
   component: Onboarding,

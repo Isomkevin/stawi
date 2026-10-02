@@ -2,6 +2,7 @@ import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { FileText, Landmark, LayoutDashboard, Package, Settings } from "lucide-react";
 import { RoleGate } from "@/components/stawi/RoleGate";
 import { DashboardShell } from "@/features/shared/DashboardShell";
+import { noindexMeta } from "@/lib/site";
 
 export const Route = createFileRoute("/direct")({
   head: () => ({
@@ -12,6 +13,7 @@ export const Route = createFileRoute("/direct")({
       { property: "og:description", content: "Invoice overseas buyers and get paid in KES the same day." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
+      noindexMeta,
     ],
   }),
   component: DirectLayout,

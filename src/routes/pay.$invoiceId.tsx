@@ -39,6 +39,7 @@ import {
   kesPerUnit,
   type PayCurrency,
 } from "@/lib/payCurrencies";
+import { noindexMeta } from "@/lib/site";
 
 export const Route = createFileRoute("/pay/$invoiceId")({
   head: () => ({
@@ -56,6 +57,7 @@ export const Route = createFileRoute("/pay/$invoiceId")({
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
+      noindexMeta,
     ],
   }),
   loader: ({ context, params }) =>

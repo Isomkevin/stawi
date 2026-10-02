@@ -12,6 +12,7 @@ import { StatusChip } from "@/components/stawi/StatusChip";
 import { buyerPortal } from "@/lib/buyerPortal";
 import { formatCurrency, formatDate } from "@/lib/format";
 import type { BuyerLookup } from "@/lib/types";
+import { noindexMeta } from "@/lib/site";
 
 export const Route = createFileRoute("/buyer")({
   head: () => ({
@@ -22,6 +23,7 @@ export const Route = createFileRoute("/buyer")({
       { property: "og:description", content: "Pay a shipment by card or submit bank transfer proof." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
+      noindexMeta,
     ],
   }),
   component: BuyerPortal,

@@ -1,14 +1,65 @@
-User-agent: Googlebot
-Allow: /
-
-User-agent: Bingbot
-Allow: /
-
-User-agent: Twitterbot
-Allow: /
-
-User-agent: facebookexternalhit
-Allow: /
+# Public marketing pages are open. Signed-in dashboards are not fetched.
+# Login, onboarding, buyer, pay, and the USSD demo stay crawlable so
+# search engines can see their noindex tag.
 
 User-agent: *
 Allow: /
+Disallow: /app
+Disallow: /coop
+Disallow: /direct
+
+User-agent: GPTBot
+Allow: /
+Disallow: /app
+Disallow: /coop
+Disallow: /direct
+
+User-agent: ChatGPT-User
+Allow: /
+Disallow: /app
+Disallow: /coop
+Disallow: /direct
+
+User-agent: OAI-SearchBot
+Allow: /
+Disallow: /app
+Disallow: /coop
+Disallow: /direct
+
+User-agent: ClaudeBot
+Allow: /
+Disallow: /app
+Disallow: /coop
+Disallow: /direct
+
+User-agent: Claude-User
+Allow: /
+Disallow: /app
+Disallow: /coop
+Disallow: /direct
+
+User-agent: Claude-SearchBot
+Allow: /
+Disallow: /app
+Disallow: /coop
+Disallow: /direct
+
+User-agent: PerplexityBot
+Allow: /
+Disallow: /app
+Disallow: /coop
+Disallow: /direct
+
+User-agent: Google-Extended
+Allow: /
+Disallow: /app
+Disallow: /coop
+Disallow: /direct
+
+User-agent: Applebot-Extended
+Allow: /
+Disallow: /app
+Disallow: /coop
+Disallow: /direct
+
+Sitemap: https://stawi.africa/sitemap.xml

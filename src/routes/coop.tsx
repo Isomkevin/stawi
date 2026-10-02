@@ -12,6 +12,7 @@ import {
 import { RoleGate } from "@/components/stawi/RoleGate";
 import { AskStawiChat } from "@/components/stawi/AskStawiChat";
 import { DashboardShell } from "@/features/shared/DashboardShell";
+import { noindexMeta } from "@/lib/site";
 
 export const Route = createFileRoute("/coop")({
   head: () => ({
@@ -28,6 +29,7 @@ export const Route = createFileRoute("/coop")({
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
+      noindexMeta,
     ],
   }),
   component: CoopLayout,

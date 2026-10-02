@@ -18,6 +18,7 @@ import { reportLovableError } from "../lib/lovable-error-reporting";
 import { SessionProvider } from "@/lib/session";
 import { I18nProvider } from "@/lib/i18n";
 import { ensureInstallPromptListener } from "@/lib/pwa-install";
+import { noindexMeta, publicOrigin, sharedSocialMeta, shouldNoindex, SITE_DESCRIPTION, SITE_NAME } from "@/lib/site";
 
 const initializePwa = createClientOnlyFn(async () => {
   const pwa = await import("@/lib/pwa.client");
@@ -86,47 +87,46 @@ function ErrorComponent({ error, reset }: ErrorComponentProps) {
 }
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
-  head: () => ({
-    meta: [
+  head: () => {
+    const origin = publicOrigin();
+    const meta = [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "Stawi — Cross-border export payments" },
-      {
-        name: "description",
-        content:
-          "One cross-border payment in, every farmer paid the same day. Live FX, 0.8% flat fee, full transparency.",
-      },
-      { name: "author", content: "Stawi" },
+      { name: "description", content: SITE_DESCRIPTION },
+      { name: "author", content: SITE_NAME },
       { property: "og:title", content: "Stawi — Cross-border export payments" },
-      {
-        property: "og:description",
-        content: "One cross-border payment in, every farmer paid the same day.",
-      },
+      { property: "og:description", content: SITE_DESCRIPTION },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
+      ...sharedSocialMeta(origin),
       { name: "theme-color", content: "#233c31" },
       { name: "mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-capable", content: "yes" },
-      { name: "apple-mobile-web-app-title", content: "Stawi" },
+      { name: "apple-mobile-web-app-title", content: SITE_NAME },
       { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
-    ],
-    links: [
-      { rel: "preconnect", href: "https://fonts.googleapis.com" },
-      { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
-      {
-        rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..700&family=Inter:wght@400..700&display=swap",
-      },
-      {
-        rel: "stylesheet",
-        href: appCss,
-      },
-      { rel: "manifest", href: "/manifest.json" },
-      { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
-      { rel: "icon", href: "/stawi-icon-192.png", type: "image/png", sizes: "192x192" },
-      { rel: "apple-touch-icon", href: "/apple-touch-icon.png", sizes: "180x180" },
-    ],
-  }),
+    ];
+    if (shouldNoindex()) meta.push(noindexMeta);
+    return {
+      meta,
+      links: [
+        { rel: "preconnect", href: "https://fonts.googleapis.com" },
+        { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
+        {
+          rel: "stylesheet",
+          href: "https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..700&family=Inter:wght@400..700&display=swap",
+        },
+        {
+          rel: "stylesheet",
+          href: appCss,
+        },
+        { rel: "manifest", href: "/manifest.json" },
+        { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
+        { rel: "icon", href: "/stawi-icon-192.png", type: "image/png", sizes: "192x192" },
+        { rel: "apple-touch-icon", href: "/apple-touch-icon.png", sizes: "180x180" },
+      ],
+    };
+  },
   shellComponent: RootShell,
   component: RootComponent,
   notFoundComponent: NotFoundComponent,

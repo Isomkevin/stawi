@@ -4,6 +4,7 @@ import { RoleGate } from "@/components/stawi/RoleGate";
 import { AccountSwitcher } from "@/components/stawi/AccountSwitcher";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { noindexMeta } from "@/lib/site";
 
 export const Route = createFileRoute("/app")({
   head: () => ({
@@ -14,6 +15,7 @@ export const Route = createFileRoute("/app")({
       { property: "og:description", content: "See your balance, payments on the way and withdraw to M-Pesa." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
+      noindexMeta,
     ],
   }),
   component: AppLayout,
