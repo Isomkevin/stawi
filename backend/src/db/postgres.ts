@@ -150,7 +150,8 @@ export class PostgresStore extends InMemoryStore {
   }
 
   public async getAccount(id: string): Promise<Account | undefined> {
-    const result = await this.q("SELECT * FROM accounts WHERE id = $1", [id]);
+    const lock = txClient.getStore() ? " FOR UPDATE" : "";
+    const result = await this.q(`SELECT * FROM accounts WHERE id = $1${lock}`, [id]);
     if (result.rows.length === 0) return undefined;
     const destinations = await this.destinationsFor([id]);
     return this.mapAccount(result.rows[0], destinations.get(id) || []);

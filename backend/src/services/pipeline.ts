@@ -718,6 +718,18 @@ export class PipelineService {
       return { success: false, error: "Account not found" };
     }
 
+    // The account row is locked inside a Postgres transaction. Check again so a
+    // concurrent dial that committed first is replayed instead of paying twice.
+    if (idempotencyKey) {
+      const existing = await store.getPayoutByIdempotency(idempotencyKey);
+      if (existing) {
+        if (existing.account_id !== accountId) {
+          return { success: false, error: "idempotency_conflict" };
+        }
+        return { success: true, payout: existing, replay: true };
+      }
+    }
+
     if (!Number.isInteger(amountKesCents) || amountKesCents <= 0) {
       return { success: false, error: "Invalid withdrawal amount: must be positive integer cents" };
     }

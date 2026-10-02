@@ -6,6 +6,7 @@ import { api, ApiError } from "@/lib/api";
 import { FARMER_ID } from "@/lib/mock";
 import { formatKesCents } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { noindexMeta } from "@/lib/site";
 
 export const Route = createFileRoute("/demo/ussd")({
   head: () => ({
@@ -16,6 +17,7 @@ export const Route = createFileRoute("/demo/ussd")({
       { property: "og:description", content: "Try Stawi on a feature phone: check balance, payment status and withdraw by USSD." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
+      noindexMeta,
     ],
   }),
   component: UssdSim,
@@ -23,7 +25,7 @@ export const Route = createFileRoute("/demo/ussd")({
 
 type LogEntry = { dir: "req" | "res"; body: string };
 const CODE = "*384*56990#";
-const MENU = "CON Stawi\n1. My balance\n2. Last payment status\n3. Withdraw to M-Pesa\n0. Exit";
+const MENU = "CON Welcome to Stawi\n1. My balance\n2. Last payment status\n3. Withdraw to M-Pesa\n0. Exit";
 
 function UssdSim() {
   const qc = useQueryClient();
@@ -147,7 +149,7 @@ function UssdSim() {
               ) : screen !== null ? (
                 <>
                   <p className="whitespace-pre-line">{screen}</p>
-                  {path.length > 0 || screen.startsWith("Stawi") ? <p className="mt-2 border-t border-current/30 pt-1">&gt; {input}<span className="animate-pulse">_</span></p> : null}
+                  {path.length > 0 || screen.startsWith("Welcome to Stawi") ? <p className="mt-2 border-t border-current/30 pt-1">&gt; {input}<span className="animate-pulse">_</span></p> : null}
                 </>
               ) : (
                 <p className="text-right text-xl tabular">{dial || <span className="opacity-50">Safaricom</span>}</p>

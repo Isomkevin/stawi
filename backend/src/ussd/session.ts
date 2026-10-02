@@ -6,6 +6,23 @@ import { ussdScreen, UssdScreen } from "./menu";
 
 const RATE_WINDOW_MS = 5 * 60 * 1000;
 
+/** One dial is handled at a time so a gateway retry cannot start a second withdrawal. */
+const sessionTail = new Map<string, Promise<void>>();
+
+function lockSession<T>(sessionId: string, fn: () => Promise<T>): Promise<T> {
+  const previous = sessionTail.get(sessionId) ?? Promise.resolve();
+  const run = previous.then(fn, fn);
+  const tail = run.then(
+    () => undefined,
+    () => undefined
+  );
+  sessionTail.set(sessionId, tail);
+  void tail.then(() => {
+    if (sessionTail.get(sessionId) === tail) sessionTail.delete(sessionId);
+  });
+  return run;
+}
+
 export type UssdTurn = {
   sessionId: string;
   phone: string;
@@ -86,6 +103,10 @@ export async function dispatchUssd(turn: UssdTurn): Promise<string> {
     return "END Too many requests. Please dial again shortly.";
   }
 
+  return lockSession(turn.sessionId, () => dispatchLocked(turn));
+}
+
+async function dispatchLocked(turn: UssdTurn): Promise<string> {
   const existing = await store.getUssdSession(turn.sessionId);
   if (existing && existing.phone_number !== turn.phone) {
     logUssd({ sessionId: turn.sessionId, phone: turn.phone, state: existing.state, action: "phone_mismatch", outcome: "end" });

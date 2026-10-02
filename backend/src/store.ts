@@ -37,6 +37,8 @@ export class InMemoryStore {
   private smsLogs: SmsLogEntry[] = [];
   private ussdSessions = new Map<string, UssdSession>();
   private ussdRates = new Map<string, { windowStart: number; hits: number }>();
+  /** In-memory money updates run one at a time. Postgres uses a real transaction instead. */
+  private txChain: Promise<void> = Promise.resolve();
 
   public normalizePhone(phone: string): string {
     return normalizeKenyanPhone(phone);
@@ -260,7 +262,17 @@ export class InMemoryStore {
   }
 
   public async withTransaction<T>(fn: () => Promise<T>): Promise<T> {
-    return fn();
+    const previous = this.txChain;
+    let release: () => void = () => undefined;
+    this.txChain = new Promise((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      return await fn();
+    } finally {
+      release();
+    }
   }
 
   public async saveOtp(phone: string, codeHash: string, expiresAt: string): Promise<void> {
@@ -499,6 +511,7 @@ export class InMemoryStore {
     this.smsLogs = [];
     this.ussdSessions.clear();
     this.ussdRates.clear();
+    this.txChain = Promise.resolve();
   }
 }
 
